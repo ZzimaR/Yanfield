@@ -6,7 +6,7 @@
  * AI 补全：POST /api/ai/task（feature: world-card）
  */
 import * as React from "react";
-import { Sparkles, Trash2 } from "lucide-react";
+import { Sparkles, Trash2, GitBranch } from "lucide-react";
 import {
   Button,
   ConfirmDialog,
@@ -16,11 +16,12 @@ import {
   Switch,
   useToast,
 } from "@/components/ui/kit";
-import { AiAssistSheet } from "@/components/outline/ai-assist";
 import { AiTextField, TagsInput, stripChapterNumber, unwrapEntity, useErrorToast } from "@/components/outline/form-kit";
 import { labeledDraft } from "@/lib/ai/assist-brief";
-import { apiDelete, apiPatch, apiPost, notifyDataChanged, useApi } from "@/lib/client/api";
-import type { WorldCategory, WorldSetting } from "@/lib/types";
+import { apiDelete, apiPatch, apiPost, notifyDataChanged, streamAiTask, useApi } from "@/lib/client/api";
+import { parseCardFill } from "@/lib/ai/world-derive";
+import { WorldDeriveSheet } from "./WorldDeriveSheet";
+import type { AiStreamEvent, WorldCategory, WorldSetting } from "@/lib/types";
 import { WORLD_CATEGORY_LABEL } from "@/lib/types";
 
 interface WorldDraft {
@@ -34,11 +35,6 @@ interface WorldDraft {
   revealAtChapter: number | null;
   pinned: boolean;
 }
-
-const AI_TARGETS = [
-  { value: "summary", label: "设定摘要" },
-  { value: "content", label: "设定正文" },
-];
 
 function emptyDraft(parentId: string | null): WorldDraft {
   return {
@@ -115,21 +111,29 @@ export function WorldEditor({
   const [saving, setSaving] = React.useState(false);
   const [deleting, setDeleting] = React.useState(false);
   const [confirmDeleteOpen, setConfirmDeleteOpen] = React.useState(false);
-  const [aiOpen, setAiOpen] = React.useState(false);
-  const initKey = `${open ? 1 : 0}:${setting?.id ?? "new"}:${detailApi.data?.updatedAt ?? setting?.updatedAt ?? ""}`;
-  const lastInitKey = React.useRef("");
+  const [deriveOpen, setDeriveOpen] = React.useState(false);
+  const [filling, setFilling] = React.useState(false);
+  const [savedId, setSavedId] = React.useState<string | null>(setting?.id ?? null);
+  const nextDraftKey = open ? (setting?.id ?? "new") : "closed";
+  const [draftKey, setDraftKey] = React.useState(nextDraftKey);
+  if (draftKey !== nextDraftKey) {
+    setDraftKey(nextDraftKey);
+    if (open) {
+      setSavedId(setting?.id ?? null);
+      setDraft(setting ? toDraft(setting) : emptyDraft(null));
+    }
+  }
+  const detailStamp = detailApi.data && setting && detailApi.data.id === setting.id ? detailApi.data.updatedAt : "";
 
   useErrorToast(detailApi.error, "设定详情加载失败");
 
-  const source = setting ? detailApi.data && detailApi.data.id === setting.id ? detailApi.data : setting : null;
-
   React.useEffect(() => {
-    if (lastInitKey.current === initKey) return;
-    lastInitKey.current = initKey;
-    if (!open) return;
-    setDraft(source ? toDraft(source) : emptyDraft(null));
+    if (!open || !detailStamp || !setting || !detailApi.data || detailApi.data.id !== setting.id) return;
+    setSavedId(setting.id);
+    setDraft(toDraft(detailApi.data));
+    // 详情回来后用服务端版本覆盖，避免列表里的摘要比正文旧
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [initKey, open]);
+  }, [detailStamp]);
 
   const update = <K extends keyof WorldDraft>(key: K, value: WorldDraft[K]) =>
     setDraft((prev) => ({ ...prev, [key]: value }));
@@ -143,10 +147,12 @@ export function WorldEditor({
     setSaving(true);
     try {
       const payload = { ...draft, title };
-      const saved = editing && setting
-        ? await apiPatch<WorldSetting>(`/api/world/${setting.id}`, payload)
+      const saved = savedId
+        ? await apiPatch<WorldSetting>(`/api/world/${savedId}`, payload)
         : await apiPost<WorldSetting>(`/api/world`, { novelId, ...payload });
-      onSaved(unwrapEntity(saved));
+      const entity = unwrapEntity(saved);
+      setSavedId(entity.id);
+      onSaved(entity);
       notifyDataChanged("world");
       toast({ title: editing ? "设定已保存" : "已新建设定", description: title, tone: "success" });
       onClose();
@@ -174,9 +180,55 @@ export function WorldEditor({
     }
   };
 
-  const handleAiAdopt = (text: string, target: string) => {
-    if (target === "summary") update("summary", text);
-    else if (target === "content") update("content", text);
+  const fillCard = () => {
+    setFilling(true);
+    let text = "";
+    void streamAiTask(
+      {
+        novelId,
+        feature: "world-card",
+        message: ["这是补全当前卡片。", labeledDraft([
+          { label: "标题", value: draft.title },
+          { label: "摘要", value: draft.summary },
+          { label: "正文", value: draft.content },
+        ])].filter(Boolean).join("\n\n"),
+        instruction:
+          "这是补全当前卡片。只输出 JSON：{\"summary\":\"\",\"content\":\"\"}。只写这一条自己的事实，不要提问，不要把其他地点展开成完整条目。",
+      },
+      {
+        onEvent: (event: AiStreamEvent) => {
+          if (event.type === "delta") text += event.text;
+        },
+      },
+    )
+      .then(() => {
+        const fill = parseCardFill(text);
+        if (!fill) {
+          toast({ title: "没有填进卡片", description: "生成结果不是这张卡的摘要和正文。", tone: "error" });
+          return;
+        }
+        setDraft((prev) => ({
+          ...prev,
+          summary: fill.summary || prev.summary,
+          content: fill.content || prev.content,
+        }));
+        toast({ title: "已填入当前卡片", description: "还没保存。确认后点保存才会写入。", tone: "success" });
+      })
+      .catch((err: unknown) => {
+        toast({ title: "补全失败", description: err instanceof Error ? err.message : "请稍后再试", tone: "error" });
+      })
+      .finally(() => setFilling(false));
+  };
+
+  const ensureSource = async () => {
+    if (savedId) return savedId;
+    const title = draft.title.trim();
+    if (!title) return null;
+    const saved = unwrapEntity(await apiPost<WorldSetting>("/api/world", { novelId, ...draft, title }));
+    setSavedId(saved.id);
+    onSaved(saved);
+    notifyDataChanged("world");
+    return saved.id;
   };
 
   const parentOptions = [
@@ -227,27 +279,37 @@ export function WorldEditor({
     >
       <div className="space-y-3.5 p-4 [&_a:focus-visible]:outline-none [&_a:focus-visible]:ring-2 [&_a:focus-visible]:ring-accent/60 [&_button:focus-visible]:outline-none [&_button:focus-visible]:ring-2 [&_button:focus-visible]:ring-accent/60">
         {/* 概览条：标题 / 分类与层级 + AI 补全入口 */}
-        <div className="flex items-center gap-3 rounded-lg border border-line bg-surface-2 px-3.5 py-3">
-          <span
-            className="flex size-10 shrink-0 items-center justify-center rounded-full bg-jade-soft font-serif text-[16px] font-semibold text-jade"
-            aria-hidden
-          >
-            {initial}
-          </span>
-          <div className="min-w-0 flex-1">
-            <p className="truncate text-[14px] font-medium text-ink">{displayTitle}</p>
-            <p className="mt-0.5 truncate text-[11.5px] text-ink-3">{subtitle}</p>
+        <div className="rounded-lg border border-line bg-surface-2 px-3.5 py-3">
+          <div className="flex items-center gap-3">
+            <span
+              className="flex size-10 shrink-0 items-center justify-center rounded-full bg-jade-soft font-serif text-[16px] font-semibold text-jade"
+              aria-hidden
+            >
+              {initial}
+            </span>
+            <div className="min-w-0 flex-1">
+              <p className="truncate text-[14px] font-medium text-ink">{displayTitle}</p>
+              <p className="mt-0.5 truncate text-[11.5px] text-ink-3">{subtitle}</p>
+            </div>
           </div>
-          <Button
-            variant="ghost"
-            size="sm"
-            className="shrink-0 text-accent hover:bg-accent-soft"
-            icon={<Sparkles className="size-3.5" />}
-            onClick={() => setAiOpen(true)}
-          >
-            AI 补全
-          </Button>
+          <div className="mt-3 flex flex-wrap items-center gap-1 border-t border-line pt-3">
+            <Button
+              variant="ghost"
+              size="sm"
+              className="text-accent hover:bg-accent-soft"
+              icon={<Sparkles className="size-3.5" />}
+              loading={filling}
+              onClick={fillCard}
+            >
+              补全这张卡
+            </Button>
+            <Button variant="ghost" size="sm" icon={<GitBranch className="size-3.5" />} onClick={() => setDeriveOpen(true)}>
+              衍生相关
+            </Button>
+          </div>
         </div>
+
+        <p className="text-[11.5px] leading-relaxed text-ink-3">补全只改当前这张卡，不会自动保存。其他地点用「衍生相关」，勾选后才另存。</p>
 
         <EditorSection title="基本信息" hint="先给这条设定一个能搜到的名字与归属，AI 会按分类理解它的约束力。">
           <div className="grid gap-3 sm:grid-cols-2">
@@ -323,19 +385,18 @@ export function WorldEditor({
         {detailApi.loading ? <p className="text-[11px] text-ink-3">正在获取设定最新详情…</p> : null}
       </div>
 
-      <AiAssistSheet
-        open={aiOpen}
-        onClose={() => setAiOpen(false)}
-        title="AI 补全 · 世界观设定"
-        feature="world-card"
+      <WorldDeriveSheet
+        open={deriveOpen}
         novelId={novelId}
-        instruction={`请完善这条${WORLD_CATEGORY_LABEL[draft.category]}设定「${draft.title || "未命名"}」。若我写了想法或已有草稿，在此基础上写具体，保留关键信息，写清规则、限制与代价。`}
-        selection={labeledDraft([
-          { label: "摘要", value: draft.summary },
-          { label: "正文", value: draft.content },
-        ])}
-        targets={AI_TARGETS}
-        onAdopt={handleAiAdopt}
+        source={{
+          id: savedId,
+          title: draft.title,
+          category: draft.category,
+          summary: draft.summary,
+          content: draft.content,
+        }}
+        onClose={() => setDeriveOpen(false)}
+        onEnsureSource={ensureSource}
       />
 
       <ConfirmDialog

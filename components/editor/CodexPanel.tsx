@@ -2,8 +2,8 @@
 
 import * as React from "react";
 import Link from "next/link";
-import { BookOpen, ChevronRight, MapPin, Pencil, ScrollText, User } from "lucide-react";
-import { Badge, Button, EmptyState, Input, Sheet, Skeleton } from "@/components/ui/kit";
+import { BookOpen, ChevronRight, MapPin, Plus, ScrollText, User } from "lucide-react";
+import { EmptyState, Input, Skeleton } from "@/components/ui/kit";
 import { useApi, useDataChanged } from "@/lib/client/api";
 import { toItems } from "@/lib/editor/normalize";
 import {
@@ -32,18 +32,7 @@ type CodexEntry =
   | { kind: "world"; data: WorldSetting }
   | { kind: "foreshadow"; data: Foreshadow };
 
-interface FieldRow {
-  label: string;
-  value: string;
-}
-
-const KIND_LABEL: Record<CodexEntry["kind"], string> = {
-  character: "角色",
-  world: "世界观",
-  foreshadow: "伏笔",
-};
-
-/** 列表行左侧的 8px 色点：角色 accent、世界观 jade、伏笔 gold */
+/** 列表行左侧的色点：角色、世界观、伏笔各用一种颜色 */
 const KIND_DOT_CLASS: Record<CodexEntry["kind"], string> = {
   character: "bg-accent",
   world: "bg-jade",
@@ -54,46 +43,31 @@ const KIND_DOT_CLASS: Record<CodexEntry["kind"], string> = {
 const PRIMARY_LINK_CLASS =
   "inline-flex h-9 items-center justify-center gap-1.5 rounded-sm bg-accent px-3.5 text-[13px] font-medium text-accent-ink transition-colors duration-150 hover:bg-accent-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40 motion-reduce:transition-none";
 
-/** 次级链接样式（与 kit Button secondary 视觉一致） */
-const SECONDARY_LINK_CLASS =
-  "inline-flex h-8 shrink-0 items-center gap-1.5 rounded-sm border border-line bg-surface px-2.5 text-[12px] text-ink-2 transition-colors duration-150 hover:bg-surface-2 hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40 motion-reduce:transition-none";
-
-/** 设定详情面板要展示的字段（按类别） */
-function buildFields(entry: CodexEntry): FieldRow[] {
-  if (entry.kind === "character") {
-    const c = entry.data;
-    return [
-      { label: "角色类型", value: CHARACTER_ROLE_LABEL[c.role] },
-      { label: "身份", value: c.identity },
-      { label: "年龄 / 性别", value: [c.age, c.gender].filter(Boolean).join(" · ") },
-      { label: "性格与行事逻辑", value: c.personality },
-      { label: "目标", value: c.goals },
-      { label: "秘密", value: c.secrets },
-      { label: "人物弧光", value: c.arc },
-      { label: "说话风格", value: c.speechStyle },
-      { label: "当前状态", value: c.currentState },
-      { label: "别名", value: c.aliases.join(" / ") },
-      { label: "标签", value: c.tags.join(" / ") },
-    ];
+function worldRows(settings: WorldSetting[]): { setting: WorldSetting; depth: number }[] {
+  const byParent = new Map<string | null, WorldSetting[]>();
+  for (const setting of settings) {
+    const key = setting.parentId;
+    const list = byParent.get(key) ?? [];
+    list.push(setting);
+    byParent.set(key, list);
   }
-  if (entry.kind === "world") {
-    const w = entry.data;
-    return [
-      { label: "分类", value: WORLD_CATEGORY_LABEL[w.category] },
-      { label: "简述", value: w.summary },
-      { label: "内容", value: w.content },
-      { label: "标签", value: w.tags.join(" / ") },
-    ];
+  const rows: { setting: WorldSetting; depth: number }[] = [];
+  const seen = new Set<string>();
+  const walk = (parentId: string | null, depth: number) => {
+    for (const setting of byParent.get(parentId) ?? []) {
+      if (seen.has(setting.id)) continue;
+      seen.add(setting.id);
+      rows.push({ setting, depth });
+      walk(setting.id, depth + 1);
+    }
+  };
+  walk(null, 0);
+  for (const setting of settings) {
+    if (!seen.has(setting.id)) rows.push({ setting, depth: 0 });
   }
-  const f = entry.data;
-  return [
-    { label: "状态", value: FORESHADOW_STATUS_LABEL[f.status] },
-    { label: "描述", value: f.description },
-    { label: "备注", value: f.notes },
-  ];
+  return rows;
 }
 
-/** 列表里每行的主标题 + 副标题（副标题始终有值，保证行高稳定） */
 function entryPreview(entry: CodexEntry): { name: string; hint: string } {
   if (entry.kind === "character") {
     const c = entry.data;
@@ -132,7 +106,7 @@ function entryMatches(entry: CodexEntry, keyword: string): boolean {
 
 /**
  * 左栏「设定」：角色 / 世界观 / 伏笔 的分组速查。
- * 点击条目打开详情抽屉；抽屉里可直接编辑（复用设定集同一套编辑器），也可跳转设定集深挖。
+ * 点击条目直接打开编辑器，写作时不用先离开章节。
  */
 export function CodexPanel({ novelId }: CodexPanelProps) {
   const charactersApi = useApi<unknown>(`/api/characters?novelId=${encodeURIComponent(novelId)}`);
@@ -152,8 +126,8 @@ export function CodexPanel({ novelId }: CodexPanelProps) {
   }, [chaptersApi.data, volumesApi.data]);
 
   const [query, setQuery] = React.useState("");
-  const [selected, setSelected] = React.useState<CodexEntry | null>(null);
   const [editing, setEditing] = React.useState<CodexEntry | null>(null);
+  const [creatingWorld, setCreatingWorld] = React.useState(false);
 
   const refreshAll = React.useCallback(() => {
     void charactersApi.refresh();
@@ -188,36 +162,21 @@ export function CodexPanel({ novelId }: CodexPanelProps) {
     { key: "foreshadows", title: "伏笔", icon: <ScrollText className="size-3.5" />, entries: filtered.foreshadows, total: foreshadows.length },
   ];
 
-  const detailFields = selected ? buildFields(selected).filter((row) => row.value.trim().length > 0) : [];
-  const detailName =
-    selected === null
-      ? ""
-      : selected.kind === "character"
-        ? selected.data.name
-        : selected.data.title;
-  const detailVisible = selected === null ? true : selected.kind === "foreshadow" ? true : selected.data.aiVisible;
-  const detailRevealAt =
-    selected === null || selected.kind === "foreshadow" ? null : selected.data.revealAtChapter;
-
-  /** 详情 → 编辑：关掉详情，打开对应编辑器 */
-  const startEdit = () => {
-    if (!selected) return;
-    setEditing(selected);
-    setSelected(null);
+  const closeEditor = () => {
+    setEditing(null);
+    setCreatingWorld(false);
   };
-
-  const closeEditor = () => setEditing(null);
 
   const handleSaved = (entry: CodexEntry) => {
     refreshAll();
-    setEditing(null);
-    setSelected(entry);
+    setCreatingWorld(false);
+    setEditing(entry);
   };
 
   const handleDeleted = () => {
     refreshAll();
     setEditing(null);
-    setSelected(null);
+    setCreatingWorld(false);
   };
 
   return (
@@ -228,13 +187,26 @@ export function CodexPanel({ novelId }: CodexPanelProps) {
           <span className="text-[11px] tabular-nums text-ink-3">
             {keyword ? `${matched} / ${total} 条` : `${total} 条设定`}
           </span>
-          <Link
-            href={`/novel/${novelId}/bible`}
-            className="inline-flex items-center gap-1 rounded-sm text-[11.5px] text-accent transition-colors duration-150 hover:text-accent/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40 motion-reduce:transition-none"
-          >
-            <BookOpen className="size-3" aria-hidden />
-            设定集
-          </Link>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => {
+                setEditing(null);
+                setCreatingWorld(true);
+              }}
+              className="inline-flex items-center gap-1 rounded-sm text-[11.5px] text-ink-2 transition-colors hover:text-ink"
+            >
+              <Plus className="size-3" aria-hidden />
+              新建设定
+            </button>
+            <Link
+              href={`/novel/${novelId}/bible`}
+              className="inline-flex items-center gap-1 rounded-sm text-[11.5px] text-accent transition-colors duration-150 hover:text-accent/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40 motion-reduce:transition-none"
+            >
+              <BookOpen className="size-3" aria-hidden />
+              设定集
+            </Link>
+          </div>
         </div>
         <Input
           value={query}
@@ -278,14 +250,21 @@ export function CodexPanel({ novelId }: CodexPanelProps) {
                     <span className="tabular-nums">{group.entries.length}</span>
                   </div>
                   <div className="space-y-1">
-                    {group.entries.map((entry) => {
+                    {(group.key === "world" && !keyword
+                      ? worldRows(group.entries.map((entry) => entry.data as WorldSetting)).map(({ setting, depth }) => ({
+                          entry: { kind: "world" as const, data: setting },
+                          depth,
+                        }))
+                      : group.entries.map((entry) => ({ entry, depth: 0 }))
+                    ).map(({ entry, depth }) => {
                       const preview = entryPreview(entry);
                       return (
                         <button
                           key={`${entry.kind}:${entry.data.id}`}
                           type="button"
-                          onClick={() => setSelected(entry)}
+                          onClick={() => setEditing(entry)}
                           className="group flex w-full min-w-0 items-start gap-2 rounded-md px-2 py-2 text-left transition-colors duration-150 hover:bg-surface-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40 motion-reduce:transition-none"
+                          style={{ paddingLeft: 8 + depth * 14 }}
                         >
                           <span className={cn("mt-1.5 size-2 shrink-0 rounded-full", KIND_DOT_CLASS[entry.kind])} aria-hidden />
                           <span className="min-w-0 flex-1">
@@ -309,47 +288,6 @@ export function CodexPanel({ novelId }: CodexPanelProps) {
         )}
       </div>
 
-      {/* 详情抽屉：可直接编辑，也可跳设定集 */}
-      <Sheet
-        open={selected !== null}
-        onClose={() => setSelected(null)}
-        title={detailName}
-        width={420}
-        footer={
-          <div className="flex items-center gap-2 [&_a:focus-visible]:outline-none [&_a:focus-visible]:ring-2 [&_a:focus-visible]:ring-accent/40 [&_button:focus-visible]:outline-none [&_button:focus-visible]:ring-2 [&_button:focus-visible]:ring-accent/40">
-            <Button variant="primary" size="sm" icon={<Pencil className="size-3.5" />} onClick={startEdit}>
-              编辑
-            </Button>
-            <Link href={`/novel/${novelId}/bible`} className={cn(SECONDARY_LINK_CLASS, "ml-auto")}>
-              <BookOpen className="size-3.5" aria-hidden />
-              在设定集打开
-            </Link>
-          </div>
-        }
-      >
-        <div className="space-y-3.5 p-4">
-          <div className="flex flex-wrap items-center gap-2">
-            <Badge tone="accent">{selected ? KIND_LABEL[selected.kind] : ""}</Badge>
-            <Badge tone={detailVisible ? "jade" : "default"}>{detailVisible ? "对 AI 可见" : "对 AI 隐藏"}</Badge>
-            {detailRevealAt !== null ? <Badge tone="gold">第 {detailRevealAt} 章起可见</Badge> : null}
-          </div>
-
-          {detailFields.length === 0 ? (
-            <p className="text-[12px] text-ink-3">这条设定还没有补充细节，点下方「编辑」补充。</p>
-          ) : (
-            <dl className="grid grid-cols-[82px_minmax(0,1fr)] gap-x-3 gap-y-2">
-              {detailFields.map((row) => (
-                <React.Fragment key={row.label}>
-                  <dt className="pt-[1px] text-[11px] leading-relaxed text-ink-3">{row.label}</dt>
-                  <dd className="whitespace-pre-wrap break-words text-[12.5px] leading-relaxed text-ink-2">{row.value}</dd>
-                </React.Fragment>
-              ))}
-            </dl>
-          )}
-        </div>
-      </Sheet>
-
-      {/* 三类编辑器：复用设定集的同一套 Sheet（新建入口不在此处） */}
       <CharacterEditor
         open={editing?.kind === "character"}
         novelId={novelId}
@@ -361,7 +299,7 @@ export function CodexPanel({ novelId }: CodexPanelProps) {
         onDeleted={handleDeleted}
       />
       <WorldEditor
-        open={editing?.kind === "world"}
+        open={creatingWorld || editing?.kind === "world"}
         novelId={novelId}
         setting={editing?.kind === "world" ? editing.data : null}
         settings={world}
