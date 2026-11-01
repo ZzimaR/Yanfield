@@ -228,12 +228,13 @@ export const BUILTIN_PRESETS: BuiltinPresetDef[] = [
   base(
     "world-card",
     "设定卡补全",
-    `你是设定编辑。作者会给你一个初步想法，或设定里已经写下的草稿，请把它写成能直接放进设定的内容。
+    `你是设定编辑。只完善作者正在编辑的这一条设定。
 规则：
-- 保留作者已经写出的关键想法，只做完善和写具体，不要换成另一套设定。
-- 写清规则、限制、代价、例外；没有依据的地方写「待确认」，不要编造新体系。
-- 若任务指定了某一个字段（如摘要、正文），只输出该字段的成稿，不要输出整张卡，不要加标题和解释。
-- 若任务是补全整条设定，再用 Markdown 分出摘要和正文。`,
+- 保留作者已经写出的事实，不要换成另一套设定，也不要把别的地点、城、人展开进这张卡。
+- 不要向作者提问，不要列「待确认」清单。没写的人名、制度、距离，沿用作者的说法留在正文里。
+- 若任务指定了某一个字段，只输出该字段的成稿，不要标题，不要提问。
+- 若任务是补全当前卡片，只输出 JSON：{"summary":"一两句","content":"这张卡自己的正文"}。不要 Markdown 标题。
+- 若任务是衍生相关设定，只输出 JSON：{"items":[{"title":"","category":"geography|faction|item|rule|history|power|custom","summary":"","content":"","relation":"位于|属于|相邻|相关"}]}。每条只写自己，relation 用短词。`,
     `【作者任务】
 {{message}}
 
@@ -678,7 +679,7 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
     kind: "openai",
     baseUrl: "https://api.openai.com/v1",
     keyUrl: "https://platform.openai.com/api-keys",
-    envKeys: ["OPENAI_API_KEY", "YANTIAN_OPENAI_API_KEY"],
+    envKeys: ["OPENAI_API_KEY", "YANFIELD_OPENAI_API_KEY"],
     models: [
       { id: "gpt-4o", label: "GPT-4o（全能，推荐）", contextWindow: 128000 },
       { id: "gpt-4o-mini", label: "GPT-4o mini（快、便宜）", contextWindow: 128000 },
@@ -805,7 +806,7 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
     kind: "ollama",
     baseUrl: "http://127.0.0.1:11434/v1",
     keyUrl: "https://ollama.com/download",
-    envKeys: ["OLLAMA_BASE_URL", "YANTIAN_OLLAMA_BASE_URL"],
+    envKeys: ["OLLAMA_BASE_URL", "YANFIELD_OLLAMA_BASE_URL"],
     models: [
       { id: "qwen2.5:7b", label: "Qwen2.5 7B（中文写作，8GB 内存可跑）", contextWindow: 32768 },
       { id: "qwen2.5:14b", label: "Qwen2.5 14B（更好，16GB 内存）", contextWindow: 32768 },

@@ -10,7 +10,7 @@
 ## 1. 技术栈与命令
 
 - Next.js 15 App Router + React 19 + TypeScript strict + Tailwind v4 + Tiptap 3 + `node:sqlite`（Node ≥ 22.13 内置，无需实验标志，零原生依赖）
-- 目录：`<repository-root>`（仓库根，即工作区根目录）。数据文件：`data/yantian.db`（自动创建；可用 `YANTIAN_DB_PATH` 覆盖）
+- 目录：`<repository-root>`（仓库根，即工作区根目录）。数据文件：`data/yanfield.db`（自动创建；可用 `YANFIELD_DB_PATH` 覆盖）
 - 包管理：**必须**用 `& 'C:\Program Files\nodejs\node.exe' 'pnpm' ...`
 - 开发服务器：**Lead 统一启动**（端口 3000），其他人不要 `pnpm dev`。验证页面用 `curl http://127.0.0.1:3000/...`。
 - 自检：`& node pnpm.mjs exec tsc --noEmit`（只查自己改动相关错误）；禁止跑 `next build` / 大规模格式化。**不要执行 git commit**（Lead 统一提交）。
@@ -229,7 +229,7 @@ Markdown({ text, className? })   // 安全轻量 markdown 渲染（AI 消息用�
 3. 每个页面/组件写完自测：`curl` 页面 200、`tsc --noEmit` 无新错误、点击主要交互（用静态分析或请求验证）。
 4. 卡住 ≥10 分钟立即发消息，不要硬扛。
 5. 不要安装新依赖（要装找 Lead）；不要改 `package.json`。
-6. 不要动 `data/yantian.db` 的内容结构；不要删除他人文件。
+6. 不要动 `data/yanfield.db` 的内容结构；不要删除他人文件。
 7. 不要执行 `git` 写操作（commit/checkout/reset）。
 
 ## 8. 当前版本（v0.1.0）已落地的契约补充
@@ -291,7 +291,7 @@ export function getProviderPreset(key: string): ProviderPreset | undefined;
 
 | key | 名称 | kind | 默认 baseUrl | 代表模型（contextWindow） | envKeys |
 |---|---|---|---|---|---|
-| `openai` | OpenAI | openai | `https://api.openai.com/v1` | gpt-4o 128K / gpt-4.1 1M / o4-mini 200K | `OPENAI_API_KEY` `YANTIAN_OPENAI_API_KEY` |
+| `openai` | OpenAI | openai | `https://api.openai.com/v1` | gpt-4o 128K / gpt-4.1 1M / o4-mini 200K | `OPENAI_API_KEY` `YANFIELD_OPENAI_API_KEY` |
 | `deepseek` | DeepSeek | openai | `https://api.deepseek.com/v1` | deepseek-chat / deepseek-reasoner（64K） | `DEEPSEEK_API_KEY` |
 | `dashscope` | 通义千问 | openai | `https://dashscope.aliyuncs.com/compatible-mode/v1` | qwen-plus 128K / qwen-long 10M | `DASHSCOPE_API_KEY` `QWEN_API_KEY` |
 | `moonshot` | Moonshot / Kimi | openai | `https://api.moonshot.cn/v1` | moonshot-v1-128k / kimi-latest | `MOONSHOT_API_KEY` `KIMI_API_KEY` |
@@ -300,7 +300,7 @@ export function getProviderPreset(key: string): ProviderPreset | undefined;
 | `gemini` | Google Gemini | gemini | `https://generativelanguage.googleapis.com` | gemini-2.5-pro / flash（1M） | `GEMINI_API_KEY` `GOOGLE_API_KEY` |
 | `openrouter` | OpenRouter | openai | `https://openrouter.ai/api/v1` | openai/gpt-4o-mini、deepseek/deepseek-chat 等 | `OPENROUTER_API_KEY` |
 | `siliconflow` | 硅基流动 | openai | `https://api.siliconflow.cn/v1` | deepseek-ai/DeepSeek-V3、Qwen2.5 等 | `SILICONFLOW_API_KEY` |
-| `ollama` | Ollama（本地） | ollama | `http://127.0.0.1:11434/v1` | qwen2.5:7b / 14b、llama3.1:8b、deepseek-r1:7b | `OLLAMA_BASE_URL` `YANTIAN_OLLAMA_BASE_URL` |
+| `ollama` | Ollama（本地） | ollama | `http://127.0.0.1:11434/v1` | qwen2.5:7b / 14b、llama3.1:8b、deepseek-r1:7b | `OLLAMA_BASE_URL` `YANFIELD_OLLAMA_BASE_URL` |
 | `custom` | 自定义（OpenAI 兼容） | openai | （空串，用户填） | 用户自填 | — |
 
 - 设置页「添加模型服务」直接消费预设：**选品牌 → 自动带出 baseUrl / 协议 / 推荐模型 → 粘贴 Key → 测试连接**。新增一个品牌只需往 `PROVIDER_PRESETS` 加数据，**不用改 UI**。
@@ -313,8 +313,8 @@ export function getProviderPreset(key: string): ProviderPreset | undefined;
 - **顺序**：`deepseek → openai → dashscope → moonshot → zhipu → anthropic → gemini → openrouter → siliconflow`；每个品牌按 `envKeys` 顺序取第一个非空值。
 - **跳过规则**：已存在**同名** Provider（`provider.name === preset.name`）跳过，所以手工配置过的不会被覆盖；Ollama 额外按 `kind === "ollama"` 判重；自定义兼容按 `baseUrl` 判重。
 - **特殊变量**：
-  - `YANTIAN_OPENAI_COMPAT_BASE_URL` + `YANTIAN_OPENAI_COMPAT_API_KEY` + `YANTIAN_OPENAI_COMPAT_MODEL` → 创建「自定义（OpenAI 兼容）」；`_MODEL` 为空时默认 `gpt-4o-mini`（需用户改成实际模型）。
-  - `OLLAMA_BASE_URL` / `YANTIAN_OLLAMA_BASE_URL` → 创建 kind `ollama` 的 Provider，免 Key。
+  - `YANFIELD_OPENAI_COMPAT_BASE_URL` + `YANFIELD_OPENAI_COMPAT_API_KEY` + `YANFIELD_OPENAI_COMPAT_MODEL` → 创建「自定义（OpenAI 兼容）」；`_MODEL` 为空时默认 `gpt-4o-mini`（需用户改成实际模型）。
+  - `OLLAMA_BASE_URL` / `YANFIELD_OLLAMA_BASE_URL` → 创建 kind `ollama` 的 Provider，免 Key。
 - **默认模型切换**：仅当本次新建了 Provider、且当前 `settings.models.chat.providerId` 为空或指向 demo 时，才把 chat / prose 切到**第一个新建服务**的第一个模型；已有真实默认模型时不动。
 - **返回值**：`ProviderConfig[]`（本次新建的列表，可能为空）。启动日志与测试（`tests/seed-env.test.ts`）依赖这一语义。
 

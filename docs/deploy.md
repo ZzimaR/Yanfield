@@ -1,6 +1,6 @@
 # 部署指南
 
-砚田是一个**单进程 + 单文件数据库**的应用：一个 Node 进程，一个 SQLite 文件（`data/yantian.db`）。没有 Redis、MongoDB、消息队列，也没有账号系统。因此部署可以非常轻——本机双击运行、Docker 一个容器、或 VPS 上一个 systemd 服务都行。
+砚田是一个**单进程 + 单文件数据库**的应用：一个 Node 进程，一个 SQLite 文件（`data/yanfield.db`）。没有 Redis、MongoDB、消息队列，也没有账号系统。因此部署可以非常轻——本机双击运行、Docker 一个容器、或 VPS 上一个 systemd 服务都行。
 
 > 本文面向「把它长期跑起来」的场景。只想本地写作，看 [README 的快速开始](../README.md#快速开始) 就够。
 
@@ -9,7 +9,7 @@
 | 事项 | 说明 |
 | --- | --- |
 | **没有登录鉴权** | 砚田假设使用者就是机器主人。**不要把 3000 端口直接暴露到公网**；远程访问请走 Tailscale / WireGuard / SSH 隧道，或在前面加带密码的反向代理（见下文）。 |
-| **数据只有一个文件** | `data/yantian.db`（WAL 模式，伴随 `-wal` / `-shm`）。备份 = 复制这个目录；迁移 = 拷过去。 |
+| **数据只有一个文件** | `data/yanfield.db`（WAL 模式，伴随 `-wal` / `-shm`）。备份 = 复制这个目录；迁移 = 拷过去。 |
 | **Provider Key 明文** | 密钥保存在数据库 `providers` 表里，明文。服务器只给可信用户使用。 |
 | **SSE 需要反向代理放行** | AI 输出是 Server-Sent Events；Nginx 默认缓冲会让「流式」变成「转圈很久然后一次性出现」。必须 `proxy_buffering off`。 |
 | **出网** | 进程需要访问你配置的模型服务（OpenAI/DeepSeek/…）或本机 Ollama；不需要访问砚田的任何服务器。 |
@@ -22,7 +22,7 @@
 | --- | --- |
 | `OPENAI_API_KEY` / `DEEPSEEK_API_KEY` / `DASHSCOPE_API_KEY` / `MOONSHOT_API_KEY` / `ZHIPU_API_KEY` / `ANTHROPIC_API_KEY` / `GEMINI_API_KEY` / `OPENROUTER_API_KEY` / `SILICONFLOW_API_KEY` | 按内置 11 家预设各创建一个 Provider |
 | `OLLAMA_BASE_URL` | 本地 Ollama 地址（免 Key），默认 `http://127.0.0.1:11434/v1` |
-| `YANTIAN_OPENAI_COMPAT_BASE_URL` + `_API_KEY` + `_MODEL` | 任意 OpenAI 兼容服务（vLLM / LM Studio / one-api / 自建网关） |
+| `YANFIELD_OPENAI_COMPAT_BASE_URL` + `_API_KEY` + `_MODEL` | 任意 OpenAI 兼容服务（vLLM / LM Studio / one-api / 自建网关） |
 
 规则：已有同名 Provider 会跳过（**不会覆盖**你在设置页里手改过的 baseUrl / 模型）；当前默认模型若仍是「离线演示模式」，会切到第一个创建成功的真实服务。完整模板见 [`.env.example`](../.env.example)，各服务商样例见 [ai-providers.md](./ai-providers.md)。
 
@@ -51,14 +51,14 @@ pnpm start            # 生产模式，监听 http://127.0.0.1:3000
 ```
 
 - 监听地址 / 端口：`HOSTNAME=0.0.0.0 PORT=8080 pnpm start`（bash）或 PowerShell 里先 `$env:PORT=8080`。`pnpm dev` 的端口固定为 3000。
-- 数据库位置：默认 `./data/yantian.db`；用 `YANTIAN_DB_PATH` 指定绝对路径更适合长期部署。
+- 数据库位置：默认 `./data/yanfield.db`；用 `YANFIELD_DB_PATH` 指定绝对路径更适合长期部署。
 - 升级：`git pull && pnpm install --frozen-lockfile && pnpm build`，重启进程即可（数据库自动兼容，升级前仍建议先备份）。
 
-> **Windows 构建注意**：`next build` 默认产出 Docker 用的 standalone 目录，这一步需要创建符号链接。没开「开发者模式」会报 `EPERM: operation not permitted, symlink`。此时用 `$env:YANTIAN_STANDALONE='0'; pnpm build`，再 `pnpm start` 即可（只影响 Docker 产物，不影响生产运行）。
+> **Windows 构建注意**：`next build` 默认产出 Docker 用的 standalone 目录，这一步需要创建符号链接。没开「开发者模式」会报 `EPERM: operation not permitted, symlink`。此时用 `$env:YANFIELD_STANDALONE='0'; pnpm build`，再 `pnpm start` 即可（只影响 Docker 产物，不影响生产运行）。
 
 ### 3. 自动重启
 
-Linux 用 systemd（见方式四）；Windows 可用「任务计划程序」或 [NSSM](https://nssm.cc/) 把 `pnpm start` 注册为服务；macOS 用 `launchd`。核心只有两点：工作目录指向仓库根、进程环境里带 `YANTIAN_DB_PATH`。
+Linux 用 systemd（见方式四）；Windows 可用「任务计划程序」或 [NSSM](https://nssm.cc/) 把 `pnpm start` 注册为服务；macOS 用 `launchd`。核心只有两点：工作目录指向仓库根、进程环境里带 `YANFIELD_DB_PATH`。
 
 ---
 
@@ -77,7 +77,7 @@ docker run -d \
   --restart unless-stopped \
   -p 3000:3000 \
   -v "$PWD/data:/app/data" \
-  -e YANTIAN_DB_PATH=/app/data/yantian.db \
+  -e YANFIELD_DB_PATH=/app/data/yanfield.db \
   -e NEXT_TELEMETRY_DISABLED=1 \
   --add-host=host.docker.internal:host-gateway \
   yantian:latest
@@ -128,7 +128,7 @@ Compose 文件的默认行为：
 | 项 | 值 |
 | --- | --- |
 | 端口 | 宿主机 `3000` → 容器 `3000` |
-| 数据 | `./data` 绑定挂载到 `/app/data`（`YANTIAN_DB_PATH=/app/data/yantian.db`） |
+| 数据 | `./data` 绑定挂载到 `/app/data`（`YANFIELD_DB_PATH=/app/data/yanfield.db`） |
 | 环境 | `env_file: .env`（可选，缺失也能启动）+ `NEXT_TELEMETRY_DISABLED=1` |
 | 重启 | `restart: unless-stopped` |
 | 日志 | json-file，10 MB × 3 轮转 |
@@ -177,7 +177,7 @@ journalctl -u yantian -f
 
 - 以 `yantian` 用户运行，工作目录 `/opt/yantian`；
 - `HOSTNAME=127.0.0.1`（只监听本机，由反向代理对外）；
-- `YANTIAN_DB_PATH=/opt/yantian/data/yantian.db`；
+- `YANFIELD_DB_PATH=/opt/yantian/data/yanfield.db`；
 - `ExecStart=/opt/yantian/node_modules/.bin/next start -p 3000`；
 - 失败自动重启，并带 `ProtectSystem=strict` 等加固（只允许写 `data/`）。
 
@@ -280,7 +280,7 @@ novel.example.com {
 
 ### 备份
 
-`data/yantian.db` 是 SQLite（WAL 模式）。最稳的做法是**停服后复制整个目录**：
+`data/yanfield.db` 是 SQLite（WAL 模式）。最稳的做法是**停服后复制整个目录**：
 
 ```bash
 # Linux / macOS
@@ -297,7 +297,7 @@ Copy-Item -Recurse data "backup-data-$(Get-Date -Format yyyyMMdd)"
 不想停服时，用 SQLite 的在线备份（幂等、可脚本化）：
 
 ```bash
-sqlite3 /opt/yantian/data/yantian.db ".backup '/backup/yantian-$(date +%Y%m%d).db'"
+sqlite3 /opt/yantian/data/yanfield.db ".backup '/backup/yanfield-$(date +%Y%m%d).db'"
 ```
 
 Docker Compose 部署同理：备份宿主机的 `./data` 目录即可。
@@ -311,7 +311,7 @@ sudo chown -R yantian:yantian /opt/yantian/data
 sudo systemctl start yantian
 ```
 
-迁移到新机器：停服 → 复制 `data/` → 新机器放同一位置（或改 `YANTIAN_DB_PATH`）→ 启动。
+迁移到新机器：停服 → 复制 `data/` → 新机器放同一位置（或改 `YANFIELD_DB_PATH`）→ 启动。
 
 > 升级大版本前建议同时保留一份**导出**（设置 → 数据 → 导出 Markdown/TXT），数据库备份之外多一层保险。
 

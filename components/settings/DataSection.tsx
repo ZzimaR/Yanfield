@@ -149,10 +149,10 @@ export function DataSection() {
 
   const copyBackupPath = async () => {
     try {
-      await navigator.clipboard.writeText("data/yantian.db");
-      toast({ title: "已复制", description: "复制 data/yantian.db 即完成整库备份", tone: "success" });
+      await navigator.clipboard.writeText("data/yanfield.db");
+      toast({ title: "已复制", description: "复制 data/yanfield.db 即完成整库备份", tone: "success" });
     } catch {
-      toast({ title: "复制失败", description: "请手动复制 data/yantian.db", tone: "error" });
+      toast({ title: "复制失败", description: "请手动复制 data/yanfield.db", tone: "error" });
     }
   };
 
@@ -171,8 +171,8 @@ export function DataSection() {
           本地备份
         </h3>
         <p className="mt-1.5 text-[12px] leading-6 text-ink-2">
-          所有作品保存在项目下的 SQLite 文件里：<code className="rounded-sm bg-surface-2 px-1.5 py-0.5 font-mono text-[11px]">data/yantian.db</code>。
-          复制这个文件就是完整备份；也可用环境变量 <code className="font-mono text-[11px]">YANTIAN_DB_PATH</code> 指定其他位置。
+          所有作品保存在项目下的 SQLite 文件里：<code className="rounded-sm bg-surface-2 px-1.5 py-0.5 font-mono text-[11px]">data/yanfield.db</code>。
+          复制这个文件就是完整备份；也可用环境变量 <code className="font-mono text-[11px]">YANFIELD_DB_PATH</code> 指定其他位置。
         </p>
         <div className="mt-2.5 flex flex-wrap gap-2">
           <Button variant="secondary" size="sm" icon={<Download className="size-3.5" />} onClick={() => void copyBackupPath()}>

@@ -35,7 +35,7 @@
 │                              → lib/ai/provider → 上游 API      │
 └───────────────┬──────────────────────────────┬─────────────────┘
                 │                              │
-        data/yantian.db                 用户配置的模型服务
+        data/yanfield.db                 用户配置的模型服务
         （node:sqlite，WAL）           （OpenAI / Anthropic / Gemini / Ollama…）
 ```
 
@@ -87,7 +87,7 @@ docker-compose.yml .env.example
 
 ## 数据模型
 
-数据库文件默认 `data/yantian.db`（`YANTIAN_DB_PATH` 可覆盖）。启用 `WAL` 与 `foreign_keys`，JSON 字段以 TEXT 存储、在 `lib/repo.ts` 边界解析。所有表主键为字符串 ID（`uid("nov")` 形式），时间为 ISO 8601 字符串。
+数据库文件默认 `data/yanfield.db`（`YANFIELD_DB_PATH` 可覆盖）。启用 `WAL` 与 `foreign_keys`，JSON 字段以 TEXT 存储、在 `lib/repo.ts` 边界解析。所有表主键为字符串 ID（`uid("nov")` 形式），时间为 ISO 8601 字符串。
 
 | 表 | 作用 | 关键字段 / 关系 |
 | --- | --- | --- |
@@ -111,7 +111,7 @@ docker-compose.yml .env.example
 
 关系上只有两条强约束：**作品 → 卷 → 章**、**会话 → 消息**，其余资料通过 `novelId` / `chapterId` 软关联，删作品时由 `ON DELETE CASCADE` 清理。
 
-**种子数据与重置**：`lib/seed.ts` 的 `ensureReady()` 在服务端首次触达数据库时执行，幂等写入内置提示词预设、默认设置、演示 Provider（`yantian-demo` / `yantian-demo-prose`），并在库中没有任何作品时写入示例作品《潮信》。随后 `ensureEnvProviders()` 读取环境变量（`*_API_KEY`、`OLLAMA_BASE_URL`、`YANTIAN_OPENAI_COMPAT_*`），按 `lib/defaults.ts` 的 `PROVIDER_PRESETS`（11 家服务商预设：OpenAI / DeepSeek / 通义千问 / Moonshot / 智谱 / Anthropic / Gemini / OpenRouter / 硅基流动 / Ollama / 自定义兼容）自动创建 Provider；同名 Provider 已存在则跳过，不覆盖手改配置，若默认模型仍指向演示服务则切到第一个创建成功的真实模型。`pnpm db:seed`（`scripts/seed.mjs`）**不是删库**：它只删除示例作品（按 `author = 砚田示例`，或旧标题《长夜行》、现标题《潮信》定位，子表由外键级联清理）和内置预设（`is_builtin = 1`），保留用户自建的作品、Provider 与设置，下次启动自动重建。设置 → 数据里的「重新生成示例作品」走的是 `POST /api/demo`，只新增一部示例作品，不删除任何已有内容。
+**种子数据与重置**：`lib/seed.ts` 的 `ensureReady()` 在服务端首次触达数据库时执行，幂等写入内置提示词预设、默认设置、演示 Provider（`yanfield-demo` / `yanfield-demo-prose`），并在库中没有任何作品时写入示例作品《潮信》。随后 `ensureEnvProviders()` 读取环境变量（`*_API_KEY`、`OLLAMA_BASE_URL`、`YANFIELD_OPENAI_COMPAT_*`），按 `lib/defaults.ts` 的 `PROVIDER_PRESETS`（11 家服务商预设：OpenAI / DeepSeek / 通义千问 / Moonshot / 智谱 / Anthropic / Gemini / OpenRouter / 硅基流动 / Ollama / 自定义兼容）自动创建 Provider；同名 Provider 已存在则跳过，不覆盖手改配置，若默认模型仍指向演示服务则切到第一个创建成功的真实模型。`pnpm db:seed`（`scripts/seed.mjs`）**不是删库**：它只删除示例作品（按 `author = 砚田示例`，或旧标题《长夜行》、现标题《潮信》定位，子表由外键级联清理）和内置预设（`is_builtin = 1`），保留用户自建的作品、Provider 与设置，下次启动自动重建。设置 → 数据里的「重新生成示例作品」走的是 `POST /api/demo`，只新增一部示例作品，不删除任何已有内容。
 
 ## REST 与 SSE
 

@@ -34,7 +34,7 @@ pnpm dev
 
 砚田的取舍是**本地优先**：
 
-- 书稿、设定、AI 对话都存本地 SQLite（`data/yantian.db`），不依赖任何云端账号；
+- 书稿、设定、AI 对话都存本地 SQLite（`data/yanfield.db`），不依赖任何云端账号；
 - 不绑定模型厂商，OpenAI 兼容 / Anthropic / Gemini / Ollama 都能接，对话和写作共用一个默认模型，随时可换；
 - 上下文装配是可见、可调的——你决定哪些设定让 AI 看见、花多少 token；
 - AI 对正文的改动一律先出**逐块 diff**，接受哪块、拒绝哪块由你决定。
@@ -74,7 +74,7 @@ pnpm build
 pnpm start
 ```
 
-Windows 上如果没有符号链接权限，构建时设置 `YANTIAN_STANDALONE=0`（或使用 Docker）。systemd / VPS / 反向代理 / 备份恢复等完整说明见 [docs/deploy.md](docs/deploy.md)。
+Windows 上如果没有符号链接权限，构建时设置 `YANFIELD_STANDALONE=0`（或使用 Docker）。systemd / VPS / 反向代理 / 备份恢复等完整说明见 [docs/deploy.md](docs/deploy.md)。
 
 ## 项目结构
 

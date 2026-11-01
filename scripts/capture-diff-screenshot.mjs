@@ -34,7 +34,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 function parseArgs(argv) {
   const options = {
-    base: process.env.YANTIAN_URL || "http://127.0.0.1:3000",
+    base: process.env.YANFIELD_URL || "http://127.0.0.1:3000",
     out: path.join(ROOT, "docs", "screenshots", "04-ai-diff.png"),
     browser: "",
     novel: "",
@@ -91,7 +91,7 @@ function parseArgs(argv) {
 function detectBrowser(explicit) {
   const candidates = [
     explicit,
-    process.env.YANTIAN_BROWSER,
+    process.env.YANFIELD_BROWSER,
     "C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe",
     "C:\\Program Files\\Microsoft\\Edge\\Application\\msedge.exe",
     "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe",

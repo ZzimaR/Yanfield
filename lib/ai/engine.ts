@@ -83,7 +83,7 @@ export function resolveTarget(role: "chat" | "prose"): ResolvedTarget {
 
   const modelIds = provider.models.map((item) => item.id);
   let model = wanted.model && modelIds.includes(wanted.model) ? wanted.model : "";
-  if (!model) model = modelIds[0] ?? (provider.kind === "demo" ? "yantian-demo" : "");
+  if (!model) model = modelIds[0] ?? (provider.kind === "demo" ? "yanfield-demo" : "");
   if (!model) throw new ApiError(`Provider「${provider.name}」还没有配置模型。`, 400);
   return { provider, model, role };
 }

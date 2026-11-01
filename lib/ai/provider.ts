@@ -422,9 +422,43 @@ function demoChat(messages: AiMessage[]): string {
   ].join("\n");
 }
 
+function demoCardFill(user: string): string {
+  const title = user.match(/标题：\s*\n?([^\n]+)/)?.[1]?.trim() || "这条设定";
+  const summary = user.match(/摘要：\s*\n?([^\n]+)/)?.[1]?.trim();
+  return JSON.stringify({
+    summary: summary || `${title}只写它自己的事实。`,
+    content: `${title}只属于这张卡。不向作者提问，也不把其他地点展开成完整条目。`,
+  });
+}
+
+function demoDerived(user: string): string {
+  const title = user.match(/当前设定：([^\n（(]{1,24})/)?.[1]?.trim() || "此地";
+  return JSON.stringify({
+    items: [
+      {
+        title: `${title}城`,
+        category: "geography",
+        summary: `${title}的治所，在其境内。`,
+        content: `城池位于${title}境内。`,
+        relation: "位于",
+      },
+      {
+        title: `${title}邻境`,
+        category: "geography",
+        summary: `与${title}接壤，并不隶属。`,
+        content: `边界相连，各有管辖。`,
+        relation: "相邻",
+      },
+    ],
+  });
+}
+
 function demoCompletion(messages: AiMessage[]): string {
   const system = messages.filter((m) => m.role === "system").map((m) => m.content).join("\n");
-  if (/只输出 JSON|严格 JSON|返回 JSON|JSON Schema/i.test(system)) {
+  const user = messages.filter((m) => m.role === "user").map((m) => m.content).join("\n");
+  if (user.includes("这是衍生相关设定")) return demoDerived(user);
+  if (user.includes("这是补全当前卡片")) return demoCardFill(user);
+  if (/故事档案员/.test(system) && /只输出 JSON|严格 JSON|返回 JSON|JSON Schema/i.test(system)) {
     return JSON.stringify({
       chapterSummary: "本章推进了主线冲突，主角获得了新的线索，但也付出了代价。",
       characterStates: [{ name: "主角", state: "处于追踪与犹豫之间", changes: "主动迈出一步" }],
@@ -529,8 +563,8 @@ export async function listProviderModels(
     return {
       endpoint: "demo",
       models: [
-        { id: "yantian-demo", label: "砚田演示模型（离线，无需 Key）", contextWindow: 32000 },
-        { id: "yantian-demo-prose", label: "砚田演示模型 · 正文", contextWindow: 32000 },
+        { id: "yanfield-demo", label: "砚田演示模型（离线，无需 Key）", contextWindow: 32000 },
+        { id: "yanfield-demo-prose", label: "砚田演示模型 · 正文", contextWindow: 32000 },
       ],
     };
   }

@@ -39,7 +39,7 @@ const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 function parseArgs(argv) {
   const options = {
-    base: process.env.YANTIAN_URL || "http://127.0.0.1:3000",
+    base: process.env.YANFIELD_URL || "http://127.0.0.1:3000",
     out: path.join(ROOT, "docs", "screenshots"),
     chrome: "",
     width: 1440,

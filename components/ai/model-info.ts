@@ -89,7 +89,7 @@ export function describeModelTarget(
 
   const configured = setting.model ? provider.models.find((model) => model.id === setting.model) : undefined;
   const fallback: ModelOption | undefined =
-    provider.models[0] ?? (provider.kind === "demo" ? { id: "yantian-demo", label: "离线演示模型" } : undefined);
+    provider.models[0] ?? (provider.kind === "demo" ? { id: "yanfield-demo", label: "离线演示模型" } : undefined);
   const chosen = configured ?? fallback;
 
   if (!chosen) {

@@ -30,9 +30,9 @@ ENV NODE_ENV=production \
     NEXT_TELEMETRY_DISABLED=1 \
     PORT=3000 \
     HOSTNAME=0.0.0.0
-# 数据库位置：默认 cwd/data/yantian.db → /app/data/yantian.db
-# 想换位置可在运行时覆盖，例如 -e YANTIAN_DB_PATH=/app/data/novels.db
-ENV YANTIAN_DB_PATH=/app/data/yantian.db
+# 数据库位置：默认 cwd/data/yanfield.db → /app/data/yanfield.db
+# 想换位置可在运行时覆盖，例如 -e YANFIELD_DB_PATH=/app/data/novels.db
+ENV YANFIELD_DB_PATH=/app/data/yanfield.db
 
 # 非 root 运行
 RUN addgroup -g 1001 -S nodejs \

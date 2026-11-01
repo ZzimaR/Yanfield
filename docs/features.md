@@ -137,7 +137,7 @@
 - 五类连接：OpenAI 兼容、Anthropic、Gemini、Ollama（本地）、离线演示模式。
 - 单一默认模型：对话与所有写作任务都用同一个模型，可在设置悬浮窗或 AI 面板随时切换；不强制区分对话 / 正文模型。
 - 按 API Key 从服务商拉取真实模型列表（OpenAI 兼容 / Anthropic / Gemini / Ollama），也可以手动添加任意模型 id；预设模型仅作推荐兜底。
-- 环境变量自动建 Provider：`*_API_KEY` / `OLLAMA_BASE_URL` / `YANTIAN_OPENAI_COMPAT_*` 首启自动创建，已有同名跳过、不覆盖手改配置。
+- 环境变量自动建 Provider：`*_API_KEY` / `OLLAMA_BASE_URL` / `YANFIELD_OPENAI_COMPAT_*` 首启自动创建，已有同名跳过、不覆盖手改配置。
 - 「测试连接」显示耗时与返回片段；密钥在列表中掩码显示（`sk-****abcd`）；模型列表显示上下文窗口，方便设置上下文预算。
 
 ## 设置
@@ -153,7 +153,7 @@
 
 ## 数据
 
-- **存储**：`data/yantian.db`（可用 `YANTIAN_DB_PATH` 改位置），WAL 模式；备份就是复制这一个文件（连同 `-wal` / `-shm` 一起复制，或先停服）。
+- **存储**：`data/yanfield.db`（可用 `YANFIELD_DB_PATH` 改位置），WAL 模式；备份就是复制这一个文件（连同 `-wal` / `-shm` 一起复制，或先停服）。
 - **导出**：按章 / 按卷 / 按全书导出 Markdown 或 TXT。
 - **导入**：上传 TXT，可用正则识别章节标题，预览拆章结果后批量导入为卷章。
 - **封面**：书架和作品概览用渐变底色。在「编辑信息」或新建作品里可选预置色，也可以自定义起始色和结束色。

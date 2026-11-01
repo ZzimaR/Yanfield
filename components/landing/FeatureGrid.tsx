@@ -65,7 +65,7 @@ const FEATURES: Feature[] = [
     icon: Database,
     title: "本地 SQLite 零部署",
     description: "没有 Mongo、没有 Redis、没有中间件。数据是一个文件，复制、迁移、备份都由你说了算。",
-    hint: "data/yantian.db",
+    hint: "data/yanfield.db",
   },
 ];
 

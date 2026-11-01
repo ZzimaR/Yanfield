@@ -39,7 +39,7 @@ Environment=PORT=3000
 # 默认只监听本机；对外提供服务请在前面放反向代理（Nginx/Caddy），
 # 不要直接把 3000 端口裸奔到公网（砚田没有登录鉴权）。
 Environment=HOSTNAME=127.0.0.1
-Environment=YANTIAN_DB_PATH=/opt/yantian/data/yantian.db
+Environment=YANFIELD_DB_PATH=/opt/yantian/data/yanfield.db
 Environment=NEXT_TELEMETRY_DISABLED=1
 Environment=PATH=/usr/local/bin:/usr/bin:/bin
 

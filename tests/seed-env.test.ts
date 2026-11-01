@@ -19,7 +19,7 @@ describe("环境变量自动接入模型服务", () => {
   let repo: RepoModule;
 
   beforeAll(async () => {
-    process.env.YANTIAN_DB_PATH = dbPath;
+    process.env.YANFIELD_DB_PATH = dbPath;
     process.env.DEEPSEEK_API_KEY = "sk-test-deepseek";
     for (const key of ["OPENAI_API_KEY", "ANTHROPIC_API_KEY", "DASHSCOPE_API_KEY", "MOONSHOT_API_KEY"]) {
       delete process.env[key];
@@ -36,7 +36,7 @@ describe("环境变量自动接入模型服务", () => {
     } catch {
       /* 关不掉也不影响测试结果 */
     }
-    delete process.env.YANTIAN_DB_PATH;
+    delete process.env.YANFIELD_DB_PATH;
     delete process.env.DEEPSEEK_API_KEY;
     try {
       rmSync(dir, { recursive: true, force: true });

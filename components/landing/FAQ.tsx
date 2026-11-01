@@ -13,7 +13,7 @@ const FAQS = [
   },
   {
     q: "我的书稿数据在哪？怎么备份？",
-    a: "全部在本地：默认是项目下的 SQLite 文件（data/yantian.db），复制这个文件就是完整备份。也可以把单本书导出为 Markdown / TXT，或直接对整个数据目录做 git 版本管理。",
+    a: "全部在本地：默认是项目下的 SQLite 文件（data/yanfield.db），复制这个文件就是完整备份。也可以把单本书导出为 Markdown / TXT，或直接对整个数据目录做 git 版本管理。",
   },
   {
     q: "能导入已有的 TXT 小说吗？",

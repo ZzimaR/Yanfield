@@ -16,13 +16,13 @@
 
 全部存在本机：
 
-- 数据库：`data/yantian.db`（一个 SQLite 文件，可用 `YANTIAN_DB_PATH` 改位置）。
+- 数据库：`data/yanfield.db`（一个 SQLite 文件，可用 `YANFIELD_DB_PATH` 改位置）。
 - 密钥：同一数据库的 `providers` 表，**明文存储**（本地应用常见做法）。请不要把这个文件发给别人，也不要把整个项目目录传到公开仓库。
 - 砚田没有任何遥测、统计或云同步；请求只会发往你配置的模型服务。模型服务是否记录你的内容，取决于厂商的隐私政策。
 
 ## 4. 怎么备份和迁移？换电脑怎么办？
 
-停掉砚田，复制 `data/` 目录（`yantian.db`，以及可能存在的 `yantian.db-wal` / `yantian.db-shm`）到新机器同一路径，再启动即可。也可以用「设置 → 数据 → 导出」把书稿导成 Markdown/TXT 长期归档。SQLite 文件可以随时用 `sqlite3` 等工具打开检查，不怕「被平台锁住」。
+停掉砚田，复制 `data/` 目录（`yanfield.db`，以及可能存在的 `yanfield.db-wal` / `yanfield.db-shm`）到新机器同一路径，再启动即可。也可以用「设置 → 数据 → 导出」把书稿导成 Markdown/TXT 长期归档。SQLite 文件可以随时用 `sqlite3` 等工具打开检查，不怕「被平台锁住」。
 
 ## 5. 能接哪些大模型？没有 API Key 能玩吗？
 

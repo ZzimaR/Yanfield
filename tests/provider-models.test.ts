@@ -46,7 +46,7 @@ describe("listProviderModels", () => {
   it("demo 返回内置模型且不发请求", async () => {
     const result = await listProviderModels(provider("demo", ""));
     expect(result.endpoint).toBe("demo");
-    expect(result.models.map((m) => m.id)).toEqual(["yantian-demo", "yantian-demo-prose"]);
+    expect(result.models.map((m) => m.id)).toEqual(["yanfield-demo", "yanfield-demo-prose"]);
   });
 
   it("OpenAI 兼容：GET /v1/models 解析 data[].id 并去重", async () => {

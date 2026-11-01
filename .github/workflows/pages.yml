@@ -37,9 +37,9 @@ jobs:
       - name: 导出静态页
         run: pnpm build
         env:
-          YANTIAN_PAGES: "1"
+          YANFIELD_PAGES: "1"
           NEXT_PUBLIC_PUBLIC_SITE: "1"
-          YANTIAN_STANDALONE: "0"
+          YANFIELD_STANDALONE: "0"
       - run: echo yanfield.com > out/CNAME
       - uses: actions/upload-pages-artifact@v3
         with:

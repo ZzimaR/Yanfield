@@ -4,7 +4,7 @@ import path from "node:path";
 
 /**
  * SQLite 访问层（使用 Node 内置 node:sqlite，零原生依赖）
- * - 数据库文件默认在 <cwd>/data/yantian.db，可用 YANTIAN_DB_PATH 覆盖
+ * - 数据库文件默认在 <cwd>/data/yanfield.db，可用 YANFIELD_DB_PATH 覆盖
  * - 单例 + WAL + 外键约束
  */
 
@@ -275,9 +275,9 @@ export type DB = DatabaseSync;
 let dbInstance: DB | null = null;
 
 function resolveDbPath(): string {
-  const custom = process.env.YANTIAN_DB_PATH;
+  const custom = process.env.YANFIELD_DB_PATH;
   if (custom) return custom;
-  return path.join(process.cwd(), "data", "yantian.db");
+  return path.join(process.cwd(), "data", "yanfield.db");
 }
 
 export function getDb(): DB {

@@ -2,7 +2,7 @@
 
 砚田不绑定任何模型厂商。设置页里新增一个 Provider，选择类型、填 `baseUrl`、密钥与模型名，即可在对话和写作里使用。
 
-> 配置入口：点左下角齿轮（或书架 / 编辑器里的设置入口）打开**设置悬浮窗** → **模型服务 → 新增服务**。密钥只保存在你本机的 `data/yantian.db`，不上传任何服务器；但它是**明文存储**的，不要把数据库文件分享给别人。
+> 配置入口：点左下角齿轮（或书架 / 编辑器里的设置入口）打开**设置悬浮窗** → **模型服务 → 新增服务**。密钥只保存在你本机的 `data/yanfield.db`，不上传任何服务器；但它是**明文存储**的，不要把数据库文件分享给别人。
 
 ## 一步接入：内置 11 家服务商预设
 
@@ -20,7 +20,7 @@
 | OpenRouter | OpenAI 兼容 | `https://openrouter.ai/api/v1` | 任一上游模型（如 `deepseek/deepseek-chat`） | `OPENROUTER_API_KEY` |
 | 硅基流动 | OpenAI 兼容 | `https://api.siliconflow.cn/v1` | `deepseek-ai/DeepSeek-V3`、`Qwen/Qwen2.5-72B-Instruct` | `SILICONFLOW_API_KEY` |
 | Ollama（本地） | Ollama | `http://127.0.0.1:11434/v1` | `qwen2.5:7b`、`llama3.1:8b`、`deepseek-r1:7b` | `OLLAMA_BASE_URL` |
-| 自定义 OpenAI 兼容 | OpenAI 兼容 | 自填 | 自填（vLLM / LM Studio / one-api / 自建网关） | `YANTIAN_OPENAI_COMPAT_*` |
+| 自定义 OpenAI 兼容 | OpenAI 兼容 | 自填 | 自填（vLLM / LM Studio / one-api / 自建网关） | `YANFIELD_OPENAI_COMPAT_*` |
 
 - 预设里的每个模型都带 **contextWindow**（上下文窗口）标注，设置页会显示，用来判断上下文预算能开到多大。
 - **预设只是推荐兜底，不是真实列表**：填好 API Key 后，在「模型列表」区块点 **拉取模型列表**，砚田会带着 Key 请求服务商的 `/models` 接口，把真实可用模型拉下来覆盖推荐列表（OpenAI 兼容 / Anthropic / Gemini / Ollama 都支持）；也可以**手动添加任意模型 id**，或删除某个模型。
@@ -42,7 +42,7 @@
 | `OPENROUTER_API_KEY` | OpenRouter |
 | `SILICONFLOW_API_KEY` | 硅基流动 |
 | `OLLAMA_BASE_URL` | Ollama（免 Key） |
-| `YANTIAN_OPENAI_COMPAT_BASE_URL` + `_API_KEY` + `_MODEL` | 自定义 OpenAI 兼容（`_MODEL` 留空时默认 `gpt-4o-mini`，请改成实际模型名） |
+| `YANFIELD_OPENAI_COMPAT_BASE_URL` + `_API_KEY` + `_MODEL` | 自定义 OpenAI 兼容（`_MODEL` 留空时默认 `gpt-4o-mini`，请改成实际模型名） |
 
 完整模板见仓库根目录 [`.env.example`](../.env.example)。不填任何变量、只在设置页里配，也完全等价——环境变量只是首次启动的便捷预置。
 
@@ -197,7 +197,7 @@ AI 对话与所有写作任务（续写 / 润色 / 诊断 / 大纲 / 档案提�
 | **404 model not found** | 模型未上线/名字拼错 | 在服务商控制台复制模型 ID |
 | **429 Too Many Requests / 额度不足** | 触发限流或余额耗尽 | 降低并发、等待重试或充值；砚田会把错误原文显示在面板上 |
 | **连接超时 / `fetch failed`** | 本机网络、代理、Ollama 未启动、Docker 网络隔离 | 用 `curl` 直接请求同一地址验证；检查 `HTTP_PROXY`；Docker 里用 `host.docker.internal` |
-| **CORS 报错** | 只有「浏览器直连上游」才会遇到；砚田的请求由服务端发出，正常不会出现 | 若你把 `YANTIAN_*` 接口直接暴露给别的前端页面，需要在网关加 CORS 头 |
+| **CORS 报错** | 只有「浏览器直连上游」才会遇到；砚田的请求由服务端发出，正常不会出现 | 若你把 `YANFIELD_*` 接口直接暴露给别的前端页面，需要在网关加 CORS 头 |
 | **流式不返回 / 一直转圈** | 上游不支持 `stream: true`；反向代理缓冲了 SSE；网关把 SSE 改成了 JSON | 换支持流式的模型/服务；Nginx 加 `proxy_buffering off; proxy_cache off;`；把超时调到 10 分钟以上 |
 | **返回空内容** | 模型被内容策略拦截、`max_tokens` 太小、消息为空 | 查看 `ai_logs` 与面板错误；调大 `max_tokens`；改用非推理模型写正文 |
 | **只回思考不回正文** | 推理模型的思考落在 `reasoning` 事件里 | 展开「思考过程」；把默认模型换成非推理模型 |

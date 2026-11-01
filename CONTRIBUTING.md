@@ -37,7 +37,7 @@ pnpm install
 pnpm dev
 ```
 
-首次启动会自动创建 `data/yantian.db` 并写入示例作品《潮信》与离线演示模型。
+首次启动会自动创建 `data/yanfield.db` 并写入示例作品《潮信》与离线演示模型。
 
 > **想接真实模型**：`cp .env.example .env`，填上某个 `*_API_KEY` 后重启，首次初始化会按内置预设自动创建 Provider（也可以什么都不填，直接在「设置 → 模型服务」里加）。部署相关（Docker / Compose / systemd / 反向代理 / 备份）见 [docs/deploy.md](./docs/deploy.md)。`.env` 已在 `.gitignore` 中，不要提交。两种「重来」方式，按需要选：
 

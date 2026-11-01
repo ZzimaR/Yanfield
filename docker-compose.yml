@@ -33,7 +33,7 @@ services:
       PORT: "3000"
       HOSTNAME: "0.0.0.0"
       # 容器内的数据库位置（必须与下面的 volume 挂载点一致）
-      YANTIAN_DB_PATH: /app/data/yantian.db
+      YANFIELD_DB_PATH: /app/data/yanfield.db
 
     volumes:
       # 绑定挂载到仓库内的 data/，容器重建/升级不丢稿。

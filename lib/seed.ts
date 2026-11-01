@@ -70,15 +70,15 @@ export function ensureDemoProvider(): ProviderConfig {
     baseUrl: "",
     apiKey: "",
     models: [
-      { id: "yantian-demo", label: "砚田演示模型（离线，无需 Key）" },
-      { id: "yantian-demo-prose", label: "砚田演示模型 · 正文" },
+      { id: "yanfield-demo", label: "砚田演示模型（离线，无需 Key）" },
+      { id: "yanfield-demo-prose", label: "砚田演示模型 · 正文" },
     ],
     enabled: true,
   });
   repo.saveSettings({
     models: {
-      chat: { providerId: provider.id, model: "yantian-demo" },
-      prose: { providerId: provider.id, model: "yantian-demo-prose" },
+      chat: { providerId: provider.id, model: "yanfield-demo" },
+      prose: { providerId: provider.id, model: "yanfield-demo-prose" },
     },
   });
   return provider;
@@ -116,10 +116,10 @@ export function ensureEnvProviders(): ProviderConfig[] {
     );
   }
 
-  // 自定义 OpenAI 兼容服务：YANTIAN_OPENAI_COMPAT_BASE_URL / _API_KEY / _MODEL
-  const customBase = readEnv(["YANTIAN_OPENAI_COMPAT_BASE_URL", "OPENAI_COMPAT_BASE_URL"]);
-  const customKey = readEnv(["YANTIAN_OPENAI_COMPAT_API_KEY", "OPENAI_COMPAT_API_KEY"]);
-  const customModel = readEnv(["YANTIAN_OPENAI_COMPAT_MODEL", "OPENAI_COMPAT_MODEL"]);
+  // 自定义 OpenAI 兼容服务：YANFIELD_OPENAI_COMPAT_BASE_URL / _API_KEY / _MODEL
+  const customBase = readEnv(["YANFIELD_OPENAI_COMPAT_BASE_URL", "OPENAI_COMPAT_BASE_URL"]);
+  const customKey = readEnv(["YANFIELD_OPENAI_COMPAT_API_KEY", "OPENAI_COMPAT_API_KEY"]);
+  const customModel = readEnv(["YANFIELD_OPENAI_COMPAT_MODEL", "OPENAI_COMPAT_MODEL"]);
   if (customBase && !existing.some((provider) => provider.baseUrl === customBase)) {
     created.push(
       repo.createProvider({
@@ -136,7 +136,7 @@ export function ensureEnvProviders(): ProviderConfig[] {
   }
 
   // 本地 Ollama：只需地址，无需 Key
-  const ollamaBase = readEnv(["OLLAMA_BASE_URL", "YANTIAN_OLLAMA_BASE_URL"]);
+  const ollamaBase = readEnv(["OLLAMA_BASE_URL", "YANFIELD_OLLAMA_BASE_URL"]);
   if (ollamaBase && !existing.some((provider) => provider.kind === "ollama")) {
     const preset = getProviderPreset("ollama");
     created.push(

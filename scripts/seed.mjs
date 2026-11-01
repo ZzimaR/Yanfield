@@ -8,13 +8,13 @@
  *  3. 保留你的自建作品、自建预设、Provider 与设置。
  *
  * 之后重启 `pnpm dev`（或首次 API 请求）时，lib/seed.ts 的 ensureReady() 会重新写入示例作品。
- * 数据库路径与运行时一致：YANTIAN_DB_PATH，默认 <cwd>/data/yantian.db
+ * 数据库路径与运行时一致：YANFIELD_DB_PATH，默认 <cwd>/data/yanfield.db
  */
 import { DatabaseSync } from "node:sqlite";
 import fs from "node:fs";
 import path from "node:path";
 
-const dbPath = process.env.YANTIAN_DB_PATH ?? path.join(process.cwd(), "data", "yantian.db");
+const dbPath = process.env.YANFIELD_DB_PATH ?? path.join(process.cwd(), "data", "yanfield.db");
 
 if (!fs.existsSync(dbPath)) {
   console.log(`[seed] 数据库不存在：${dbPath}`);
