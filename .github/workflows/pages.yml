@@ -1,0 +1,48 @@
+name: 介绍页
+
+on:
+  push:
+    branches: [master]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: 只构建介绍页
+        run: |
+          mkdir -p .pages-stash
+          mv app/api app/library app/editor app/novel app/settings .pages-stash/
+      - name: 导出静态页
+        run: pnpm build
+        env:
+          YANTIAN_PAGES: "1"
+          NEXT_PUBLIC_PUBLIC_SITE: "1"
+          YANTIAN_STANDALONE: "0"
+      - run: echo yanfield.com > out/CNAME
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: out
+      - id: deployment
+        uses: actions/deploy-pages@v4

@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="32" height="32" fill="none" role="img" aria-label="砚田 Yanfield">
+  <title>砚田 Yanfield</title>
+  <rect x="1.6" y="8.1" width="28.8" height="18.2" rx="5.2" fill="#e4d7c2"/>
+  <rect x="1.6" y="6.2" width="28.8" height="18.2" rx="5.2" fill="#f6f0e4" stroke="#c4b396" stroke-width="1.15"/>
+  <ellipse cx="11.1" cy="15.2" rx="5.7" ry="4.55" fill="#1c1915"/>
+  <ellipse cx="9.5" cy="13.85" rx="2.05" ry="1.15" fill="#5c5348"/>
+  <path d="M18.4 12.1c2.5.35 5.1.42 7.6.12" stroke="#d9ccb8" stroke-width="1.15" stroke-linecap="round"/>
+  <path d="M18.6 16.55c2.7.28 5.3.3 7.5.05" stroke="#e7dccb" stroke-width="1.05" stroke-linecap="round"/>
+</svg>

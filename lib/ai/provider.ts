@@ -1,0 +1,624 @@
+/**
+ * Provider 适配层（服务端专用）
+ * 支持：OpenAI 兼容协议 / Anthropic Messages / Gemini generateContent / Ollama / 离线演示（demo）
+ * 统一输出 ProviderChunk 流，由 engine 组装成 AiStreamEvent。
+ */
+import type { ModelOption, ProviderConfig } from "@/lib/types";
+
+export class ProviderError extends Error {
+  status: number;
+  constructor(message: string, status = 500) {
+    super(message);
+    this.name = "ProviderError";
+    this.status = status;
+  }
+}
+
+export interface AiMessage {
+  role: "system" | "user" | "assistant";
+  content: string;
+}
+
+export interface CompletionRequest {
+  provider: ProviderConfig;
+  model: string;
+  messages: AiMessage[];
+  temperature?: number;
+  maxTokens?: number;
+  signal?: AbortSignal;
+}
+
+export type ProviderChunk =
+  | { type: "delta"; text: string }
+  | { type: "reasoning"; text: string }
+  | { type: "usage"; promptTokens: number; completionTokens: number }
+  | { type: "done" };
+
+const DEFAULT_BASE: Record<ProviderConfig["kind"], string> = {
+  openai: "https://api.openai.com/v1",
+  anthropic: "https://api.anthropic.com",
+  gemini: "https://generativelanguage.googleapis.com",
+  ollama: "http://127.0.0.1:11434/v1",
+  demo: "",
+};
+
+function trimUrl(url: string): string {
+  return url.trim().replace(/\/+$/, "");
+}
+
+export function resolveBaseUrl(provider: ProviderConfig): string {
+  return trimUrl(provider.baseUrl || DEFAULT_BASE[provider.kind]);
+}
+
+function joinPath(base: string, path: string): string {
+  return `${trimUrl(base)}/${path.replace(/^\/+/, "")}`;
+}
+
+function authHeaders(provider: ProviderConfig): Record<string, string> {
+  const key = provider.apiKey?.trim();
+  switch (provider.kind) {
+    case "anthropic":
+      return { "x-api-key": key ?? "", "anthropic-version": "2023-06-01", "anthropic-dangerous-direct-browser-access": "true" };
+    case "gemini":
+      return {};
+    default:
+      return key ? { Authorization: `Bearer ${key}` } : {};
+  }
+}
+
+/* ------------------------------ 工具函数 ------------------------------ */
+
+function asRecord(value: unknown): Record<string, unknown> | null {
+  return typeof value === "object" && value !== null && !Array.isArray(value) ? (value as Record<string, unknown>) : null;
+}
+
+function get(value: unknown, ...path: string[]): unknown {
+  let current: unknown = value;
+  for (const key of path) {
+    if (Array.isArray(current)) {
+      const index = Number(key);
+      current = Number.isInteger(index) ? current[index] : undefined;
+      continue;
+    }
+    const record = asRecord(current);
+    if (!record) return undefined;
+    current = record[key];
+  }
+  return current;
+}
+
+function pickString(value: unknown): string {
+  return typeof value === "string" ? value : "";
+}
+
+function pickNumber(value: unknown): number {
+  return typeof value === "number" && Number.isFinite(value) ? value : 0;
+}
+
+function safeJson(payload: string): unknown {
+  try {
+    return JSON.parse(payload) as unknown;
+  } catch {
+    return null;
+  }
+}
+
+async function safeErrorText(response: Response): Promise<string> {
+  try {
+    const text = await response.text();
+    const json = safeJson(text);
+    const message = get(json, "error", "message") ?? get(json, "message") ?? get(json, "error");
+    return pickString(message) || text.slice(0, 300) || `HTTP ${response.status}`;
+  } catch {
+    return `HTTP ${response.status}`;
+  }
+}
+
+/** 把服务商的 HTTP 错误翻译成作者能看懂的中文提示 */
+function friendlyHttpMessage(status: number, raw: string, providerName: string): string {
+  const detail = raw ? `（${raw.slice(0, 180)}）` : "";
+  if (status === 401 || status === 403) {
+    return `${providerName} 鉴权失败（HTTP ${status}）：API Key 无效、已过期或没有该模型权限。请到「设置 → 模型服务」重新检查 Key。${detail}`;
+  }
+  if (status === 404) {
+    return `${providerName} 返回 404：接口地址或模型 id 不存在。请检查 Base URL 是否以 /v1 结尾、模型 id 是否正确。${detail}`;
+  }
+  if (status === 429) {
+    return `${providerName} 触发限流或额度不足（HTTP 429）：请稍后再试、降低频率，或检查账户余额。${detail}`;
+  }
+  if (status >= 500) {
+    return `${providerName} 服务端暂时不可用（HTTP ${status}）：可以稍后重试，或换一个模型服务。${detail}`;
+  }
+  return `${providerName} 请求失败（HTTP ${status}）${detail}`;
+}
+
+async function httpError(response: Response, provider: ProviderConfig): Promise<ProviderError> {
+  const raw = await safeErrorText(response);
+  return new ProviderError(friendlyHttpMessage(response.status, raw, provider.name || provider.kind), response.status);
+}
+
+/** 统一超时：默认 3 分钟上不封顶（长篇续写可能较慢），与调用方的取消信号合并 */
+const DEFAULT_TIMEOUT_MS = 180000;
+function withTimeout(signal?: AbortSignal): AbortSignal {
+  const timeout = AbortSignal.timeout(DEFAULT_TIMEOUT_MS);
+  if (!signal) return timeout;
+  return typeof AbortSignal.any === "function" ? AbortSignal.any([signal, timeout]) : signal;
+}
+
+/** 推理型模型通常不接受 temperature / max_tokens 参数，直接省略避免 400 */
+function isReasoningModel(model: string): boolean {
+  return /^(o1|o3|o4|gpt-5|deepseek-reasoner|deepseek-r1)/i.test(model);
+}
+
+async function* readSse(response: Response): AsyncGenerator<string> {
+  const body = response.body;
+  if (!body) return;
+  const reader = body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      let newline = buffer.indexOf("\n");
+      while (newline >= 0) {
+        const line = buffer.slice(0, newline).replace(/\r$/, "");
+        buffer = buffer.slice(newline + 1);
+        if (line.startsWith("data:")) {
+          const payload = line.slice(5).trim();
+          if (payload) yield payload;
+        }
+        newline = buffer.indexOf("\n");
+      }
+    }
+    const tail = buffer.trim();
+    if (tail.startsWith("data:")) {
+      const payload = tail.slice(5).trim();
+      if (payload) yield payload;
+    }
+  } finally {
+    reader.releaseLock();
+  }
+}
+
+/* ------------------------------ OpenAI 兼容 ------------------------------ */
+
+function openAiChatUrl(provider: ProviderConfig): string {
+  const base = resolveBaseUrl(provider);
+  if (/\/chat\/completions$/.test(base)) return base;
+  if (/\/v\d+(?:beta)?$/.test(base)) return joinPath(base, "chat/completions");
+  return joinPath(base, "v1/chat/completions");
+}
+
+async function* streamOpenAiCompatible(request: CompletionRequest): AsyncGenerator<ProviderChunk> {
+  const { provider, model, messages, temperature, maxTokens, signal } = request;
+  const reasoning = isReasoningModel(model);
+  const response = await fetch(openAiChatUrl(provider), {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...authHeaders(provider) },
+    body: JSON.stringify({
+      model,
+      messages,
+      stream: true,
+      stream_options: { include_usage: true },
+      ...(reasoning
+        ? {}
+        : {
+            temperature: temperature ?? 0.8,
+            max_tokens: maxTokens && maxTokens > 0 ? maxTokens : undefined,
+          }),
+    }),
+    signal: withTimeout(signal),
+  });
+  if (!response.ok) throw await httpError(response, provider);
+
+  for await (const payload of readSse(response)) {
+    if (payload === "[DONE]") break;
+    const json = safeJson(payload);
+    const errorMessage = pickString(get(json, "error", "message"));
+    if (errorMessage) throw new ProviderError(errorMessage);
+
+    const choice = get(json, "choices", "0");
+    const delta = asRecord(get(choice, "delta"));
+    if (delta) {
+      const reasoning = pickString(delta.reasoning_content) || pickString(delta.reasoning);
+      if (reasoning) yield { type: "reasoning", text: reasoning };
+      const text = pickString(delta.content);
+      if (text) yield { type: "delta", text };
+    }
+    const usage = asRecord(get(json, "usage"));
+    if (usage) {
+      yield {
+        type: "usage",
+        promptTokens: pickNumber(usage.prompt_tokens),
+        completionTokens: pickNumber(usage.completion_tokens),
+      };
+    }
+  }
+}
+
+/* ------------------------------ Anthropic ------------------------------ */
+
+function anthropicMessagesUrl(provider: ProviderConfig): string {
+  const base = resolveBaseUrl(provider);
+  if (/\/messages$/.test(base)) return base;
+  if (/\/v\d+$/.test(base)) return joinPath(base, "messages");
+  return joinPath(base, "v1/messages");
+}
+
+async function* streamAnthropic(request: CompletionRequest): AsyncGenerator<ProviderChunk> {
+  const { provider, model, messages, temperature, maxTokens, signal } = request;
+  const system = messages.filter((m) => m.role === "system").map((m) => m.content).join("\n\n");
+  const conversation = messages
+    .filter((m) => m.role !== "system")
+    .map((m) => ({ role: m.role === "assistant" ? "assistant" : "user", content: m.content }));
+  if (conversation.length === 0) conversation.push({ role: "user", content: "请继续。" });
+
+  const response = await fetch(anthropicMessagesUrl(provider), {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...authHeaders(provider) },
+    body: JSON.stringify({
+      model,
+      max_tokens: maxTokens && maxTokens > 0 ? maxTokens : 4096,
+      temperature: temperature ?? 0.8,
+      system: system || undefined,
+      messages: conversation,
+      stream: true,
+    }),
+    signal: withTimeout(signal),
+  });
+  if (!response.ok) throw await httpError(response, provider);
+
+  let promptTokens = 0;
+  for await (const payload of readSse(response)) {
+    const json = safeJson(payload);
+    const type = pickString(get(json, "type"));
+    if (type === "content_block_delta") {
+      const delta = asRecord(get(json, "delta"));
+      const deltaType = pickString(get(delta, "type"));
+      if (deltaType === "thinking_delta") yield { type: "reasoning", text: pickString(get(delta, "thinking")) };
+      else yield { type: "delta", text: pickString(get(delta, "text")) };
+    } else if (type === "message_start") {
+      promptTokens = pickNumber(get(json, "message", "usage", "input_tokens"));
+    } else if (type === "message_delta") {
+      const completionTokens = pickNumber(get(json, "usage", "output_tokens"));
+      yield { type: "usage", promptTokens, completionTokens };
+    } else if (type === "error") {
+      throw new ProviderError(pickString(get(json, "error", "message")) || "Anthropic 返回错误");
+    }
+  }
+}
+
+/* ------------------------------ Gemini ------------------------------ */
+
+async function* streamGemini(request: CompletionRequest): AsyncGenerator<ProviderChunk> {
+  const { provider, model, messages, temperature, maxTokens, signal } = request;
+  const base = resolveBaseUrl(provider);
+  const root = /\/v\d+(?:beta)?$/.test(base) ? base : joinPath(base, "v1beta");
+  const url = `${root}/models/${encodeURIComponent(model)}:streamGenerateContent?alt=sse&key=${encodeURIComponent(provider.apiKey ?? "")}`;
+
+  const system = messages.filter((m) => m.role === "system").map((m) => m.content).join("\n\n");
+  const contents = messages
+    .filter((m) => m.role !== "system")
+    .map((m) => ({ role: m.role === "assistant" ? "model" : "user", parts: [{ text: m.content }] }));
+
+  const response = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      contents,
+      systemInstruction: system ? { parts: [{ text: system }] } : undefined,
+      generationConfig: {
+        temperature: temperature ?? 0.8,
+        maxOutputTokens: maxTokens && maxTokens > 0 ? maxTokens : undefined,
+      },
+    }),
+    signal: withTimeout(signal),
+  });
+  if (!response.ok) throw await httpError(response, provider);
+
+  for await (const payload of readSse(response)) {
+    const json = safeJson(payload);
+    const parts = get(json, "candidates", "0", "content", "parts");
+    if (Array.isArray(parts)) {
+      for (const part of parts) {
+        const record = asRecord(part);
+        if (!record) continue;
+        if (record.thought === true) {
+          const thinking = pickString(record.text);
+          if (thinking) yield { type: "reasoning", text: thinking };
+        } else {
+          const text = pickString(record.text);
+          if (text) yield { type: "delta", text };
+        }
+      }
+    }
+    const usage = asRecord(get(json, "usageMetadata"));
+    if (usage) {
+      yield {
+        type: "usage",
+        promptTokens: pickNumber(usage.promptTokenCount),
+        completionTokens: pickNumber(usage.candidatesTokenCount),
+      };
+    }
+  }
+}
+
+/* ------------------------------ 离线演示 Provider ------------------------------ */
+
+const DEMO_PROSE_BANK: string[] = [
+  "涨潮比账本上记的晚了半刻。周晚把油布账本夹在腋下，沿着湿石阶往下走，数到第三级时停住了。",
+  "石阶上又多了一封信。封皮是干的，字却像刚从水里捞出来。收件人栏空着，只有一个模糊的「晚」字。",
+  "「这封别登。」陈伯在跳板那头说，声音被江风削得很短，「登了，税关就有数。」",
+  "周晚没应。他把信翻过来，背面没有落款，只有一道折痕，像被人折过又抚平。",
+  "对岸的旧码头没有灯。小满站在船桩旁边，手里那只纸船被风掀起一角，她没有按住。",
+  "他这才看清，纸船用的不是白纸，是一页从账本上裁下来的空白页。",
+  "「你怕登记。」小满说。",
+  "「我怕登完就送不出去。」周晚把信递到纸船边上，又收回来半寸，「涨潮之前，名字会淡。」",
+  "江面上浮着几片碎桨。",
+  "上游传来马蹄，一下，两下，停在税关的石堤上。他没有回头，只把账本又往里夹紧了些。",
+  "风过石阶的时候，那封信的「晚」字淡了一点。",
+  "再等下去，收件人就只剩一个空栏。",
+];
+
+function demoIsProse(messages: AiMessage[]): boolean {
+  const joined = messages.map((m) => m.content).join("\n");
+  return /职业作者|续写要求|扩写要求|润色要求|改写要求|去\s*AI\s*味|只输出正文|正文只/.test(joined);
+}
+
+function demoHash(text: string): number {
+  let hash = 0;
+  for (let index = 0; index < text.length; index += 1) {
+    hash = (hash * 31 + text.charCodeAt(index)) >>> 0;
+  }
+  return hash;
+}
+
+function demoProse(messages: AiMessage[]): string {
+  const lastUser = [...messages].reverse().find((m) => m.role === "user");
+  const source = pickString(get(lastUser, "content"));
+  const seed = demoHash(source || "yantian");
+  const start = seed % DEMO_PROSE_BANK.length;
+  const count = 3 + (seed % 3);
+  const paragraphs: string[] = [];
+  // 取连续段落，保证演示输出读起来是一段连贯的场景（而不是随机拼贴）
+  for (let i = 0; i < count; i += 1) {
+    paragraphs.push(DEMO_PROSE_BANK[(start + i) % DEMO_PROSE_BANK.length]);
+  }
+  return paragraphs.join("\n\n");
+}
+
+function demoChat(messages: AiMessage[]): string {
+  const joined = messages.map((m) => m.content).join("\n");
+  const lastUser = [...messages].reverse().find((m) => m.role === "user");
+  const raw = pickString(get(lastUser, "content"));
+  // 上下文装配会把【作品】【简介】【当前章节】等块拼进同一条 user 消息，
+  // 取最后一段「不像上下文标题」的文字作为真正的问题，避免把整段上下文回显给用户。
+  const lines = raw
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+  const question = ([...lines].reverse().find((line) => !line.startsWith("【") && !line.startsWith(">")) || "")
+    .replace(/^[-*\d.\s]+/, "")
+    .slice(0, 80);
+  const novelTitle = joined.match(/【作品】([^\n（(]{1,24})/)?.[1]?.trim() ?? "";
+  const chapterMatch = joined.match(/【当前章节】[^\n]*?《([^》]{1,30})》/)?.[1]?.trim() ?? "";
+  const heading = novelTitle
+    ? `我先看了《${novelTitle}》${chapterMatch ? `的「${chapterMatch}」` : ""}这一章。`
+    : "我先按你描述的这一章来看。";
+  return [
+    heading,
+    "",
+    `关于「${question || "这一章该怎么写"}」，我的建议分三步：`,
+    "",
+    "1. **先确定本章的「信息增量」**：这一章结束时，读者必须比开头多知道一件改变局势的事实。列出它，再倒推场景。",
+    "2. **把冲突压到一个具体动作上**：不要写「两人气氛紧张」，写一个人把茶盏往桌上一放，水溅出来。动作比形容词更有戏剧性。",
+    "3. **留钩子**：章末最后一句话最好是一个问题、一个反常的动作，或者一句没说完的话。",
+    "",
+    "按这个思路，你现在的开篇其实只差一个「不对劲」的细节——不用大改结构，把主角进门的第一个异常写得具体一点，读者就会跟下去。",
+    "",
+    "要不要我直接给这章续 600 字，或者先做一次「AI 味」诊断？",
+  ].join("\n");
+}
+
+function demoCompletion(messages: AiMessage[]): string {
+  const system = messages.filter((m) => m.role === "system").map((m) => m.content).join("\n");
+  if (/只输出 JSON|严格 JSON|返回 JSON|JSON Schema/i.test(system)) {
+    return JSON.stringify({
+      chapterSummary: "本章推进了主线冲突，主角获得了新的线索，但也付出了代价。",
+      characterStates: [{ name: "主角", state: "处于追踪与犹豫之间", changes: "主动迈出一步" }],
+      settingStates: [{ title: "核心设定", state: "本章首次给出使用限制" }],
+      ledger: [{ name: "关键资源", delta: "-1", balance: "剩余有限", note: "本章消耗一次" }],
+      timeline: [{ storyTime: "当夜", event: "冲突发生，主角做出选择" }],
+      foreshadows: [{ title: "旧信", status: "advanced", note: "首次被提及" }],
+      conflicts: [],
+    });
+  }
+  if (demoIsProse(messages)) return demoProse(messages);
+  return demoChat(messages);
+}
+
+async function* streamDemo(request: CompletionRequest): AsyncGenerator<ProviderChunk> {
+  const text = demoCompletion(request.messages);
+  const chunkSize = 6;
+  for (let index = 0; index < text.length; index += chunkSize) {
+    if (request.signal?.aborted) return;
+    yield { type: "delta", text: text.slice(index, index + chunkSize) };
+    await new Promise((resolve) => setTimeout(resolve, 8));
+  }
+  const promptChars = request.messages.reduce((total, message) => total + message.content.length, 0);
+  yield { type: "usage", promptTokens: Math.ceil(promptChars / 2), completionTokens: Math.ceil(text.length / 2) };
+}
+
+/* ------------------------------ 统一入口 ------------------------------ */
+
+export async function* streamCompletion(request: CompletionRequest): AsyncGenerator<ProviderChunk> {
+  switch (request.provider.kind) {
+    case "anthropic":
+      yield* streamAnthropic(request);
+      break;
+    case "gemini":
+      yield* streamGemini(request);
+      break;
+    case "demo":
+      yield* streamDemo(request);
+      break;
+    case "ollama":
+    case "openai":
+    default:
+      yield* streamOpenAiCompatible(request);
+      break;
+  }
+  yield { type: "done" };
+}
+
+/** 设置页「测试连接」：发起一次极短的补全请求 */
+export async function testProvider(provider: ProviderConfig, model?: string): Promise<{ ok: boolean; latencyMs: number; message: string }> {
+  const started = Date.now();
+  const targetModel = model || provider.models[0]?.id || "";
+  if (!targetModel) return { ok: false, latencyMs: 0, message: "未配置模型：请先填写至少一个模型 id" };
+  if (provider.kind !== "demo" && provider.kind !== "ollama" && !provider.apiKey?.trim()) {
+    return { ok: false, latencyMs: 0, message: "未填写 API Key" };
+  }
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 20000);
+  try {
+    let received = "";
+    for await (const chunk of streamCompletion({
+      provider,
+      model: targetModel,
+      messages: [{ role: "user", content: "ping" }],
+      maxTokens: 8,
+      signal: controller.signal,
+    })) {
+      if (chunk.type === "delta") received += chunk.text;
+      if (received.length > 40) break;
+    }
+    const latencyMs = Date.now() - started;
+    return { ok: true, latencyMs, message: `${targetModel} 连接成功（${latencyMs}ms${received.trim() ? "，已收到返回" : ""}）` };
+  } catch (error) {
+    const latencyMs = Date.now() - started;
+    const raw = error instanceof Error ? error.message : "连接失败";
+    const message = /aborted|abort/i.test(raw) ? "连接超时（20 秒）：检查 Base URL 与本机网络/代理" : raw;
+    return { ok: false, latencyMs, message };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/* ------------------------------ 模型列表 ------------------------------ */
+
+function uniqModels(list: ModelOption[]): ModelOption[] {
+  const seen = new Set<string>();
+  const output: ModelOption[] = [];
+  for (const item of list) {
+    const id = (item.id ?? "").trim();
+    if (!id || seen.has(id)) continue;
+    seen.add(id);
+    output.push({ ...item, id });
+  }
+  return output;
+}
+
+/** 从服务商拉取真实模型列表（OpenAI 兼容 /models、Anthropic /v1/models、Gemini v1beta/models、Ollama /v1/models 或 /api/tags） */
+export async function listProviderModels(
+  provider: ProviderConfig,
+): Promise<{ models: ModelOption[]; endpoint: string }> {
+  if (provider.kind === "demo") {
+    return {
+      endpoint: "demo",
+      models: [
+        { id: "yantian-demo", label: "砚田演示模型（离线，无需 Key）", contextWindow: 32000 },
+        { id: "yantian-demo-prose", label: "砚田演示模型 · 正文", contextWindow: 32000 },
+      ],
+    };
+  }
+  const key = provider.apiKey?.trim() ?? "";
+  if (!key && provider.kind !== "ollama") {
+    throw new ProviderError("未填写 API Key，无法拉取模型列表", 400);
+  }
+  const base = resolveBaseUrl(provider);
+  let url = "";
+  let headers: Record<string, string> = { ...authHeaders(provider) };
+  switch (provider.kind) {
+    case "anthropic":
+      url = /\/v1$/i.test(base) ? joinPath(base, "models") : joinPath(base, "v1/models");
+      break;
+    case "gemini":
+      url = joinPath(base, `v1beta/models?key=${encodeURIComponent(key)}`);
+      break;
+    case "ollama":
+      if (/\/v1$/i.test(base)) {
+        url = joinPath(base, "models");
+      } else {
+        url = joinPath(base, "api/tags");
+        headers = {};
+      }
+      break;
+    default:
+      url = /\/v\d+$/i.test(base) ? joinPath(base, "models") : joinPath(base, "v1/models");
+      break;
+  }
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 25000);
+  try {
+    const response = await fetch(url, { headers, signal: controller.signal });
+    if (!response.ok) throw await httpError(response, provider);
+    const payload = safeJson(await response.text());
+    const models: ModelOption[] = [];
+
+    // OpenAI 兼容 / Anthropic
+    const data = get(payload, "data");
+    if (Array.isArray(data)) {
+      for (const entry of data) {
+        const id = pickString(get(entry, "id"));
+        if (!id) continue;
+        const label = pickString(get(entry, "display_name")) || pickString(get(entry, "name")) || id;
+        models.push({ id, label });
+      }
+    }
+    // Gemini
+    const geminiList = get(payload, "models");
+    if (Array.isArray(geminiList)) {
+      for (const entry of geminiList) {
+        const rawName = pickString(get(entry, "name"));
+        if (!rawName) continue;
+        const methods = get(entry, "supportedGenerationMethods");
+        if (Array.isArray(methods) && !methods.includes("generateContent")) continue;
+        const id = rawName.replace(/^models\//, "");
+        const label = pickString(get(entry, "displayName")) || id;
+        const contextWindow = pickNumber(get(entry, "inputTokenLimit")) || undefined;
+        models.push({ id, label, contextWindow });
+      }
+    }
+    // Ollama 原生 /api/tags
+    const ollamaList = get(payload, "models");
+    if (!models.length && Array.isArray(ollamaList)) {
+      for (const entry of ollamaList) {
+        const id = pickString(get(entry, "name")) || pickString(get(entry, "model"));
+        if (!id) continue;
+        models.push({ id, label: id });
+      }
+    }
+    const unique = uniqModels(models);
+    if (!unique.length) {
+      throw new ProviderError(
+        "服务商返回了空模型列表：请确认 Base URL / API Key 是否正确，或手动添加模型 id",
+        400,
+      );
+    }
+    return { models: unique, endpoint: url };
+  } catch (error) {
+    if (error instanceof ProviderError) throw error;
+    const raw = error instanceof Error ? error.message : "拉取模型列表失败";
+    throw new ProviderError(
+      /aborted|abort/i.test(raw)
+        ? "拉取模型列表超时（25 秒）：检查 Base URL 与本机网络/代理"
+        : raw,
+      502,
+    );
+  } finally {
+    clearTimeout(timer);
+  }
+}

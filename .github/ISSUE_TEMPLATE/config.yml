@@ -1,0 +1,22 @@
+# Issue 模板选择页的配置
+# 文档：https://docs.github.com/en/communities/using-templates-to-encourage-useful-issues-and-pull-requests/configuring-issue-templates-for-your-repository
+
+# 关闭空白 Issue，引导大家用模板（模板会带上环境信息与复现步骤，修起来快很多）
+blank_issues_enabled: false
+
+contact_links:
+  - name: "❓ 使用问题 / 报错排查"
+    url: "https://github.com/ZzimaR/Yanfield/blob/main/docs/faq.md"
+    about: "先看 FAQ 与 docs/ai-providers.md，大多数配置和报错都有答案；再搜一下现有 Issue。"
+  - name: "🔌 模型服务怎么配？"
+    url: "https://github.com/ZzimaR/Yanfield/blob/main/docs/ai-providers.md"
+    about: "OpenAI / DeepSeek / 通义 / Moonshot / GLM / Claude / Gemini / OpenRouter / 硅基流动 / Ollama 的 baseURL 与常见错误。"
+  - name: "🗺 这个功能在计划里吗？"
+    url: "https://github.com/ZzimaR/Yanfield/blob/main/docs/roadmap.md"
+    about: "提交功能建议前先看一眼路线图，避免重复讨论。"
+  - name: "📖 想直接改代码"
+    url: "https://github.com/ZzimaR/Yanfield/blob/main/CONTRIBUTING.md"
+    about: "开发环境、代码规范、提 PR 的流程，以及「加一个 Provider / 加一个 AI 功能」的两段小教程。"
+  - name: "🔐 安全漏洞（请勿公开提交）"
+    url: "https://github.com/ZzimaR/Yanfield/security/advisories/new"
+    about: "密钥泄露、路径穿越、越权访问等问题请走私密渠道，不要在公开 Issue 里贴细节。"

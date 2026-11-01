@@ -1,0 +1,60 @@
+# 砚田 Yanfield — Docker Compose 单机部署
+#
+# 用法：
+#   cp .env.example .env     # 可选：按需填模型 Key（不建 .env 也能启动，走离线演示模式）
+#   mkdir -p data            # Linux/macOS 首次建议：sudo chown 1001:1001 data
+#   docker compose up -d --build
+#   # 打开 http://127.0.0.1:3000（远程服务器换成服务器 IP/域名或走反向代理）
+#
+# 升级：git pull && docker compose up -d --build
+# 备份：停容器后复制 ./data 目录（SQLite 单文件，含 -wal/-shm）
+# 详见 docs/deploy.md
+
+services:
+  yantian:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: yantian:latest
+    container_name: yantian
+    restart: unless-stopped
+
+    ports:
+      - "3000:3000"
+
+    # 可选读取 .env（存在则透传模型 Key；不存在也能直接启动，需要 Compose v2.24+）
+    env_file:
+      - path: .env
+        required: false
+
+    environment:
+      NODE_ENV: production
+      NEXT_TELEMETRY_DISABLED: "1"
+      PORT: "3000"
+      HOSTNAME: "0.0.0.0"
+      # 容器内的数据库位置（必须与下面的 volume 挂载点一致）
+      YANTIAN_DB_PATH: /app/data/yantian.db
+
+    volumes:
+      # 绑定挂载到仓库内的 data/，容器重建/升级不丢稿。
+      # 注意：容器以非 root 用户（uid 1001）运行；Linux 上若 ./data 是 docker 自动
+      # 创建的 root 目录，需要先 `mkdir -p data && sudo chown -R 1001:1001 data`。
+      - ./data:/app/data
+
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:3000/"]
+      interval: 30s
+      timeout: 5s
+      start_period: 20s
+      retries: 3
+
+    # 让容器能访问宿主机上的 Ollama（Linux 需要这一行；macOS/Windows 用 host.docker.internal）
+    # extra_hosts:
+    #   - "host.docker.internal:host-gateway"
+
+    # 日志轮转，避免长期运行把磁盘写满
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"

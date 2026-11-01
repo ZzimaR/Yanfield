@@ -1,0 +1,58 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+# 同一分支的新提交取消旧的运行，省 runner 时间
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  # 构建期禁止遥测外呼；CI 不调用任何模型服务
+  NEXT_TELEMETRY_DISABLED: "1"
+  CI: "true"
+
+jobs:
+  check:
+    name: typecheck · test · build
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 安装 pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          # 与 pnpm-lock.yaml（lockfileVersion 9.0）匹配
+          version: 11
+
+      - name: 安装 Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: 安装依赖
+        # 必须显式加 --ignore-scripts：CI=true 时 pnpm 遇到被忽略的依赖构建脚本会
+        # 以 ERR_PNPM_IGNORED_BUILDS 失败退出（本地已验证；触发的包是 unrs-resolver，
+        # 它由 eslint-config-next 间接引入）。CI 只跑 tsc / vitest / next build，
+        # 不需要任何依赖的安装脚本，因此这里统一跳过。
+        run: pnpm install --frozen-lockfile --ignore-scripts
+
+      - name: 类型检查
+        run: pnpm exec tsc --noEmit
+
+      - name: 单元测试
+        run: pnpm test
+
+      - name: 生产构建
+        run: pnpm exec next build

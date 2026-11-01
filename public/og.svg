@@ -1,0 +1,107 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 630" width="1200" height="630" role="img" aria-label="砚田 Yanfield — 本地优先的开源 AI 小说创作工作台">
+  <title>砚田 Yanfield</title>
+  <desc>宣纸底色、墨色排版的社交分享图：左侧为砚田标识与标题，右侧为三栏写作工作台的抽象示意。</desc>
+
+  <!-- 背景：宣纸 -->
+  <rect width="1200" height="630" fill="#f5f1e8"/>
+  <!-- 纸纹：极淡的斜向纤维 -->
+  <g stroke="#e2d9c7" stroke-width="1" opacity="0.55">
+    <path d="M0 96h1200M0 192h1200M0 288h1200M0 384h1200M0 480h1200M0 576h1200"/>
+    <path d="M96 0v630M240 0v630M384 0v630M528 0v630M672 0v630M816 0v630M960 0v630M1104 0v630"/>
+  </g>
+  <!-- 左下浅蓝印：留白处的落款 -->
+  <rect x="88" y="486" width="86" height="86" rx="10" fill="#3a94e0"/>
+  <text x="131" y="546" text-anchor="middle"
+        font-family="'Noto Serif SC','Source Han Serif SC','Songti SC',STSong,serif"
+        font-size="46" font-weight="700" fill="#f5f1e8">墨</text>
+
+  <!-- 标识：浅色砚台 -->
+  <g transform="translate(88 92) scale(2.15)">
+    <rect x="1.6" y="8.1" width="28.8" height="18.2" rx="5.2" fill="#e4d7c2"/>
+    <rect x="1.6" y="6.2" width="28.8" height="18.2" rx="5.2" fill="#f6f0e4" stroke="#c4b396" stroke-width="1.15"/>
+    <ellipse cx="11.1" cy="15.2" rx="5.7" ry="4.55" fill="#1c1915"/>
+    <ellipse cx="9.5" cy="13.85" rx="2.05" ry="1.15" fill="#5c5348"/>
+    <path d="M18.4 12.1c2.5.35 5.1.42 7.6.12" stroke="#d9ccb8" stroke-width="1.15" stroke-linecap="round"/>
+    <path d="M18.6 16.55c2.7.28 5.3.3 7.5.05" stroke="#e7dccb" stroke-width="1.05" stroke-linecap="round"/>
+  </g>
+
+  <!-- 标题区 -->
+  <text x="200" y="138"
+        font-family="'Noto Serif SC','Source Han Serif SC','Songti SC',STSong,serif"
+        font-size="60" font-weight="700" fill="#201d18">砚田 <tspan font-size="34" letter-spacing="3" fill="#6b6458">YANFIELD</tspan></text>
+  <text x="200" y="196"
+        font-family="'Noto Sans SC','PingFang SC','Microsoft YaHei',sans-serif"
+        font-size="27" fill="#4a4439">本地优先的开源 AI 小说创作工作台</text>
+
+  <!-- 三条要点 -->
+  <g font-family="'Noto Sans SC','PingFang SC','Microsoft YaHei',sans-serif" font-size="21" fill="#4a4439">
+    <g transform="translate(88 262)">
+      <rect width="10" height="10" rx="2" y="7" fill="#3a94e0"/>
+      <text x="26" y="18">作品 · 卷 · 章三级结构，八位 AI 智能体协同写作</text>
+    </g>
+    <g transform="translate(88 306)">
+      <rect width="10" height="10" rx="2" y="7" fill="#2f5d62"/>
+      <text x="26" y="18">行内逐段 Diff 审阅，AI 改哪一句你看得见、批得了</text>
+    </g>
+    <g transform="translate(88 350)">
+      <rect width="10" height="10" rx="2" y="7" fill="#a97f2b"/>
+      <text x="26" y="18">单个 SQLite 文件存全部书稿，接任意 OpenAI 兼容 API</text>
+    </g>
+  </g>
+
+  <!-- 右侧：三栏工作台抽象示意 -->
+  <g transform="translate(688 96)">
+    <rect width="424" height="438" rx="18" fill="#fbf8f1" stroke="#e2d9c7"/>
+    <!-- 顶栏 -->
+    <rect x="1" y="1" width="422" height="52" rx="17" fill="#f0ead9"/>
+    <circle cx="28" cy="27" r="5" fill="#3a94e0"/>
+    <rect x="46" y="21" width="112" height="12" rx="6" fill="#d8ceba"/>
+    <rect x="330" y="19" width="72" height="16" rx="8" fill="#e2d9c7"/>
+    <!-- 左栏：目录树 -->
+    <line x1="118" y1="54" x2="118" y2="438" stroke="#e2d9c7"/>
+    <g fill="#d8ceba">
+      <rect x="22" y="84" width="74" height="11" rx="5"/>
+      <rect x="34" y="112" width="62" height="10" rx="5"/>
+      <rect x="34" y="138" width="62" height="10" rx="5" fill="#3a94e0" opacity="0.55"/>
+      <rect x="34" y="164" width="62" height="10" rx="5"/>
+      <rect x="22" y="198" width="74" height="11" rx="5"/>
+      <rect x="34" y="226" width="62" height="10" rx="5"/>
+    </g>
+    <!-- 中栏：正文 -->
+    <line x1="322" y1="54" x2="322" y2="438" stroke="#e2d9c7"/>
+    <g fill="#cdc2ad">
+      <rect x="144" y="84" width="150" height="13" rx="6" fill="#9c9280"/>
+      <rect x="144" y="120" width="158" height="9" rx="4"/>
+      <rect x="144" y="140" width="150" height="9" rx="4"/>
+      <rect x="144" y="160" width="158" height="9" rx="4"/>
+      <rect x="144" y="196" width="158" height="9" rx="4"/>
+      <rect x="144" y="216" width="120" height="9" rx="4"/>
+    </g>
+    <!-- Diff 高亮：删除与新增 -->
+    <rect x="140" y="252" width="162" height="52" rx="8" fill="#2f5d62" opacity="0.1"/>
+    <g fill="#2f5d62" opacity="0.6">
+      <rect x="152" y="266" width="138" height="8" rx="4"/>
+      <rect x="152" y="282" width="104" height="8" rx="4"/>
+    </g>
+    <rect x="140" y="316" width="162" height="52" rx="8" fill="#3a94e0" opacity="0.09"/>
+    <g fill="#3a94e0" opacity="0.55">
+      <rect x="152" y="330" width="120" height="8" rx="4"/>
+      <rect x="152" y="346" width="138" height="8" rx="4"/>
+    </g>
+    <!-- 右栏：AI 助手 -->
+    <rect x="338" y="76" width="70" height="18" rx="9" fill="#3a94e0" opacity="0.8"/>
+    <g fill="#d8ceba">
+      <rect x="338" y="112" width="66" height="42" rx="10"/>
+      <rect x="338" y="164" width="66" height="66" rx="10" fill="#e8e0cf"/>
+      <rect x="338" y="240" width="66" height="42" rx="10"/>
+      <rect x="338" y="292" width="66" height="42" rx="10" fill="#e8e0cf"/>
+    </g>
+    <rect x="338" y="366" width="66" height="30" rx="15" fill="#201d18" opacity="0.75"/>
+  </g>
+
+  <!-- 底部信息条 -->
+  <g font-family="'Noto Sans SC','PingFang SC','Microsoft YaHei',sans-serif" font-size="18" fill="#6b6458">
+    <text x="88" y="600">开源 · 自托管 · 单机运行</text>
+    <text x="1112" y="600" text-anchor="end">不可商用 · 数据只存在你自己的电脑上</text>
+  </g>
+</svg>

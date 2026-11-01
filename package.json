@@ -1,0 +1,53 @@
+{
+  "name": "yantian",
+  "version": "0.1.0",
+  "private": true,
+  "description": "砚田 Yanfield — 源码公开、不可商用的长篇 AI 小说创作工作台",
+  "license": "PolyForm-Noncommercial-1.0.0",
+  "type": "module",
+  "engines": {
+    "node": ">=22.13"
+  },
+  "scripts": {
+    "dev": "next dev -p 3000",
+    "build": "next build",
+    "start": "next start -p 3000",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "db:seed": "node scripts/seed.mjs"
+  },
+  "dependencies": {
+    "@tiptap/extension-character-count": "^3.32.2",
+    "@tiptap/extension-highlight": "^3.32.2",
+    "@tiptap/extension-placeholder": "^3.32.2",
+    "@tiptap/extension-typography": "^3.32.2",
+    "@tiptap/react": "^3.32.2",
+    "@tiptap/starter-kit": "^3.32.2",
+    "clsx": "^2.1.1",
+    "lucide-react": "^1.65.0",
+    "marked": "^18.1.2",
+    "nanoid": "^6.0.2",
+    "next": "^15.5.28",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1",
+    "tailwind-merge": "^3.7.0",
+    "zod": "^4.6.7"
+  },
+  "devDependencies": {
+    "@tailwindcss/postcss": "^4.3.3",
+    "@types/node": "^26.6.6",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "eslint": "^9.39.5",
+    "eslint-config-next": "^15.5.28",
+    "postcss": "^8.5.32",
+    "tailwindcss": "^4.3.3",
+    "typescript": "~5.9.3",
+    "vitest": "^5.0.5"
+  },
+  "pnpm": {
+    "ignoredBuiltDependencies": [
+      "unrs-resolver"
+    ]
+  }
+}

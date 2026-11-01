@@ -1,0 +1,588 @@
+"use client";
+
+import * as React from "react";
+import { usePathname, useRouter } from "next/navigation";
+import { novelBackTarget } from "@/lib/app-nav";
+import type { Editor } from "@tiptap/react";
+import { Feather, Plus } from "lucide-react";
+import { Button, EmptyState, Sheet, useToast } from "@/components/ui/kit";
+import { AiTaskBar } from "@/components/ai/AiTaskBar";
+import { apiPatch, useApi } from "@/lib/client/api";
+import { EditorBridgeProvider } from "@/lib/editor/bridge";
+import { emitFocusAi } from "@/lib/editor/events";
+import { migrateLegacyEditorStorage } from "@/lib/editor/legacyStorage";
+import { toOne } from "@/lib/editor/normalize";
+import { readEditorLayoutSettings } from "@/lib/editor/settings";
+import { findChapter, findVolumeOfChapter, flattenChapters } from "@/lib/editor/types";
+import type { ChapterPatch, SelectionInfo } from "@/lib/editor/types";
+import { useChapterDraft } from "@/lib/editor/useChapterDraft";
+import { useEditorBridgeValue } from "@/lib/editor/useEditorBridgeValue";
+import { useNovelTree } from "@/lib/editor/useNovelTree";
+import { useHotkeys, useLocalStorageState, useMediaQuery, useResizePanel } from "@/lib/ui/hooks";
+import { applyTheme } from "@/lib/ui/theme";
+import type { AppSettings, Chapter } from "@/lib/types";
+import { AiPanelSlot } from "./AiPanelSlot";
+import { EditorCanvas } from "./EditorCanvas";
+import { EditorHeader, type EditorTheme } from "./EditorHeader";
+import { EditorRightRail } from "./EditorRightRail";
+import { EditorErrorBoundary } from "./EditorErrorBoundary";
+import { EditorError, EditorLoading, EditorNotFound } from "./EditorStates";
+import { LeftPanel, type EditorLeftTab } from "./LeftPanel";
+
+const EMPTY_SELECTION: SelectionInfo = { text: "", from: 0, to: 0, empty: true };
+
+interface EditorWorkbenchProps {
+  novelId: string;
+}
+
+/**
+ * 写作台总编排。
+ * 职责：目录树 + 章节草稿 + 自动保存 + EditorBridge 注入 + 三栏布局 +
+ * 沉浸模式 + 主题 + 快捷键 + 各种加载/错误态。
+ */
+export function EditorWorkbench({ novelId }: EditorWorkbenchProps) {
+  const router = useRouter();
+  const { toast } = useToast();
+
+  // 旧品牌键（mozhou:*）迁移必须在子组件读取 localStorage 之前完成，
+  // 所以放在首次渲染的函数体内（幂等，只在客户端跑一次）。
+  const migratedStorageRef = React.useRef(false);
+  if (typeof window !== "undefined" && !migratedStorageRef.current) {
+    migratedStorageRef.current = true;
+    migrateLegacyEditorStorage();
+  }
+
+  /* ---------------- 视图偏好（localStorage） ---------------- */
+
+  const [tab, setTab] = useLocalStorageState<EditorLeftTab>(`yantian:editor:tab:${novelId}`, "toc");
+  const [leftOpen, setLeftOpen] = useLocalStorageState<boolean>("yantian:editor:left-open", true);
+  const [rightOpen, setRightOpen] = useLocalStorageState<boolean>("yantian:editor:right-open", true);
+  const [immersive, setImmersive] = useLocalStorageState<boolean>("yantian:editor:immersive", false);
+  /** 记住上次打开的章节（换作品时用新 key，互不干扰） */
+  const [chapterId, setChapterId] = useLocalStorageState<string | null>(
+    `yantian:editor:chapter:${novelId}`,
+    null,
+  );
+
+  const [theme, setTheme] = React.useState<EditorTheme>("light");
+  const [selection, setSelection] = React.useState<SelectionInfo>(EMPTY_SELECTION);
+  const [editor, setEditor] = React.useState<Editor | null>(null);
+
+  /* ---------------- 响应式断点 ----------------
+   * ≥768：左栏内联（可拖宽/折叠）；<768：左栏改为 header 按钮唤起的抽屉
+   * ≥1024：AI 面板内联；<1024：AI 面板改为抽屉，不挤压正文
+   */
+  const isDesktop = useMediaQuery("(min-width: 768px)");
+  const isWide = useMediaQuery("(min-width: 1024px)");
+  const [drawerLeftOpen, setDrawerLeftOpen] = React.useState(false);
+  const [drawerRightOpen, setDrawerRightOpen] = React.useState(false);
+
+  /* ---------------- 应用设置（字号/行高/自动保存策略） ---------------- */
+
+  const settingsApi = useApi<unknown>("/api/settings");
+  const settings = toOne<AppSettings>(settingsApi.data);
+  const fontSize = settings?.editorFontSize ?? 18;
+  const lineHeight = settings?.editorLineHeight ?? 1.95;
+  const firstLineIndent = settings?.firstLineIndent ?? true;
+  const proseFont = settings?.proseFont ?? "serif";
+  const autoSaveDelayMs = settings?.autoSaveDelayMs ?? 1200;
+  const autoSave = settings?.autoSave ?? true;
+
+  /** 排版：字重 / 字距 / 段间距 / 页边距 / 阅读宽度 / 状态条 / 动效 */
+  const editorLayout = readEditorLayoutSettings(settings);
+
+  /** 正文字体（设置页可切换）：sans 时由 globals.css 的 html[data-prose-font="sans"] 规则接管 */
+  React.useEffect(() => {
+    const root = document.documentElement;
+    if (proseFont === "sans") root.dataset.proseFont = "sans";
+    else delete root.dataset.proseFont;
+  }, [proseFont]);
+
+  /** 动效开关：关闭时给根节点打 data-motion="off"，由 globals.css 收敛动画/过渡 */
+  React.useEffect(() => {
+    const root = document.documentElement;
+    root.dataset.motion = editorLayout.motionEnabled ? "on" : "off";
+    return () => {
+      delete root.dataset.motion;
+    };
+  }, [editorLayout.motionEnabled]);
+
+  /* ---------------- 目录树 ---------------- */
+
+  const onTreeError = React.useCallback(
+    (message: string) => {
+      toast({ title: "操作失败", description: message, tone: "error" });
+    },
+    [toast],
+  );
+  const onTreeSuccess = React.useCallback(
+    (message: string) => {
+      toast({ title: message, tone: "success" });
+    },
+    [toast],
+  );
+
+  const { tree, loading, error, notFound, actions } = useNovelTree({
+    novelId,
+    onError: onTreeError,
+    onSuccess: onTreeSuccess,
+  });
+
+  const chapters = React.useMemo(() => flattenChapters(tree), [tree]);
+  const chapter = React.useMemo(() => findChapter(tree, chapterId), [tree, chapterId]);
+  const volume = React.useMemo(() => findVolumeOfChapter(tree, chapterId), [tree, chapterId]);
+
+  /** 深链：/editor/<novelId>?chapterId=xxx 直接定位章节（便于把链接发给别人） */
+  const linkedChapterIdRef = React.useRef<string | null>(null);
+  React.useEffect(() => {
+    const linked = new URLSearchParams(window.location.search).get("chapterId");
+    linkedChapterIdRef.current = linked && linked.trim() ? linked.trim() : null;
+  }, []);
+
+  // 目录加载完成后：优先深链章节 → 上次打开的章节 → 第一章
+  React.useEffect(() => {
+    if (!tree) return;
+    const linked = linkedChapterIdRef.current;
+    if (linked) {
+      linkedChapterIdRef.current = null;
+      if (chapters.some((item) => item.id === linked)) {
+        if (linked !== chapterId) setChapterId(linked);
+        return;
+      }
+    }
+    if (chapterId && chapters.some((item) => item.id === chapterId)) return;
+    const fallback = chapters[0]?.id ?? null;
+    if (fallback !== chapterId) setChapterId(fallback);
+  }, [tree, chapters, chapterId, setChapterId]);
+
+  // 章节切换时把 chapterId 同步回地址栏，刷新/复制链接仍停在同一章
+  React.useEffect(() => {
+    if (!chapterId) return;
+    const url = new URL(window.location.href);
+    if (url.searchParams.get("chapterId") === chapterId) return;
+    url.searchParams.set("chapterId", chapterId);
+    window.history.replaceState(window.history.state, "", url.toString());
+  }, [chapterId]);
+
+  /* ---------------- 章节草稿 + 自动保存 ---------------- */
+
+  const onSaveError = React.useCallback(
+    (message: string) => {
+      toast({ title: "保存失败", description: message, tone: "error", duration: 6000 });
+    },
+    [toast],
+  );
+
+  /** 真正落库：PATCH 成功后把结果同步回目录树（不整树刷新，避免打断写作） */
+  const persistChapter = React.useCallback(
+    async (id: string, patch: ChapterPatch): Promise<void> => {
+      // 服务端会拒绝空白标题（400 章节标题不能为空），草稿里把标题清空时先剔除该字段
+      const { title, ...rest } = patch;
+      const trimmedTitle = typeof title === "string" ? title.trim() : "";
+      const safePatch: ChapterPatch = trimmedTitle ? { ...rest, title: trimmedTitle } : rest;
+      // 只改了空白标题 → 没有可提交字段，直接跳过，避免无谓的 400
+      if (Object.keys(safePatch).length === 0) return;
+      const updated = await apiPatch<Partial<Chapter>>(`/api/chapters/${id}`, safePatch);
+      actions.patchChapterLocal(id, {
+        ...(updated ?? {}),
+        ...safePatch,
+        updatedAt: updated?.updatedAt ?? new Date().toISOString(),
+      });
+    },
+    [actions],
+  );
+
+  const {
+    draft,
+    saveState,
+    lastSavedAt,
+    hasUnsaved,
+    setTitle,
+    setContent,
+    setStatus,
+    flush,
+  } = useChapterDraft({
+    chapter,
+    delayMs: autoSaveDelayMs,
+    autoSave,
+    onPersist: persistChapter,
+    onError: onSaveError,
+  });
+
+  // 切章瞬间 draft 还停留在上一章，用 chapterId 对齐后再驱动 UI，避免标题/字数闪一下
+  const activeDraft = draft && chapter && draft.chapterId === chapter.id ? draft : null;
+
+  /** 切换章节：先把当前章落库，再换；窄屏切换后自动收起目录抽屉 */
+  const selectChapter = React.useCallback(
+    (nextId: string) => {
+      if (nextId === chapterId) return;
+      void flush().then(() => {
+        setChapterId(nextId);
+        setDrawerLeftOpen(false);
+      });
+    },
+    [chapterId, flush, setChapterId],
+  );
+
+  /* ---------------- EditorBridge：把编辑器能力注入整页 ---------------- */
+
+  const handleEditorReady = React.useCallback((instance: Editor | null) => {
+    setEditor(instance);
+  }, []);
+  const bridge = useEditorBridgeValue(editor);
+
+  /* ---------------- 主题 ---------------- */
+
+  React.useEffect(() => {
+    setTheme(document.documentElement.dataset.theme === "dark" ? "dark" : "light");
+  }, []);
+
+  const toggleTheme = React.useCallback(() => {
+    const current: EditorTheme = document.documentElement.dataset.theme === "dark" ? "dark" : "light";
+    const next: EditorTheme = current === "dark" ? "light" : "dark";
+    applyTheme(next, true);
+    setTheme(next);
+  }, []);
+
+  // 浏览器标签页标题跟着作品走
+  React.useEffect(() => {
+    if (!tree?.novel.title) return;
+    document.title = `${tree.novel.title} · 写作台`;
+  }, [tree?.novel.title]);
+
+  /* ---------------- 三栏 / 沉浸 ---------------- */
+
+  const leftPanel = useResizePanel(288, { min: 240, max: 320, side: "left" });
+  const rightPanel = useResizePanel(384, { min: 320, max: 480, side: "right" });
+
+  /** 左栏：桌面折叠/展开内联栏；窄屏切换抽屉 */
+  const toggleLeft = React.useCallback(() => {
+    if (isDesktop) setLeftOpen((prev) => !prev);
+    else setDrawerLeftOpen((prev) => !prev);
+  }, [isDesktop, setLeftOpen]);
+  /** 右栏：宽屏折叠/展开内联 AI 栏；窄屏切换 AI 抽屉 */
+  const toggleRight = React.useCallback(() => {
+    if (isWide) setRightOpen((prev) => !prev);
+    else setDrawerRightOpen((prev) => !prev);
+  }, [isWide, setRightOpen]);
+  const toggleImmersive = React.useCallback(() => {
+    setImmersive((prev) => {
+      const next = !prev;
+      if (next) {
+        setRightOpen(false);
+        setDrawerRightOpen(false);
+        setDrawerLeftOpen(false);
+      }
+      return next;
+    });
+  }, [setImmersive, setRightOpen]);
+  const exitImmersive = React.useCallback(() => setImmersive(false), [setImmersive]);
+
+  /** AI 面板在当前断点下是否可见 */
+  const aiPanelVisible = isWide ? rightOpen : drawerRightOpen;
+
+  /** AI 面板聚焦：面板已展开时直接广播；未展开时先展开，等面板挂载后再广播 */
+  const pendingAiFocusRef = React.useRef(false);
+  const requestAiFocus = React.useCallback(() => {
+    if (aiPanelVisible) {
+      emitFocusAi();
+      return;
+    }
+    pendingAiFocusRef.current = true;
+    if (isWide) setRightOpen(true);
+    else setDrawerRightOpen(true);
+  }, [aiPanelVisible, isWide, setRightOpen]);
+
+  React.useEffect(() => {
+    if (!aiPanelVisible || !pendingAiFocusRef.current) return;
+    pendingAiFocusRef.current = false;
+    const timer = window.setTimeout(() => emitFocusAi(), 120);
+    return () => window.clearTimeout(timer);
+  }, [aiPanelVisible]);
+
+  const pathname = usePathname();
+  const back = novelBackTarget(pathname, novelId);
+  /** 返回上一级：先保存，避免丢字 */
+  const goBack = React.useCallback(() => {
+    void flush().then(() => router.push(back.href));
+  }, [flush, router, back.href]);
+
+  /* ---------------- 快捷键 ---------------- */
+
+  useHotkeys(
+    {
+      // 立即保存
+      "mod+s": (event) => {
+        event.preventDefault();
+        void flush();
+      },
+      // 聚焦 AI 输入框
+      "mod+j": (event) => {
+        event.preventDefault();
+        requestAiFocus();
+      },
+      // 左栏 / 右栏 / 沉浸
+      "alt+1": (event) => {
+        event.preventDefault();
+        toggleLeft();
+      },
+      "alt+2": (event) => {
+        event.preventDefault();
+        toggleRight();
+      },
+      "alt+3": (event) => {
+        event.preventDefault();
+        toggleImmersive();
+      },
+      // Esc 退出沉浸 / 关闭抽屉（useHotkeys 的 key 是 event.key.toLowerCase()）
+      esc: () => {
+        if (drawerRightOpen) setDrawerRightOpen(false);
+        else if (drawerLeftOpen) setDrawerLeftOpen(false);
+        else if (immersive) exitImmersive();
+      },
+      escape: () => {
+        if (drawerRightOpen) setDrawerRightOpen(false);
+        else if (drawerLeftOpen) setDrawerLeftOpen(false);
+        else if (immersive) exitImmersive();
+      },
+    },
+    [flush, requestAiFocus, toggleLeft, toggleRight, toggleImmersive, immersive, exitImmersive, drawerLeftOpen, drawerRightOpen],
+  );
+
+  /* ---------------- 离开页面提示 ---------------- */
+
+  React.useEffect(() => {
+    if (!hasUnsaved) return;
+    const handleBeforeUnload = (event: BeforeUnloadEvent) => {
+      event.preventDefault();
+      event.returnValue = "";
+    };
+    window.addEventListener("beforeunload", handleBeforeUnload);
+    return () => window.removeEventListener("beforeunload", handleBeforeUnload);
+  }, [hasUnsaved]);
+
+  /* ---------------- 渲染 ---------------- */
+
+  if (loading && !tree) return <EditorLoading />;
+  if (notFound) return <EditorNotFound />;
+  if (error && !tree) return <EditorError message={error} onRetry={() => void actions.refresh()} />;
+
+  const title = activeDraft?.title ?? chapter?.title ?? "";
+  const wordCount = activeDraft?.wordCount ?? chapter?.wordCount ?? 0;
+  const status = activeDraft?.status ?? chapter?.status ?? "draft";
+
+  /* 内联栏只在对应断点渲染；窄屏一律走抽屉，避免挤压正文 */
+  const showLeftInline = isDesktop && leftOpen && !immersive;
+  const showRightInline = isWide && rightOpen && !immersive;
+
+  /** 打开目录（桌面展开内联栏 / 窄屏打开抽屉），并切到目录页签 */
+  const openToc = () => {
+    setTab("toc");
+    if (isDesktop) setLeftOpen(true);
+    else setDrawerLeftOpen(true);
+  };
+
+  return (
+    <EditorBridgeProvider value={bridge}>
+      <div
+        className="flex h-full min-h-0 flex-col overflow-hidden bg-paper text-ink"
+        data-motion={editorLayout.motionEnabled ? "on" : "off"}
+      >
+        {immersive ? null : (
+          <EditorHeader
+            novelId={novelId}
+            novel={tree?.novel ?? null}
+            volumeTitle={volume?.title ?? null}
+            title={title}
+            wordCount={wordCount}
+            saveState={saveState}
+            lastSavedAt={lastSavedAt}
+            immersive={immersive}
+            leftCollapsed={isDesktop ? !leftOpen : !drawerLeftOpen}
+            rightCollapsed={isWide ? !rightOpen : !drawerRightOpen}
+            theme={theme}
+            onBack={goBack}
+            backLabel={back.label}
+            onToggleLeft={toggleLeft}
+            onToggleRight={toggleRight}
+            onToggleImmersive={toggleImmersive}
+            onToggleTheme={toggleTheme}
+          />
+        )}
+
+        <div className="flex min-h-0 flex-1">
+          {/* 左栏：目录 / 大纲 / 资料 / 设定（仅 ≥768 内联） */}
+          {showLeftInline ? (
+            <>
+              <aside
+                style={{ width: leftPanel.width }}
+                className="hidden min-h-0 shrink-0 overflow-hidden md:flex"
+                aria-label="目录与资料"
+              >
+                <LeftPanel
+                  novelId={novelId}
+                  tree={tree}
+                  loading={loading}
+                  currentChapterId={chapterId}
+                  currentVolumeId={volume?.id ?? null}
+                  tab={tab}
+                  onTabChange={setTab}
+                  actions={actions}
+                  onSelectChapter={selectChapter}
+                />
+              </aside>
+              <div
+                role="separator"
+                aria-orientation="vertical"
+                aria-label="拖拽调整左栏宽度"
+                onPointerDown={leftPanel.onPointerDown}
+                className="hidden w-1 shrink-0 cursor-col-resize border-r border-line bg-surface-2/40 transition-colors duration-150 hover:bg-accent-soft md:block"
+              />
+            </>
+          ) : null}
+
+          {/* 中栏：正文 */}
+          <main className="flex min-h-0 min-w-0 flex-1 flex-col">
+            {chapter ? (
+              <EditorCanvas
+                chapterId={chapter.id}
+                initialContent={chapter.content}
+                title={title}
+                status={status}
+                wordCount={wordCount}
+                saveState={saveState}
+                lastSavedAt={lastSavedAt}
+                updatedAt={chapter.updatedAt}
+                immersive={immersive}
+                fontSize={fontSize}
+                lineHeight={lineHeight}
+                firstLineIndent={firstLineIndent}
+                fontWeight={editorLayout.editorFontWeight}
+                letterSpacing={editorLayout.editorLetterSpacing}
+                paragraphSpacing={editorLayout.paragraphSpacing}
+                pagePaddingX={editorLayout.pagePaddingX}
+                pagePaddingY={editorLayout.pagePaddingY}
+                maxContentWidth={editorLayout.maxContentWidth}
+                showStatusBar={editorLayout.showStatusBar}
+                showInlineHints={editorLayout.showInlineHints}
+                onTitleChange={setTitle}
+                onContentChange={setContent}
+                onStatusChange={setStatus}
+                onEditorReady={handleEditorReady}
+                onSelectionChange={setSelection}
+                onAskAi={requestAiFocus}
+                onExitImmersive={exitImmersive}
+                aiBar={
+                  <EditorErrorBoundary
+                    resetKey={`tasks:${chapter.id}`}
+                    title="AI 快捷任务"
+                  >
+                    <AiTaskBar
+                      novelId={novelId}
+                      chapterId={chapter.id}
+                      selection={selection.empty ? undefined : selection.text}
+                      context={settings?.defaultContext}
+                    />
+                  </EditorErrorBoundary>
+                }
+              />
+            ) : (
+              <div className="flex h-full items-center justify-center px-6">
+                <EmptyState
+                  icon={<Feather className="size-5" />}
+                  title={chapters.length === 0 ? "这份作品还没有章节" : "选择一章开始写"}
+                  description={
+                    chapters.length === 0
+                      ? "先在左侧目录新建一章；写下的每个字都会自动保存在本地。"
+                      : "从左侧目录点开一章，或者新建一章继续往下写。"
+                  }
+                  action={
+                    <Button
+                      variant="primary"
+                      size="sm"
+                      icon={<Plus className="size-3.5" />}
+                      onClick={openToc}
+                    >
+                      打开目录
+                    </Button>
+                  }
+                />
+              </div>
+            )}
+          </main>
+
+          {/* 右栏：AI 协作（仅 ≥1024 内联，窄屏走抽屉） */}
+          {showRightInline ? (
+            <>
+              <div
+                role="separator"
+                aria-orientation="vertical"
+                aria-label="拖拽调整右栏宽度"
+                onPointerDown={rightPanel.onPointerDown}
+                className="hidden w-1 shrink-0 cursor-col-resize border-l border-line bg-surface-2/40 transition-colors duration-150 hover:bg-accent-soft lg:block"
+              />
+              <aside
+                style={{ width: rightPanel.width }}
+                className="hidden min-h-0 min-w-0 shrink-0 overflow-hidden lg:flex"
+                aria-label="AI 协作面板"
+              >
+                <EditorRightRail
+                  novelId={novelId}
+                  chapterId={chapter?.id ?? null}
+                  chapterTitle={title || null}
+                  onClose={() => setRightOpen(false)}
+                />
+              </aside>
+            </>
+          ) : null}
+        </div>
+
+        {/* 窄屏：目录/大纲/资料/设定 抽屉 */}
+        <Sheet
+          open={!isDesktop && drawerLeftOpen && !immersive}
+          onClose={() => setDrawerLeftOpen(false)}
+          title="目录与资料"
+          width={336}
+        >
+          <div className="flex h-full min-h-0 flex-col">
+            <LeftPanel
+              novelId={novelId}
+              tree={tree}
+              loading={loading}
+              currentChapterId={chapterId}
+              currentVolumeId={volume?.id ?? null}
+              tab={tab}
+              onTabChange={setTab}
+              actions={actions}
+              onSelectChapter={selectChapter}
+            />
+          </div>
+        </Sheet>
+
+        {/* 窄屏：AI 协作抽屉（不挤压正文） */}
+        <Sheet
+          open={!isWide && drawerRightOpen && !immersive}
+          onClose={() => setDrawerRightOpen(false)}
+          title="AI 协作"
+          width={440}
+        >
+          <div className="flex h-full min-h-0 flex-col">
+            <EditorErrorBoundary resetKey={`ai:${novelId}:${chapter?.id ?? "none"}`} title="AI 面板">
+              <AiPanelSlot
+                novelId={novelId}
+                chapterId={chapter?.id ?? null}
+                chapterTitle={title || null}
+                onClose={() => setDrawerRightOpen(false)}
+              />
+            </EditorErrorBoundary>
+          </div>
+        </Sheet>
+
+        {/* 选区状态给屏幕阅读器（视觉上已在正文状态条展示） */}
+        <span className="sr-only" aria-live="polite">
+          {selection.empty ? "" : `已选中 ${selection.text.length} 字`}
+        </span>
+      </div>
+    </EditorBridgeProvider>
+  );
+}

@@ -1,0 +1,35 @@
+# 依赖与构建产物
+node_modules
+.pnpm-store
+.next
+out
+dist
+coverage
+tsconfig.tsbuildinfo
+
+# 运行时数据：绝不进镜像（会覆盖数据卷、泄露本地书稿与密钥）
+data
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+
+# 版本控制与本地配置
+.git
+.gitignore
+.github
+.env
+.env.*
+*.log
+
+# 文档与截图不参与运行
+docs
+recon
+
+# 编辑器 / 系统杂项
+.vscode
+.idea
+.DS_Store
+Thumbs.db
+*.zip
+*.tar.gz
