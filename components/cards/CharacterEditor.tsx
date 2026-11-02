@@ -6,7 +6,7 @@
  * AI 补全：POST /api/ai/task（feature: character-card）
  */
 import * as React from "react";
-import { Sparkles, Trash2 } from "lucide-react";
+import { GitBranch, Sparkles, Trash2 } from "lucide-react";
 import {
   Button,
   ConfirmDialog,
@@ -16,12 +16,14 @@ import {
   Switch,
   useToast,
 } from "@/components/ui/kit";
-import { AiAssistSheet } from "@/components/outline/ai-assist";
+import { ModelKeyHint } from "@/components/ai/ModelKeyHint";
 import { AiTextField, TagsInput, stripChapterNumber, unwrapEntity, useErrorToast } from "@/components/outline/form-kit";
 import { labeledDraft } from "@/lib/ai/assist-brief";
-import { apiDelete, apiPatch, apiPost, notifyDataChanged, useApi } from "@/lib/client/api";
-import type { Character, CharacterRelation } from "@/lib/types";
+import { parseCharacterFill } from "@/lib/ai/card-derive";
+import { apiDelete, apiPatch, apiPost, notifyDataChanged, streamAiTask, useApi } from "@/lib/client/api";
+import type { AiStreamEvent, Character, CharacterRelation } from "@/lib/types";
 import { CHARACTER_ROLE_LABEL } from "@/lib/types";
+import { CharacterDeriveSheet } from "./CharacterDeriveSheet";
 import { RelationsEditor } from "./RelationsEditor";
 
 interface CharacterDraft {
@@ -44,16 +46,6 @@ interface CharacterDraft {
   tags: string[];
   pinned: boolean;
 }
-
-const AI_TARGETS = [
-  { value: "appearance", label: "外貌" },
-  { value: "personality", label: "性格与行事逻辑" },
-  { value: "goals", label: "目标" },
-  { value: "secrets", label: "秘密" },
-  { value: "arc", label: "成长弧" },
-  { value: "speechStyle", label: "说话风格" },
-  { value: "currentState", label: "当前状态" },
-];
 
 function emptyDraft(): CharacterDraft {
   return {
@@ -148,7 +140,9 @@ export function CharacterEditor({
   const [saving, setSaving] = React.useState(false);
   const [deleting, setDeleting] = React.useState(false);
   const [confirmDeleteOpen, setConfirmDeleteOpen] = React.useState(false);
-  const [aiOpen, setAiOpen] = React.useState(false);
+  const [deriveOpen, setDeriveOpen] = React.useState(false);
+  const [filling, setFilling] = React.useState(false);
+  const [savedId, setSavedId] = React.useState<string | null>(character?.id ?? null);
   const initKey = `${open ? 1 : 0}:${character?.id ?? "new"}:${detailApi.data?.updatedAt ?? ""}`;
   const lastInitKey = React.useRef("");
 
@@ -160,6 +154,7 @@ export function CharacterEditor({
     if (lastInitKey.current === initKey) return;
     lastInitKey.current = initKey;
     if (!open) return;
+    setSavedId(source?.id ?? null);
     setDraft(source ? toDraft(source) : emptyDraft());
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initKey, open]);
@@ -176,10 +171,11 @@ export function CharacterEditor({
     setSaving(true);
     try {
       const payload = { ...draft, name };
-      const saved = editing && character
-        ? await apiPatch<Character>(`/api/characters/${character.id}`, payload)
+      const saved = savedId
+        ? await apiPatch<Character>(`/api/characters/${savedId}`, payload)
         : await apiPost<Character>(`/api/characters`, { novelId, ...payload });
       const entity = unwrapEntity(saved);
+      setSavedId(entity.id);
       onSaved(entity);
       notifyDataChanged("characters");
       toast({ title: editing ? "角色已保存" : "已新建角色", description: name, tone: "success" });
@@ -208,11 +204,67 @@ export function CharacterEditor({
     }
   };
 
-  const handleAiAdopt = (text: string, target: string) => {
-    const key = target as keyof CharacterDraft;
-    if (key === "appearance" || key === "personality" || key === "goals" || key === "secrets" || key === "arc" || key === "speechStyle" || key === "currentState") {
-      update(key, text);
-    }
+  const fillCard = () => {
+    setFilling(true);
+    let text = "";
+    void streamAiTask(
+      {
+        novelId,
+        feature: "character-card",
+        message: ["这是补全当前角色卡。", labeledDraft([
+          { label: "姓名", value: draft.name },
+          { label: "身份", value: draft.identity },
+          { label: "外貌", value: draft.appearance },
+          { label: "性格", value: draft.personality },
+          { label: "目标", value: draft.goals },
+          { label: "秘密", value: draft.secrets },
+          { label: "成长弧", value: draft.arc },
+          { label: "说话风格", value: draft.speechStyle },
+          { label: "当前状态", value: draft.currentState },
+        ])].filter(Boolean).join("\n\n"),
+        instruction:
+          "这是补全当前角色卡。只输出 JSON：{\"identity\":\"\",\"appearance\":\"\",\"personality\":\"\",\"goals\":\"\",\"secrets\":\"\",\"arc\":\"\",\"speechStyle\":\"\",\"currentState\":\"\"}。只写这一个人，不要改姓名，不要提问。",
+      },
+      {
+        onEvent: (event: AiStreamEvent) => {
+          if (event.type === "delta") text += event.text;
+        },
+      },
+    )
+      .then(() => {
+        const fill = parseCharacterFill(text);
+        if (!fill) {
+          toast({ title: "没有填进卡片", description: "生成结果不是这张角色卡的字段。", tone: "error" });
+          return;
+        }
+        setDraft((prev) => ({
+          ...prev,
+          identity: fill.identity || prev.identity,
+          appearance: fill.appearance || prev.appearance,
+          personality: fill.personality || prev.personality,
+          goals: fill.goals || prev.goals,
+          secrets: fill.secrets || prev.secrets,
+          arc: fill.arc || prev.arc,
+          speechStyle: fill.speechStyle || prev.speechStyle,
+          currentState: fill.currentState || prev.currentState,
+        }));
+        toast({ title: "已填入当前卡片", description: "还没保存。确认后点保存才会写入。", tone: "success" });
+      })
+      .catch((err: unknown) => {
+        toast({ title: "补全失败", description: err instanceof Error ? err.message : "请稍后再试", tone: "error" });
+      })
+      .finally(() => setFilling(false));
+  };
+
+  const ensureSource = async () => {
+    if (savedId) return savedId;
+    const name = draft.name.trim();
+    if (!name) return null;
+    const saved = unwrapEntity(await apiPost<Character>("/api/characters", { novelId, ...draft, name }));
+    setSavedId(saved.id);
+    onSaved(saved);
+    notifyDataChanged("characters");
+    return saved.id;
   };
 
   const chapterOptions = [
@@ -245,7 +297,7 @@ export function CharacterEditor({
               取消
             </Button>
             <Button variant="primary" size="sm" loading={saving} onClick={save}>
-              {editing ? "保存" : "创建角色"}
+              {savedId ? "保存" : "创建角色"}
             </Button>
           </div>
         </div>
@@ -253,27 +305,43 @@ export function CharacterEditor({
     >
       <div className="space-y-3.5 p-4 [&_a:focus-visible]:outline-none [&_a:focus-visible]:ring-2 [&_a:focus-visible]:ring-accent/60 [&_button:focus-visible]:outline-none [&_button:focus-visible]:ring-2 [&_button:focus-visible]:ring-accent/60">
         {/* 概览条：角色名 / 定位 + AI 补全入口 */}
-        <div className="flex items-center gap-3 rounded-lg border border-line bg-surface-2 px-3.5 py-3">
-          <span
-            className="flex size-10 shrink-0 items-center justify-center rounded-full bg-accent-soft font-serif text-[16px] font-semibold text-accent"
-            aria-hidden
-          >
-            {initial}
-          </span>
-          <div className="min-w-0 flex-1">
-            <p className="truncate text-[14px] font-medium text-ink">{displayName}</p>
-            <p className="mt-0.5 truncate text-[11.5px] text-ink-3">{subtitle || "还没有填写身份"}</p>
+        <div className="rounded-lg border border-line bg-surface-2 px-3.5 py-3">
+          <div className="flex items-center gap-3">
+            <span
+              className="flex size-10 shrink-0 items-center justify-center rounded-full bg-accent-soft font-serif text-[16px] font-semibold text-accent"
+              aria-hidden
+            >
+              {initial}
+            </span>
+            <div className="min-w-0 flex-1">
+              <p className="truncate text-[14px] font-medium text-ink">{displayName}</p>
+              <p className="mt-0.5 truncate text-[11.5px] text-ink-3">{subtitle || "还没有填写身份"}</p>
+            </div>
           </div>
-          <Button
-            variant="ghost"
-            size="sm"
-            className="shrink-0 text-accent hover:bg-accent-soft"
-            icon={<Sparkles className="size-3.5" />}
-            onClick={() => setAiOpen(true)}
-          >
-            AI 补全
-          </Button>
+          <div className="mt-3 flex flex-wrap items-center gap-1 border-t border-line pt-3">
+            <Button
+              variant="ghost"
+              size="sm"
+              className="text-accent hover:bg-accent-soft"
+              icon={<Sparkles className="size-3.5" />}
+              loading={filling}
+              onClick={fillCard}
+            >
+              补全这张卡
+            </Button>
+            <Button variant="ghost" size="sm" icon={<GitBranch className="size-3.5" />} onClick={() => setDeriveOpen(true)}>
+              衍生相关
+            </Button>
+          </div>
         </div>
+
+        <ol className="space-y-1.5 rounded-lg border border-line bg-surface px-3.5 py-3 text-[12px] leading-5 text-ink-2">
+          <li>1. 先写姓名。已有的身份、性格可以留下，AI 会顺着你写过的事实补。</li>
+          <li>2. 「补全这张卡」只改这个人的身份、外貌、性格这些栏，不改姓名，也不会自动保存。看完点底部「{savedId ? "保存" : "创建角色"}」。</li>
+          <li>3. 如果这段话里还有对头、师兄、亲属，用「衍生相关」。它会列出几张新人卡，勾选后才另存。</li>
+          <li>字段旁边的「AI 帮我写」只改那一个框，和上面两个按钮不是一回事。</li>
+        </ol>
+        <ModelKeyHint />
 
         <EditorSection title="基本信息" hint="先定称呼与身份，AI 写作时会按这个口径称呼角色。">
           <div className="grid gap-3 sm:grid-cols-2">
@@ -406,24 +474,18 @@ export function CharacterEditor({
         {detailApi.loading ? <p className="text-[11px] text-ink-3">正在获取角色最新详情…</p> : null}
       </div>
 
-      <AiAssistSheet
-        open={aiOpen}
-        onClose={() => setAiOpen(false)}
-        title="AI 补全 · 角色卡"
-        feature="character-card"
+      <CharacterDeriveSheet
+        open={deriveOpen}
         novelId={novelId}
-        instruction={`请完善角色「${draft.name || "未命名"}」。若我写了想法或已有草稿，在此基础上写具体，保留关键信息，从行为与选择里体现性格。`}
-        selection={labeledDraft([
-          { label: "外貌", value: draft.appearance },
-          { label: "性格与行事逻辑", value: draft.personality },
-          { label: "目标", value: draft.goals },
-          { label: "秘密", value: draft.secrets },
-          { label: "成长弧", value: draft.arc },
-          { label: "说话风格", value: draft.speechStyle },
-          { label: "当前状态", value: draft.currentState },
-        ])}
-        targets={AI_TARGETS}
-        onAdopt={handleAiAdopt}
+        source={{
+          id: savedId,
+          name: draft.name,
+          role: draft.role,
+          identity: draft.identity,
+          personality: draft.personality,
+        }}
+        onClose={() => setDeriveOpen(false)}
+        onEnsureSource={ensureSource}
       />
 
       <ConfirmDialog

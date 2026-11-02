@@ -163,9 +163,11 @@ export function WorldDeriveSheet({
       }
     >
       <div className="space-y-3 p-4">
-        <p className="text-[12.5px] leading-relaxed text-ink-3">
-          围绕「{source.title || "当前这张卡"}」提出几条可以单独保存的设定。勾选后才会写入。位于、属于这类关系会挂在这张卡下面。
-        </p>
+        <ol className="space-y-1.5 text-[12.5px] leading-6 text-ink-2">
+          <li>1. 先确认当前卡是「{source.title || "还没写名称"}」。没写名称就先回去填标题。</li>
+          <li>2. 点「生成」。想指定拆出什么，写在下面；留空就按这张卡已有的内容来。</li>
+          <li>3. 勾上要留下的。取消勾选的不会保存。点「写入选中的」后，当前这张卡本身不会被改写。</li>
+        </ol>
         <Textarea
           label="还想衍生什么"
           rows={3}

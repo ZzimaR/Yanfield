@@ -453,9 +453,58 @@ function demoDerived(user: string): string {
   });
 }
 
+function demoCharacterFill(user: string): string {
+  const name = user.match(/姓名：\s*\n?([^\n]+)/)?.[1]?.trim() || "这个人";
+  return JSON.stringify({
+    identity: `${name}只写这张卡上已有的身份。`,
+    personality: `${name}的行事从已有选择里看，不另编经历。`,
+  });
+}
+
+function demoDerivedCharacters(user: string): string {
+  const name = user.match(/当前角色：([^\n（(]{1,24})/)?.[1]?.trim() || "此人";
+  return JSON.stringify({
+    items: [
+      {
+        name: `${name}的对手`,
+        role: "antagonist",
+        identity: `与${name}对着干的人。`,
+        personality: "只写这一条自己的事。",
+        relation: "对手",
+      },
+    ],
+  });
+}
+
+function demoForeshadowFill(user: string): string {
+  const title = user.match(/标题：\s*\n?([^\n]+)/)?.[1]?.trim() || "这条伏笔";
+  return JSON.stringify({
+    description: `${title}只写它自己埋了什么、以后怎么收。`,
+    notes: "不把别的线索写进这张卡。",
+  });
+}
+
+function demoDerivedForeshadows(user: string): string {
+  const title = user.match(/当前伏笔：([^\n]{1,24})/)?.[1]?.trim() || "这条";
+  return JSON.stringify({
+    items: [
+      {
+        title: `${title}的回收`,
+        description: `单独登记${title}以后怎么收，不改当前这条。`,
+        status: "planted",
+        notes: "",
+      },
+    ],
+  });
+}
+
 function demoCompletion(messages: AiMessage[]): string {
   const system = messages.filter((m) => m.role === "system").map((m) => m.content).join("\n");
   const user = messages.filter((m) => m.role === "user").map((m) => m.content).join("\n");
+  if (user.includes("这是衍生相关角色")) return demoDerivedCharacters(user);
+  if (user.includes("这是补全当前角色卡")) return demoCharacterFill(user);
+  if (user.includes("这是衍生相关伏笔")) return demoDerivedForeshadows(user);
+  if (user.includes("这是补全当前伏笔")) return demoForeshadowFill(user);
   if (user.includes("这是衍生相关设定")) return demoDerived(user);
   if (user.includes("这是补全当前卡片")) return demoCardFill(user);
   if (/故事档案员/.test(system) && /只输出 JSON|严格 JSON|返回 JSON|JSON Schema/i.test(system)) {

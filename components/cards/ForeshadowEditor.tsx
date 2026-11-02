@@ -5,12 +5,16 @@
  * 编辑：GET/PATCH /api/foreshadows/[id]；新建：POST /api/foreshadows；删除：DELETE /api/foreshadows/[id]
  */
 import * as React from "react";
-import { Trash2 } from "lucide-react";
+import { GitBranch, Sparkles, Trash2 } from "lucide-react";
 import { Button, ConfirmDialog, Input, Select, Sheet, Textarea, useToast } from "@/components/ui/kit";
-import { apiDelete, apiPatch, apiPost, notifyDataChanged, useApi } from "@/lib/client/api";
-import type { Foreshadow, ForeshadowStatus } from "@/lib/types";
+import { ModelKeyHint } from "@/components/ai/ModelKeyHint";
+import { apiDelete, apiPatch, apiPost, notifyDataChanged, streamAiTask, useApi } from "@/lib/client/api";
+import { parseForeshadowFill } from "@/lib/ai/card-derive";
+import { labeledDraft } from "@/lib/ai/assist-brief";
+import type { AiStreamEvent, Foreshadow, ForeshadowStatus } from "@/lib/types";
 import { FORESHADOW_STATUS_LABEL } from "@/lib/types";
 import { stripChapterNumber, unwrapEntity, useErrorToast } from "@/components/outline/form-kit";
+import { ForeshadowDeriveSheet } from "./ForeshadowDeriveSheet";
 
 interface ForeshadowDraft {
   title: string;
@@ -81,6 +85,9 @@ export function ForeshadowEditor({
   const [saving, setSaving] = React.useState(false);
   const [deleting, setDeleting] = React.useState(false);
   const [confirmDeleteOpen, setConfirmDeleteOpen] = React.useState(false);
+  const [deriveOpen, setDeriveOpen] = React.useState(false);
+  const [filling, setFilling] = React.useState(false);
+  const [savedId, setSavedId] = React.useState<string | null>(foreshadow?.id ?? null);
   const initKey = `${open ? 1 : 0}:${foreshadow?.id ?? "new"}:${detailApi.data?.updatedAt ?? foreshadow?.updatedAt ?? ""}`;
   const lastInitKey = React.useRef("");
 
@@ -92,6 +99,7 @@ export function ForeshadowEditor({
     if (lastInitKey.current === initKey) return;
     lastInitKey.current = initKey;
     if (!open) return;
+    setSavedId(source?.id ?? null);
     setDraft(source ? toDraft(source) : emptyDraft());
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initKey, open]);
@@ -121,10 +129,12 @@ export function ForeshadowEditor({
     setSaving(true);
     try {
       const payload = { ...draft, title };
-      const saved = editing && foreshadow
-        ? await apiPatch<Foreshadow>(`/api/foreshadows/${foreshadow.id}`, payload)
+      const saved = savedId
+        ? await apiPatch<Foreshadow>(`/api/foreshadows/${savedId}`, payload)
         : await apiPost<Foreshadow>(`/api/foreshadows`, { novelId, ...payload });
-      onSaved(unwrapEntity(saved));
+      const entity = unwrapEntity(saved);
+      setSavedId(entity.id);
+      onSaved(entity);
       notifyDataChanged("foreshadows");
       toast({ title: editing ? "伏笔已保存" : "已新建伏笔", description: title, tone: "success" });
       onClose();
@@ -150,6 +160,57 @@ export function ForeshadowEditor({
     } finally {
       setDeleting(false);
     }
+  };
+
+  const fillCard = () => {
+    setFilling(true);
+    let text = "";
+    void streamAiTask(
+      {
+        novelId,
+        feature: "foreshadow-card",
+        message: ["这是补全当前伏笔。", labeledDraft([
+          { label: "标题", value: draft.title },
+          { label: "说明", value: draft.description },
+          { label: "备注", value: draft.notes },
+        ])].filter(Boolean).join("\n\n"),
+        instruction:
+          "这是补全当前伏笔。只输出 JSON：{\"description\":\"\",\"notes\":\"\"}。只写这一条自己埋了什么、以后怎么收，不要提问，不要把别的线索写进来。",
+      },
+      {
+        onEvent: (event: AiStreamEvent) => {
+          if (event.type === "delta") text += event.text;
+        },
+      },
+    )
+      .then(() => {
+        const fill = parseForeshadowFill(text);
+        if (!fill) {
+          toast({ title: "没有填进卡片", description: "生成结果不是这条伏笔的说明和备注。", tone: "error" });
+          return;
+        }
+        setDraft((prev) => ({
+          ...prev,
+          description: fill.description || prev.description,
+          notes: fill.notes || prev.notes,
+        }));
+        toast({ title: "已填入当前卡片", description: "还没保存。确认后点保存才会写入。", tone: "success" });
+      })
+      .catch((err: unknown) => {
+        toast({ title: "补全失败", description: err instanceof Error ? err.message : "请稍后再试", tone: "error" });
+      })
+      .finally(() => setFilling(false));
+  };
+
+  const ensureSource = async () => {
+    if (savedId) return savedId;
+    const title = draft.title.trim();
+    if (!title) return null;
+    const saved = unwrapEntity(await apiPost<Foreshadow>("/api/foreshadows", { novelId, ...draft, title }));
+    setSavedId(saved.id);
+    onSaved(saved);
+    notifyDataChanged("foreshadows");
+    return saved.id;
   };
 
   const displayTitle = draft.title.trim() || "未命名伏笔";
@@ -178,7 +239,7 @@ export function ForeshadowEditor({
               取消
             </Button>
             <Button variant="primary" size="sm" loading={saving} onClick={save}>
-              {editing ? "保存" : "创建伏笔"}
+              {savedId ? "保存" : "创建伏笔"}
             </Button>
           </div>
         </div>
@@ -186,27 +247,47 @@ export function ForeshadowEditor({
     >
       <div className="space-y-3.5 p-4 [&_a:focus-visible]:outline-none [&_a:focus-visible]:ring-2 [&_a:focus-visible]:ring-accent/60 [&_button:focus-visible]:outline-none [&_button:focus-visible]:ring-2 [&_button:focus-visible]:ring-accent/60">
         {/* 概览条：标题 / 状态与埋设进度 */}
-        <div className="flex items-center gap-3 rounded-lg border border-line bg-surface-2 px-3.5 py-3">
-          <span
-            className="flex size-10 shrink-0 items-center justify-center rounded-full bg-gold-soft font-serif text-[16px] font-semibold text-gold"
-            aria-hidden
-          >
-            {initial}
-          </span>
-          <div className="min-w-0 flex-1">
-            <p className="truncate text-[14px] font-medium text-ink">{displayTitle}</p>
-            <p className="mt-0.5 truncate text-[11.5px] text-ink-3">{subtitle}</p>
-          </div>
-          {payoffTitle ? (
-            <span className="shrink-0 rounded-full border border-line bg-surface px-2 py-0.5 text-[10.5px] text-ink-3">
-              已安排回收
+        <div className="rounded-lg border border-line bg-surface-2 px-3.5 py-3">
+          <div className="flex items-center gap-3">
+            <span
+              className="flex size-10 shrink-0 items-center justify-center rounded-full bg-gold-soft font-serif text-[16px] font-semibold text-gold"
+              aria-hidden
+            >
+              {initial}
             </span>
-          ) : null}
+            <div className="min-w-0 flex-1">
+              <p className="truncate text-[14px] font-medium text-ink">{displayTitle}</p>
+              <p className="mt-0.5 truncate text-[11.5px] text-ink-3">{subtitle}</p>
+            </div>
+            {payoffTitle ? (
+              <span className="shrink-0 rounded-full border border-line bg-surface px-2 py-0.5 text-[10.5px] text-ink-3">
+                已安排回收
+              </span>
+            ) : null}
+          </div>
+          <div className="mt-3 flex flex-wrap items-center gap-1 border-t border-line pt-3">
+            <Button
+              variant="ghost"
+              size="sm"
+              className="text-accent hover:bg-accent-soft"
+              icon={<Sparkles className="size-3.5" />}
+              loading={filling}
+              onClick={fillCard}
+            >
+              补全这张卡
+            </Button>
+            <Button variant="ghost" size="sm" icon={<GitBranch className="size-3.5" />} onClick={() => setDeriveOpen(true)}>
+              衍生相关
+            </Button>
+          </div>
         </div>
 
-        <div className="rounded-lg border border-line bg-surface-2/60 px-3.5 py-2.5 text-[11.5px] leading-relaxed text-ink-3">
-          伏笔登记后会计入「未收伏笔」统计；写好埋设与回收位置，AI 续写时才不会提前泄底。
-        </div>
+        <ol className="space-y-1.5 rounded-lg border border-line bg-surface px-3.5 py-3 text-[12px] leading-5 text-ink-2">
+          <li>1. 先写标题。已有的说明可以留下，AI 会顺着你写过的事实补。</li>
+          <li>2. 「补全这张卡」只改这一条的说明和备注，不会自动保存，也不会把别的线索写进来。看完点底部「{savedId ? "保存" : "创建伏笔"}」。</li>
+          <li>3. 如果这段话里还有可以单独登记的回收或误导，用「衍生相关」。它会列出几条新伏笔，勾选后才另存。</li>
+        </ol>
+        <ModelKeyHint />
 
         <EditorSection title="基本信息" hint="一句话让读者记住它，状态决定统计里算不算「未收」。">
           <div className="grid gap-3 sm:grid-cols-2">
@@ -266,6 +347,14 @@ export function ForeshadowEditor({
 
         {detailApi.loading ? <p className="text-[11px] text-ink-3">正在获取伏笔最新详情…</p> : null}
       </div>
+
+      <ForeshadowDeriveSheet
+        open={deriveOpen}
+        novelId={novelId}
+        source={{ id: savedId, title: draft.title, description: draft.description, notes: draft.notes }}
+        onClose={() => setDeriveOpen(false)}
+        onEnsureSource={ensureSource}
+      />
 
       <ConfirmDialog
         open={confirmDeleteOpen}

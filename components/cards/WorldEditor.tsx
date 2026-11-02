@@ -17,6 +17,7 @@ import {
   useToast,
 } from "@/components/ui/kit";
 import { AiTextField, TagsInput, stripChapterNumber, unwrapEntity, useErrorToast } from "@/components/outline/form-kit";
+import { ModelKeyHint } from "@/components/ai/ModelKeyHint";
 import { labeledDraft } from "@/lib/ai/assist-brief";
 import { apiDelete, apiPatch, apiPost, notifyDataChanged, streamAiTask, useApi } from "@/lib/client/api";
 import { parseCardFill } from "@/lib/ai/world-derive";
@@ -309,7 +310,13 @@ export function WorldEditor({
           </div>
         </div>
 
-        <p className="text-[11.5px] leading-relaxed text-ink-3">补全只改当前这张卡，不会自动保存。其他地点用「衍生相关」，勾选后才另存。</p>
+        <ol className="space-y-1.5 rounded-lg border border-line bg-surface px-3.5 py-3 text-[12px] leading-5 text-ink-2">
+          <li>1. 先写标题。已有的摘要、正文可以留下，AI 会顺着你写过的事实补。</li>
+          <li>2. 「补全这张卡」只改这一张的摘要和正文，不会自动保存，也不会把别的地点写进来。看完点底部「{editing ? "保存" : "创建设定"}」。</li>
+          <li>3. 如果一段话里还有城、州、组织，用「衍生相关」。它会列出几张新卡，勾选后才另存。位于、属于会挂在这张卡下面。</li>
+          <li>字段旁边的「AI 帮我写」只改那一个框，和上面两个按钮不是一回事。</li>
+        </ol>
+        <ModelKeyHint />
 
         <EditorSection title="基本信息" hint="先给这条设定一个能搜到的名字与归属，AI 会按分类理解它的约束力。">
           <div className="grid gap-3 sm:grid-cols-2">

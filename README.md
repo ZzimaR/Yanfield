@@ -1,19 +1,32 @@
 # 砚田 Yanfield
 
-本地优先、源码公开的 AI 长篇小说创作工作台。书稿、设定与灵感都留在你自己的电脑里；模型随你换；每一处 AI 改动都由你点头才落笔。
+本地部署、隐私优先的长篇小说创作工作台。书稿、设定与灵感都保存在你自己的电脑或服务器上，不依赖账号和云端平台；在此基础上接入 AI，辅助大纲、写作与资料管理，每一处 AI 改动都由你点头才落笔。
 
 [![License: Noncommercial](https://img.shields.io/badge/License-Noncommercial-a97f2b)](LICENSE)
 [![Node](https://img.shields.io/badge/Node-%E2%89%A522.13-3c873a)](https://nodejs.org)
 [![Next.js](https://img.shields.io/badge/Next.js-15-000000)](https://nextjs.org)
 [![TypeScript](https://img.shields.io/badge/TypeScript-strict-3178c6)](https://www.typescriptlang.org)
-[![Tests](https://img.shields.io/badge/tests-100%20passing-2f5d62)](tests)
+[![Tests](https://img.shields.io/badge/tests-110%20passing-2f5d62)](tests)
 [![Docker](https://img.shields.io/badge/Docker-ready-2496ed)](Dockerfile)
 
 > **状态：v0.1.0 开发中，尚未发布正式版本。** 功能已能完整跑通，但接口和界面仍可能调整，欢迎试用与反馈。
 
 ## 快速开始
 
-需要 Node.js ≥ 22.13（自带 `node:sqlite`，不用开实验标志）。不需要 Docker、MongoDB 或 Redis。
+需要 Node.js ≥ 22.13（自带 `node:sqlite`，不用开实验标志）和 pnpm ≥ 9。不需要 Docker、MongoDB 或 Redis。
+
+如果还没有 Node.js，先按系统安装：
+
+- **Windows**：从 [Node.js 官网](https://nodejs.org) 下载 24 LTS 的 Windows Installer（`.msi`）并安装，保持默认选项即可。安装完成后打开 PowerShell，运行 `node --version` 和 `npm --version` 检查是否成功。
+- **macOS**：从 [Node.js 官网](https://nodejs.org) 下载 24 LTS 的 macOS Installer（`.pkg`）并安装。安装完成后打开「终端」，运行 `node --version` 和 `npm --version` 检查是否成功。也可以使用 Homebrew：`brew install node@24`。
+
+npm 会随 Node.js 一起安装，不需要单独下载。确认 npm 可用后，再安装 pnpm：
+
+```bash
+npm install --global pnpm@9
+```
+
+项目使用 pnpm 管理依赖并锁定版本；虽然 npm/yarn 在部分情况下也能安装，但不建议混用。
 
 ```bash
 git clone https://github.com/ZzimaR/Yanfield.git
@@ -28,13 +41,21 @@ pnpm dev
 
 ![写作台](docs/screenshots/03-editor-blue.png)
 
-## 为什么做这个
+## 本地部署，隐私优先
+
+砚田首先是一个本地运行的写作工具，其次才是 AI 创作助手。你可以把它部署在自己的电脑、家庭服务器或自有 VPS 上，作品数据和配置由你自己掌控。
+
+- 书稿、设定、AI 对话与 API Key 都保存在本地 SQLite 中，不需要注册、登录或订阅；
+- 没有遥测、云同步或砚田自有服务器，只有你主动配置的模型服务会收到请求；
+- 支持离线演示模式，不接入任何模型也能体验完整流程；也可以连接本机 Ollama，让内容不离开自己的设备；
+- 源码公开、部署方式透明，数据文件可以自行备份、迁移和检查。
+
+## 为什么加入 AI
 
 写中文长篇，最难的不是写，而是「记住」：人设、设定、伏笔、前文细节、时间线，几十万字之后 AI 和作者本人都容易忘。
 
-砚田的取舍是**本地优先**：
+在本地数据掌控的前提下，砚田提供 AI 辅助：
 
-- 书稿、设定、AI 对话都存本地 SQLite（`data/yanfield.db`），不依赖任何云端账号；
 - 不绑定模型厂商，OpenAI 兼容 / Anthropic / Gemini / Ollama 都能接，对话和写作共用一个默认模型，随时可换；
 - 上下文装配是可见、可调的——你决定哪些设定让 AI 看见、花多少 token；
 - AI 对正文的改动一律先出**逐块 diff**，接受哪块、拒绝哪块由你决定。
@@ -91,7 +112,7 @@ docs/         功能、架构、模型服务、部署、常见问题、路线图
 
 ```bash
 pnpm typecheck   # tsc --noEmit
-pnpm test        # vitest（100 个用例）
+pnpm test        # vitest（110 个用例）
 pnpm build       # 生产构建
 pnpm db:seed     # 重新生成示例作品（不删用户数据）
 ```
@@ -150,4 +171,4 @@ Next.js 15 · React 19 · TypeScript strict · Tailwind CSS v4 · Tiptap 3 · no
 
 ## 许可
 
-[PolyForm Noncommercial 1.0.0](LICENSE)。可以自己用、学习、修改和分享源码，不能用于商业目的。你用砚田写出的小说版权仍归你。代码与界面为干净重写；功能形态参考了中文网文写作场景的公开产品文档，未复制任何第三方源码。
+[PolyForm Noncommercial 1.0.0](LICENSE)。你可以自行使用、学习、修改和分享本项目源码，但不得将本项目用于商业目的（包括部署后以任何形式向用户收费）。使用砚田创作的小说，其版权仍归作者所有。代码与界面均为独立重写；功能形态参考了中文网文写作场景中的公开产品文档，未复制任何第三方源码。

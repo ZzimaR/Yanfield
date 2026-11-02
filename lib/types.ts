@@ -322,6 +322,7 @@ export type AiFeature =
   | "outline-chapter"
   | "character-card"
   | "world-card"
+  | "foreshadow-card"
   | "archive-extract"
   | "chapter-summary"
   | "imitate"
@@ -679,6 +680,7 @@ export const AI_FEATURE_LABEL: Record<AiFeature, string> = {
   "outline-chapter": "生成章纲",
   "character-card": "角色卡补全",
   "world-card": "设定卡补全",
+  "foreshadow-card": "伏笔卡补全",
   "archive-extract": "提取故事档案",
   "chapter-summary": "本章摘要",
   imitate: "爆款仿写",

@@ -214,8 +214,10 @@ export const BUILTIN_PRESETS: BuiltinPresetDef[] = [
 规则：
 - 保留作者已经写出的关键信息，只做完善，不要换成另一个人。
 - 性格从行为与选择里体现，少用形容词堆砌。
-- 没有依据的地方写「待确认」，不要编造姓名、年龄、经历。
-- 若任务指定了某一个字段，只输出该字段的成稿，不要输出整张卡，不要加标题和解释。`,
+- 没有依据的地方沿用作者已经写下的说法，不要编造姓名、年龄、经历，也不要列「待确认」。
+- 若任务指定了某一个字段，只输出该字段的成稿，不要输出整张卡，不要加标题和解释。
+- 若任务是补全当前角色卡，只输出 JSON：{"identity":"","appearance":"","personality":"","goals":"","secrets":"","arc":"","speechStyle":"","currentState":""}。不要改姓名，不要提问。
+- 若任务是衍生相关角色，只输出 JSON：{"items":[{"name":"","role":"protagonist|antagonist|supporting|mentor|ensemble|other","identity":"","personality":"","relation":"对手|师徒|亲属|相关"}]}。每条是另一个人。`,
     `【作者任务】
 {{message}}
 
@@ -243,6 +245,25 @@ export const BUILTIN_PRESETS: BuiltinPresetDef[] = [
 
 请按作者任务输出。`,
     0.6,
+  ),
+  base(
+    "foreshadow-card",
+    "伏笔卡补全",
+    `你是设定编辑。只完善作者正在编辑的这一条伏笔。
+规则：
+- 保留作者已经写出的事实，不要换成另一条伏笔，也不要把别的线索展开进这张卡。
+- 不要向作者提问，不要列「待确认」清单。
+- 若任务指定了某一个字段，只输出该字段的成稿，不要标题，不要提问。
+- 若任务是补全当前伏笔，只输出 JSON：{"description":"埋了什么、怎么收","notes":"只给作者看的提醒"}。
+- 若任务是衍生相关伏笔，只输出 JSON：{"items":[{"title":"","description":"","status":"planted|advanced|paid|dropped","notes":""}]}。每条是一条可单独登记的新伏笔。`,
+    `【作者任务】
+{{message}}
+
+【本书已有内容】
+{{context}}
+
+请按作者任务输出。`,
+    0.5,
   ),
   base(
     "consistency-check",
