@@ -18,10 +18,12 @@ import type { ChapterPatch, SelectionInfo } from "@/lib/editor/types";
 import { useChapterDraft } from "@/lib/editor/useChapterDraft";
 import { useEditorBridgeValue } from "@/lib/editor/useEditorBridgeValue";
 import { useNovelTree } from "@/lib/editor/useNovelTree";
+import { cn } from "@/lib/ui/cn";
 import { useHotkeys, useLocalStorageState, useMediaQuery, useResizePanel } from "@/lib/ui/hooks";
 import { applyTheme } from "@/lib/ui/theme";
 import type { AppSettings, Chapter } from "@/lib/types";
 import { AiPanelSlot } from "./AiPanelSlot";
+import { CommandPalette } from "./CommandPalette";
 import { EditorCanvas } from "./EditorCanvas";
 import { EditorHeader, type EditorTheme } from "./EditorHeader";
 import { EditorRightRail } from "./EditorRightRail";
@@ -76,6 +78,8 @@ export function EditorWorkbench({ novelId }: EditorWorkbenchProps) {
   const isWide = useMediaQuery("(min-width: 1024px)");
   const [drawerLeftOpen, setDrawerLeftOpen] = React.useState(false);
   const [drawerRightOpen, setDrawerRightOpen] = React.useState(false);
+  /** ⌘K 命令面板 */
+  const [paletteOpen, setPaletteOpen] = React.useState(false);
 
   /* ---------------- 应用设置（字号/行高/自动保存策略） ---------------- */
 
@@ -138,6 +142,20 @@ export function EditorWorkbench({ novelId }: EditorWorkbenchProps) {
     const linked = new URLSearchParams(window.location.search).get("chapterId");
     linkedChapterIdRef.current = linked && linked.trim() ? linked.trim() : null;
   }, []);
+
+  /** 深链：/editor/<novelId>?tab=outline|codex|archives 直接打开对应左栏（旧大纲/设定/档案页重定向过来） */
+  React.useEffect(() => {
+    const linked = new URLSearchParams(window.location.search).get("tab");
+    if (linked !== "toc" && linked !== "outline" && linked !== "codex" && linked !== "archives") return;
+    setTab(linked);
+    if (window.matchMedia("(min-width: 768px)").matches) setLeftOpen(true);
+    else setDrawerLeftOpen(true);
+  }, [setTab, setLeftOpen]);
+
+  /** 旧版本存下的「research」页签，迁移到「档案」 */
+  React.useEffect(() => {
+    if ((tab as string) === "research") setTab("archives");
+  }, [tab, setTab]);
 
   // 目录加载完成后：优先深链章节 → 上次打开的章节 → 第一章
   React.useEffect(() => {
@@ -309,6 +327,16 @@ export function EditorWorkbench({ novelId }: EditorWorkbenchProps) {
 
   /* ---------------- 快捷键 ---------------- */
 
+  /** 打开左栏某个页签（桌面展开内联栏 / 窄屏打开抽屉） */
+  const openLeftTab = React.useCallback(
+    (next: EditorLeftTab) => {
+      setTab(next);
+      if (isDesktop) setLeftOpen(true);
+      else setDrawerLeftOpen(true);
+    },
+    [isDesktop, setTab, setLeftOpen],
+  );
+
   useHotkeys(
     {
       // 立即保存
@@ -316,8 +344,8 @@ export function EditorWorkbench({ novelId }: EditorWorkbenchProps) {
         event.preventDefault();
         void flush();
       },
-      // 聚焦 AI 输入框
-      "mod+j": (event) => {
+      // 聚焦 AI 输入框（Ctrl/Cmd+J 被浏览器占用为下载页，改用 Alt+J）
+      "alt+j": (event) => {
         event.preventDefault();
         requestAiFocus();
       },
@@ -334,6 +362,28 @@ export function EditorWorkbench({ novelId }: EditorWorkbenchProps) {
         event.preventDefault();
         toggleImmersive();
       },
+      // 直达左栏四个页签（浏览器保留 Ctrl/Cmd+1..9，改用 mod+shift+数字）
+      "mod+shift+1": (event) => {
+        event.preventDefault();
+        openLeftTab("toc");
+      },
+      "mod+shift+2": (event) => {
+        event.preventDefault();
+        openLeftTab("outline");
+      },
+      "mod+shift+3": (event) => {
+        event.preventDefault();
+        openLeftTab("codex");
+      },
+      "mod+shift+4": (event) => {
+        event.preventDefault();
+        openLeftTab("archives");
+      },
+      // 命令面板
+      "mod+k": (event) => {
+        event.preventDefault();
+        setPaletteOpen((prev) => !prev);
+      },
       // Esc 退出沉浸 / 关闭抽屉（useHotkeys 的 key 是 event.key.toLowerCase()）
       esc: () => {
         if (drawerRightOpen) setDrawerRightOpen(false);
@@ -346,7 +396,7 @@ export function EditorWorkbench({ novelId }: EditorWorkbenchProps) {
         else if (immersive) exitImmersive();
       },
     },
-    [flush, requestAiFocus, toggleLeft, toggleRight, toggleImmersive, immersive, exitImmersive, drawerLeftOpen, drawerRightOpen],
+    [flush, requestAiFocus, toggleLeft, toggleRight, toggleImmersive, immersive, exitImmersive, drawerLeftOpen, drawerRightOpen, openLeftTab],
   );
 
   /* ---------------- 离开页面提示 ---------------- */
@@ -361,6 +411,24 @@ export function EditorWorkbench({ novelId }: EditorWorkbenchProps) {
     return () => window.removeEventListener("beforeunload", handleBeforeUnload);
   }, [hasUnsaved]);
 
+  React.useEffect(() => {
+    const openPanel = (event: Event) => {
+      const next = (event as CustomEvent<{ tab?: EditorLeftTab }>).detail?.tab;
+      if (next !== "toc" && next !== "outline" && next !== "codex" && next !== "archives") return;
+      openLeftTab(next);
+    };
+    const openAi = () => {
+      if (isWide) setRightOpen(true);
+      else setDrawerRightOpen(true);
+    };
+    window.addEventListener("yantian:editor-panel", openPanel);
+    window.addEventListener("yantian:hand-off", openAi);
+    return () => {
+      window.removeEventListener("yantian:editor-panel", openPanel);
+      window.removeEventListener("yantian:hand-off", openAi);
+    };
+  }, [isWide, openLeftTab]);
+
   /* ---------------- 渲染 ---------------- */
 
   if (loading && !tree) return <EditorLoading />;
@@ -372,15 +440,11 @@ export function EditorWorkbench({ novelId }: EditorWorkbenchProps) {
   const status = activeDraft?.status ?? chapter?.status ?? "draft";
 
   /* 内联栏只在对应断点渲染；窄屏一律走抽屉，避免挤压正文 */
-  const showLeftInline = isDesktop && leftOpen && !immersive;
+  const leftInlineVisible = isDesktop && leftOpen && !immersive;
   const showRightInline = isWide && rightOpen && !immersive;
 
   /** 打开目录（桌面展开内联栏 / 窄屏打开抽屉），并切到目录页签 */
-  const openToc = () => {
-    setTab("toc");
-    if (isDesktop) setLeftOpen(true);
-    else setDrawerLeftOpen(true);
-  };
+  const openToc = () => openLeftTab("toc");
 
   return (
     <EditorBridgeProvider value={bridge}>
@@ -411,13 +475,15 @@ export function EditorWorkbench({ novelId }: EditorWorkbenchProps) {
         )}
 
         <div className="flex min-h-0 flex-1">
-          {/* 左栏：目录 / 大纲 / 资料 / 设定（仅 ≥768 内联） */}
-          {showLeftInline ? (
+          {/* 左栏：目录 / 章纲 / 设定 / 档案（仅 ≥768 内联）。
+              桌面下始终挂载，折叠 / 沉浸只切显隐：各面板不卸载，页签、草稿与已拉取的数据都保留 */}
+          {isDesktop ? (
             <>
               <aside
                 style={{ width: leftPanel.width }}
-                className="hidden min-h-0 shrink-0 overflow-hidden md:flex"
-                aria-label="目录与资料"
+                className={cn("min-h-0 shrink-0 overflow-hidden", leftInlineVisible ? "flex" : "hidden")}
+                aria-label="目录、章纲、设定与档案"
+                aria-hidden={leftInlineVisible ? undefined : true}
               >
                 <LeftPanel
                   novelId={novelId}
@@ -431,13 +497,15 @@ export function EditorWorkbench({ novelId }: EditorWorkbenchProps) {
                   onSelectChapter={selectChapter}
                 />
               </aside>
-              <div
-                role="separator"
-                aria-orientation="vertical"
-                aria-label="拖拽调整左栏宽度"
-                onPointerDown={leftPanel.onPointerDown}
-                className="hidden w-1 shrink-0 cursor-col-resize border-r border-line bg-surface-2/40 transition-colors duration-150 hover:bg-accent-soft md:block"
-              />
+              {leftInlineVisible ? (
+                <div
+                  role="separator"
+                  aria-orientation="vertical"
+                  aria-label="拖拽调整左栏宽度"
+                  onPointerDown={leftPanel.onPointerDown}
+                  className="hidden w-1 shrink-0 cursor-col-resize border-r border-line bg-surface-2/40 transition-colors duration-150 hover:bg-accent-soft md:block"
+                />
+              ) : null}
             </>
           ) : null}
 
@@ -537,7 +605,7 @@ export function EditorWorkbench({ novelId }: EditorWorkbenchProps) {
           ) : null}
         </div>
 
-        {/* 窄屏：目录/大纲/资料/设定 抽屉 */}
+        {/* 窄屏：目录 / 章纲 / 设定 / 档案 抽屉 */}
         <Sheet
           open={!isDesktop && drawerLeftOpen && !immersive}
           onClose={() => setDrawerLeftOpen(false)}
@@ -577,6 +645,15 @@ export function EditorWorkbench({ novelId }: EditorWorkbenchProps) {
             </EditorErrorBoundary>
           </div>
         </Sheet>
+
+        <CommandPalette
+          open={paletteOpen}
+          onOpenChange={setPaletteOpen}
+          novelId={novelId}
+          chapters={chapters}
+          onOpenChapter={selectChapter}
+          onOpenTab={openLeftTab}
+        />
 
         {/* 选区状态给屏幕阅读器（视觉上已在正文状态条展示） */}
         <span className="sr-only" aria-live="polite">

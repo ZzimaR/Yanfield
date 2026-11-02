@@ -280,7 +280,7 @@ export default function NovelOverviewPage() {
                   故事档案
                 </h3>
                 <Link
-                  href={`/novel/${novelId}/archives`}
+                  href={`/editor/${novelId}?tab=archives`}
                   className="text-[11px] text-accent transition-opacity hover:opacity-80"
                 >
                   查看

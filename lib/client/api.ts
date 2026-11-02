@@ -5,6 +5,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import type { CodexItem, CodexTurn } from "@/lib/ai/codex";
 import type { AiChatRequest, AiStreamEvent, AiTaskRequest } from "@/lib/types";
 
 export class ApiError extends Error {
@@ -163,6 +164,18 @@ async function consumeSse(res: Response, handlers: StreamHandlers): Promise<void
 
 export function streamAiChat(req: AiChatRequest, handlers: StreamHandlers): Promise<void> {
   return fetch("/api/ai/chat", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(req),
+    signal: handlers.signal,
+  }).then((res) => consumeSse(res, handlers));
+}
+
+export function streamAiCodex(
+  req: { novelId: string; message: string; history?: CodexTurn[]; draft?: CodexItem[]; contextText?: string },
+  handlers: StreamHandlers,
+): Promise<void> {
+  return fetch("/api/ai/codex", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(req),

@@ -77,22 +77,52 @@ export function useOnClickOutside<T extends HTMLElement>(ref: React.RefObject<T 
 
 type HotkeyMap = Record<string, (event: KeyboardEvent) => void>;
 
-/** 快捷键：如 { "mod+s": fn, "esc": fn, "mod+shift+k": fn } */
+/** 输入框 / 下拉里不抢任何快捷键（保存除外）；正文可编辑区放行带 mod / alt 的显式组合与 Esc，其余裸键让位给输入法 */
+function shouldIgnoreHotkey(combo: string, target: EventTarget | null): boolean {
+  if (!(target instanceof HTMLElement)) return false;
+  const tag = target.tagName;
+  const isFormControl = tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT";
+  if (isFormControl) return combo !== "mod+s";
+  if (target.isContentEditable) {
+    // 正文（TipTap）里 Alt+J / ⌘K 等编辑台快捷键仍需可用；Esc 不产生字符，保留它退出沉浸 / 关浮层
+    if (combo === "esc" || combo === "escape") return false;
+    return !(combo.startsWith("mod+") || combo.startsWith("alt+"));
+  }
+  return false;
+}
+
+/**
+ * 归一化按键：优先用 event.code，避免修饰键改变 event.key 导致匹配不上
+ * （Shift+1 的 key 是 "!"、macOS Option+J 的 key 是 "∆"，而 code 仍是 Digit1 / KeyJ）。
+ */
+function normalizeKey(event: KeyboardEvent): string {
+  const code = event.code ?? "";
+  if (/^Digit\d$/.test(code)) return code.slice(5);
+  if (/^Key[A-Z]$/.test(code)) return code.slice(3).toLowerCase();
+  return event.key.toLowerCase();
+}
+
+/**
+ * 快捷键：如 { "mod+s": fn, "esc": fn, "mod+shift+k": fn }。
+ * 输入控件内只放行 mod+s；正文可编辑区只放行带 mod / alt 的组合，避免抢走打字与输入法按键。
+ */
 export function useHotkeys(map: HotkeyMap, deps: unknown[] = []): void {
   useEffect(() => {
     const handler = (event: KeyboardEvent) => {
+      // 已被业务 preventDefault、处于输入法组合中（或 IME 占位键）时不参与匹配
+      if (event.defaultPrevented || event.isComposing || event.key === "Process") return;
       const mod = event.metaKey || event.ctrlKey;
       const parts: string[] = [];
       if (mod) parts.push("mod");
       if (event.shiftKey) parts.push("shift");
       if (event.altKey) parts.push("alt");
-      const key = event.key.toLowerCase();
+      const key = normalizeKey(event);
       parts.push(key);
       const combo = parts.join("+");
       const fn = map[combo] ?? map[key];
-      if (fn) {
-        fn(event);
-      }
+      if (!fn) return;
+      if (shouldIgnoreHotkey(combo, event.target)) return;
+      fn(event);
     };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);

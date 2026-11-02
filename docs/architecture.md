@@ -1,4 +1,4 @@
-# 砚田架构设计
+﻿# 砚田架构设计
 
 > 面向贡献者的技术文档。产品视角的功能说明见 [features.md](./features.md)，AI 供应商配置见 [ai-providers.md](./ai-providers.md)。
 > 本文件描述 0.1.0（开发中，未发布）的架构与取舍；接口契约的权威来源是 [architecture/CONTRACTS.md](./architecture/CONTRACTS.md)。
@@ -17,7 +17,7 @@
 | 编辑器 | Tiptap 3 | 结构化 HTML 正文是 diff 与导出（Markdown/TXT）的基础；ProseMirror 生态成熟。 |
 | 存储 | `node:sqlite`（Node ≥ 22.13 内置） | 零原生依赖、零安装；单文件可备份、可直接用 sqlite3 打开检查。 |
 | AI | 自研可插拔 Provider 层 | 五种连接方式（OpenAI 兼容 / Anthropic / Gemini / Ollama / 演示）统一成一条 SSE 事件流。 |
-| 测试 | Vitest（node 环境） | 覆盖纯函数层（字数统计、diff 引擎、文本转 HTML、费用估算）、Provider 协议解析（`node:http` 起本地假上游模拟 SSE）、拉取模型列表（/models 解析）、环境变量自动建 Provider（临时 SQLite）；不需要真实 Key，共 100 个用例。 |
+| 测试 | Vitest（node 环境） | 覆盖纯函数层（字数统计、diff 引擎、文本转 HTML、费用估算）、Provider 协议解析（`node:http` 起本地假上游模拟 SSE）、拉取模型列表（/models 解析）、环境变量自动建 Provider（临时 SQLite）、资料助手（codex 清单解析与合并）；不需要真实 Key，共 115 个用例。 |
 
 ## 运行形态
 
@@ -53,11 +53,12 @@ app/
   globals.css                # 设计 token（宣纸/夜航）、@theme 映射、.prose-paper 等工具类
   page.tsx                   # 本机首页（开始写作）；公开站同一路由换成介绍页
   library/                   # 书架
-  novels/[id]/               # 概览 / 大纲 / 设定 / 档案 / 写作（编辑器）
+  novels/[id]/               # 作品概览（门厅）；大纲 / 设定 / 档案旧页面 307 重定向到写作台页签
+  editor/[id]/               # 写作台：左栏 目录·章纲·设定·档案（就地浮窗编辑）+ 正文 + 右栏 AI；⌘K 快速跳转
   settings/                  # 模型、提示词、外观、数据
   api/
     novels/…                 # 作品、卷、章、树、导入导出
-    ai/chat|task|context|archives/extract   # SSE 与上下文预览
+    ai/chat|task|context|codex|archives/extract   # SSE、资料助手清单与上下文预览
     providers/ presets/ settings/ stats/ search/
 lib/
   types.ts                   # 全部领域类型与常量（智能体、标签、默认配置）

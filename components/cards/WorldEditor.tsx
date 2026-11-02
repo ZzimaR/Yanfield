@@ -6,22 +6,15 @@
  * AI 补全：POST /api/ai/task（feature: world-card）
  */
 import * as React from "react";
-import { Sparkles, Trash2, GitBranch } from "lucide-react";
-import {
-  Button,
-  ConfirmDialog,
-  Input,
-  Select,
-  Sheet,
-  Switch,
-  useToast,
-} from "@/components/ui/kit";
+import { Sparkles, Trash2 } from "lucide-react";
+import { Button, ConfirmDialog, Dropdown, Input, Select, Sheet, Switch, useToast } from "@/components/ui/kit";
+import { FloatWindow } from "@/components/editor/FloatWindow";
+import { handToAssistant, WORLD_HANDOFF_TASKS } from "@/lib/editor/hand-off";
 import { AiTextField, TagsInput, stripChapterNumber, unwrapEntity, useErrorToast } from "@/components/outline/form-kit";
 import { ModelKeyHint } from "@/components/ai/ModelKeyHint";
 import { labeledDraft } from "@/lib/ai/assist-brief";
 import { apiDelete, apiPatch, apiPost, notifyDataChanged, streamAiTask, useApi } from "@/lib/client/api";
 import { parseCardFill } from "@/lib/ai/world-derive";
-import { WorldDeriveSheet } from "./WorldDeriveSheet";
 import type { AiStreamEvent, WorldCategory, WorldSetting } from "@/lib/types";
 import { WORLD_CATEGORY_LABEL } from "@/lib/types";
 
@@ -95,6 +88,7 @@ export function WorldEditor({
   onClose,
   onSaved,
   onDeleted,
+  presentation = "sheet",
 }: {
   open: boolean;
   novelId: string;
@@ -104,6 +98,8 @@ export function WorldEditor({
   onClose: () => void;
   onSaved: (saved: WorldSetting) => void;
   onDeleted: () => void;
+  /** 写作台里用可拖动的窗口，不盖成整页。 */
+  presentation?: "sheet" | "float";
 }) {
   const { toast } = useToast();
   const editing = Boolean(setting);
@@ -112,8 +108,8 @@ export function WorldEditor({
   const [saving, setSaving] = React.useState(false);
   const [deleting, setDeleting] = React.useState(false);
   const [confirmDeleteOpen, setConfirmDeleteOpen] = React.useState(false);
-  const [deriveOpen, setDeriveOpen] = React.useState(false);
   const [filling, setFilling] = React.useState(false);
+  const [minimized, setMinimized] = React.useState(false);
   const [savedId, setSavedId] = React.useState<string | null>(setting?.id ?? null);
   const nextDraftKey = open ? (setting?.id ?? "new") : "closed";
   const [draftKey, setDraftKey] = React.useState(nextDraftKey);
@@ -122,6 +118,7 @@ export function WorldEditor({
     if (open) {
       setSavedId(setting?.id ?? null);
       setDraft(setting ? toDraft(setting) : emptyDraft(null));
+      setMinimized(false);
     }
   }
   const detailStamp = detailApi.data && setting && detailApi.data.id === setting.id ? detailApi.data.updatedAt : "";
@@ -221,17 +218,6 @@ export function WorldEditor({
       .finally(() => setFilling(false));
   };
 
-  const ensureSource = async () => {
-    if (savedId) return savedId;
-    const title = draft.title.trim();
-    if (!title) return null;
-    const saved = unwrapEntity(await apiPost<WorldSetting>("/api/world", { novelId, ...draft, title }));
-    setSavedId(saved.id);
-    onSaved(saved);
-    notifyDataChanged("world");
-    return saved.id;
-  };
-
   const parentOptions = [
     { value: "", label: "无（顶层设定）" },
     ...settings
@@ -254,13 +240,19 @@ export function WorldEditor({
     .filter(Boolean)
     .join(" · ");
 
-  return (
-    <Sheet
-      open={open}
-      onClose={onClose}
-      title={editing ? "编辑设定" : "新建设定"}
-      width={700}
-      footer={
+  const giveToAssistant = (task: (typeof WORLD_HANDOFF_TASKS)[number]) => {
+    const label = draft.title.trim() || "新设定";
+    const material = [draft.summary, draft.content].map((part) => part.trim()).filter(Boolean).join("\n\n");
+    handToAssistant({
+      reference: savedId ? { type: "world", id: savedId, label } : null,
+      taskId: task.id,
+      taskLabel: `${task.label} · ${label}`,
+      prompt: material ? `${task.prompt}\n\n【当前材料】\n${material}` : task.prompt,
+    });
+    if (presentation === "float") setMinimized(true);
+  };
+
+  const footer = (
         <div className="flex items-center gap-2 [&_a:focus-visible]:outline-none [&_a:focus-visible]:ring-2 [&_a:focus-visible]:ring-accent/60 [&_button:focus-visible]:outline-none [&_button:focus-visible]:ring-2 [&_button:focus-visible]:ring-accent/60">
           {editing ? (
             <Button variant="danger" size="sm" icon={<Trash2 className="size-3.5" />} onClick={() => setConfirmDeleteOpen(true)}>
@@ -276,8 +268,10 @@ export function WorldEditor({
             </Button>
           </div>
         </div>
-      }
-    >
+  );
+
+  const body = (
+    <>
       <div className="space-y-3.5 p-4 [&_a:focus-visible]:outline-none [&_a:focus-visible]:ring-2 [&_a:focus-visible]:ring-accent/60 [&_button:focus-visible]:outline-none [&_button:focus-visible]:ring-2 [&_button:focus-visible]:ring-accent/60">
         {/* 概览条：标题 / 分类与层级 + AI 补全入口 */}
         <div className="rounded-lg border border-line bg-surface-2 px-3.5 py-3">
@@ -304,18 +298,25 @@ export function WorldEditor({
             >
               补全这张卡
             </Button>
-            <Button variant="ghost" size="sm" icon={<GitBranch className="size-3.5" />} onClick={() => setDeriveOpen(true)}>
-              衍生相关
-            </Button>
+            {presentation === "float" ? (
+              <Dropdown
+                trigger={
+                  <Button variant="ghost" size="sm">
+                    交给助手
+                  </Button>
+                }
+                items={WORLD_HANDOFF_TASKS.map((task) => ({
+                  label: task.label,
+                  onSelect: () => giveToAssistant(task),
+                }))}
+              />
+            ) : null}
           </div>
         </div>
 
-        <ol className="space-y-1.5 rounded-lg border border-line bg-surface px-3.5 py-3 text-[12px] leading-5 text-ink-2">
-          <li>1. 先写标题。已有的摘要、正文可以留下，AI 会顺着你写过的事实补。</li>
-          <li>2. 「补全这张卡」只改这一张的摘要和正文，不会自动保存，也不会把别的地点写进来。看完点底部「{editing ? "保存" : "创建设定"}」。</li>
-          <li>3. 如果一段话里还有城、州、组织，用「衍生相关」。它会列出几张新卡，勾选后才另存。位于、属于会挂在这张卡下面。</li>
-          <li>字段旁边的「AI 帮我写」只改那一个框，和上面两个按钮不是一回事。</li>
-        </ol>
+        {presentation === "float" ? (
+          <p className="text-[12px] leading-5 text-ink-3">交给助手会把这张卡和任务填进右侧输入框，你改完再发送。</p>
+        ) : null}
         <ModelKeyHint />
 
         <EditorSection title="基本信息" hint="先给这条设定一个能搜到的名字与归属，AI 会按分类理解它的约束力。">
@@ -392,20 +393,6 @@ export function WorldEditor({
         {detailApi.loading ? <p className="text-[11px] text-ink-3">正在获取设定最新详情…</p> : null}
       </div>
 
-      <WorldDeriveSheet
-        open={deriveOpen}
-        novelId={novelId}
-        source={{
-          id: savedId,
-          title: draft.title,
-          category: draft.category,
-          summary: draft.summary,
-          content: draft.content,
-        }}
-        onClose={() => setDeriveOpen(false)}
-        onEnsureSource={ensureSource}
-      />
-
       <ConfirmDialog
         open={confirmDeleteOpen}
         title="删除这条设定？"
@@ -416,6 +403,28 @@ export function WorldEditor({
         onConfirm={() => void remove()}
         onClose={() => setConfirmDeleteOpen(false)}
       />
+    </>
+  );
+
+  if (presentation === "float") {
+    return (
+      <FloatWindow
+        open={open}
+        title={editing ? "编辑设定" : "新设定"}
+        minimized={minimized}
+        onMinimizedChange={setMinimized}
+        onClose={onClose}
+        className={confirmDeleteOpen ? "z-40" : undefined}
+        footer={footer}
+      >
+        {body}
+      </FloatWindow>
+    );
+  }
+
+  return (
+    <Sheet open={open} onClose={onClose} title={editing ? "编辑设定" : "新建设定"} width={700} footer={footer}>
+      {body}
     </Sheet>
   );
 }

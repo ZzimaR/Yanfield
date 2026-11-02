@@ -431,25 +431,23 @@ function demoCardFill(user: string): string {
   });
 }
 
-function demoDerived(user: string): string {
-  const title = user.match(/当前设定：([^\n（(]{1,24})/)?.[1]?.trim() || "此地";
+function demoCodex(user: string): string {
+  if (user.includes("澜国")) {
+    return JSON.stringify({
+      message: "建成澜国，临波州和青阳挂在下面，朔国只记相邻，陆衡进角色。",
+      items: [
+        { ref: "cen", op: "create", kind: "world", title: "澜国", category: "faction", summary: "西面临海的国家", content: "西面临海，北面是天山。", relation: "" },
+        { ref: "wanghai", op: "create", kind: "world", parentRef: "cen", title: "临波州", category: "geography", summary: "西部沿海", content: "京城周边的近海腹地。", relation: "位于" },
+        { ref: "ningchuan", op: "create", kind: "world", parentRef: "wanghai", title: "青阳城", category: "geography", summary: "京城", content: "西距海三百里。", relation: "位于" },
+        { ref: "li", op: "create", kind: "world", title: "朔国", category: "faction", summary: "南邻", content: "出关后的国家。", relation: "相邻" },
+        { ref: "zhongke", op: "create", kind: "character", name: "陆衡", role: "supporting", identity: "生长在白石镇。", personality: "" },
+      ],
+    });
+  }
+  const title = user.match(/【作者这次说】\s*\n?([^\n]{1,16})/)?.[1]?.trim() || "新设定";
   return JSON.stringify({
-    items: [
-      {
-        title: `${title}城`,
-        category: "geography",
-        summary: `${title}的治所，在其境内。`,
-        content: `城池位于${title}境内。`,
-        relation: "位于",
-      },
-      {
-        title: `${title}邻境`,
-        category: "geography",
-        summary: `与${title}接壤，并不隶属。`,
-        content: `边界相连，各有管辖。`,
-        relation: "相邻",
-      },
-    ],
+    message: "演示模型只建一条。换上真实模型后，会按文中的地名和人名拆开。",
+    items: [{ ref: "one", op: "create", kind: "world", title, category: "custom", summary: "演示条目", content: title, relation: "" }],
   });
 }
 
@@ -461,21 +459,6 @@ function demoCharacterFill(user: string): string {
   });
 }
 
-function demoDerivedCharacters(user: string): string {
-  const name = user.match(/当前角色：([^\n（(]{1,24})/)?.[1]?.trim() || "此人";
-  return JSON.stringify({
-    items: [
-      {
-        name: `${name}的对手`,
-        role: "antagonist",
-        identity: `与${name}对着干的人。`,
-        personality: "只写这一条自己的事。",
-        relation: "对手",
-      },
-    ],
-  });
-}
-
 function demoForeshadowFill(user: string): string {
   const title = user.match(/标题：\s*\n?([^\n]+)/)?.[1]?.trim() || "这条伏笔";
   return JSON.stringify({
@@ -484,28 +467,12 @@ function demoForeshadowFill(user: string): string {
   });
 }
 
-function demoDerivedForeshadows(user: string): string {
-  const title = user.match(/当前伏笔：([^\n]{1,24})/)?.[1]?.trim() || "这条";
-  return JSON.stringify({
-    items: [
-      {
-        title: `${title}的回收`,
-        description: `单独登记${title}以后怎么收，不改当前这条。`,
-        status: "planted",
-        notes: "",
-      },
-    ],
-  });
-}
-
 function demoCompletion(messages: AiMessage[]): string {
   const system = messages.filter((m) => m.role === "system").map((m) => m.content).join("\n");
   const user = messages.filter((m) => m.role === "user").map((m) => m.content).join("\n");
-  if (user.includes("这是衍生相关角色")) return demoDerivedCharacters(user);
+  if (user.includes("这是资料整理")) return demoCodex(user);
   if (user.includes("这是补全当前角色卡")) return demoCharacterFill(user);
-  if (user.includes("这是衍生相关伏笔")) return demoDerivedForeshadows(user);
   if (user.includes("这是补全当前伏笔")) return demoForeshadowFill(user);
-  if (user.includes("这是衍生相关设定")) return demoDerived(user);
   if (user.includes("这是补全当前卡片")) return demoCardFill(user);
   if (/故事档案员/.test(system) && /只输出 JSON|严格 JSON|返回 JSON|JSON Schema/i.test(system)) {
     return JSON.stringify({

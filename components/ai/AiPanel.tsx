@@ -19,13 +19,16 @@ import { Check, CircleAlert, Cpu, MessagesSquare, Plus, Settings2, X } from "luc
 import { DiffReview } from "@/components/diff/DiffReview";
 import { IconButton, Sheet, Tooltip, useToast } from "@/components/ui/kit";
 import { openSettingsDialog } from "@/components/settings/open";
-import { apiPatch, notifyDataChanged, useApi } from "@/lib/client/api";
+import { apiGet, apiPatch, notifyDataChanged, streamAiCodex, useApi } from "@/lib/client/api";
 import { ApiError } from "@/lib/client/api";
-import { textToInsertHtml, useEditorBridge } from "@/lib/editor/bridge";
+import { parseCodexReply, prepareCodexItems, type CodexCatalogCard, type CodexTurn } from "@/lib/ai/codex";
+import { textToInsertHtml, useEditorBridge, type EditorBridge } from "@/lib/editor/bridge";
+import { HAND_OFF_EVENT, takeHandOff, type HandOffDetail } from "@/lib/editor/hand-off";
 import type {
   AgentId,
   AiAction,
   AppSettings,
+  Chapter,
   ChatSession,
   ContextConfig,
   DashboardStats,
@@ -33,10 +36,11 @@ import type {
   ProviderConfig,
 } from "@/lib/types";
 import { useMediaQuery } from "@/lib/ui/hooks";
-import { cn, truncate } from "@/lib/ui/cn";
+import { cn, stripHtml, truncate } from "@/lib/ui/cn";
 import { ActionReview } from "./ActionReview";
 import { AgentPicker } from "./AgentPicker";
 import { ChatComposer } from "./ChatComposer";
+import { CodexProposal } from "./CodexProposal";
 import { AiSpendLine } from "./AiSpendLine";
 import { ChatHistorySheet } from "./ChatHistorySheet";
 import { ChatMessageView } from "./ChatMessageView";
@@ -77,6 +81,62 @@ interface DiffState {
   beforeHtml: string;
   afterHtml: string;
   action: AiAction;
+}
+
+/** 当前会话里最近一条还没写入、也没被替换的清单；有它时这句话就是对清单的追问。 */
+function findPendingCodex(messages: UIMessage[]): UIMessage | null {
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const message = messages[index];
+    if (message.codexItems && message.codexItems.length > 0 && !message.codexApplied && !message.codexSuperseded) {
+      return message;
+    }
+  }
+  return null;
+}
+
+/** 资料助手的 history 只保留作者提问和助手文字回复；空消息与正在流式的消息跳过。 */
+function codexHistory(messages: UIMessage[]): CodexTurn[] {
+  const turns: CodexTurn[] = [];
+  for (const message of messages) {
+    if (message.status === "streaming") continue;
+    const content = message.content.trim();
+    if (!content) continue;
+    turns.push({ role: message.role, content });
+  }
+  return turns;
+}
+
+/** codex 提示词里正文节选的上限（字符），与服务端 CODEX_CONTEXT_LIMIT 保持一致。 */
+const CODEX_CONTEXT_EXCERPT_MAX = 2000;
+
+/**
+ * 取当前章节正文节选：优先编辑器桥里的实时正文（作者刚改、还没保存也能带上），
+ * 没有编辑器时退化为接口读取已保存正文；都拿不到返回空串（提示词里就不加正文段）。
+ */
+async function readChapterExcerpt(
+  bridge: EditorBridge | null,
+  chapterId: string | null | undefined,
+): Promise<string> {
+  let plain = "";
+  try {
+    const liveHtml = bridge?.getHtml()?.trim() ?? "";
+    if (liveHtml) plain = stripHtml(liveHtml);
+  } catch {
+    // 编辑器正在销毁/切换章节时 getHtml 可能抛错：降级到接口取正文
+    plain = "";
+  }
+  if (!plain && chapterId) {
+    try {
+      const chapter = await apiGet<Chapter>(`/api/chapters/${encodeURIComponent(chapterId)}`);
+      plain = stripHtml(chapter.content ?? "");
+    } catch {
+      return "";
+    }
+  }
+  const normalized = plain.replace(/\n{3,}/g, "\n\n").trim();
+  if (!normalized) return "";
+  if (normalized.length <= CODEX_CONTEXT_EXCERPT_MAX) return normalized;
+  return `${normalized.slice(0, CODEX_CONTEXT_EXCERPT_MAX)}…`;
 }
 
 export function AiPanel({
@@ -178,6 +238,8 @@ export function AiPanel({
   const [mentionMap, setMentionMap] = React.useState<Record<string, MentionRef[]>>({});
   const [mode, setMode] = React.useState<PanelMode>("chat");
   const [focusSignal, setFocusSignal] = React.useState(0);
+  const [task, setTask] = React.useState<{ id: string; label: string } | null>(null);
+  const codexAbortRef = React.useRef<AbortController | null>(null);
   const [historyOpen, setHistoryOpen] = React.useState(false);
   const [contextOpen, setContextOpen] = React.useState(false);
   const [agentSheetOpen, setAgentSheetOpen] = React.useState(false);
@@ -206,7 +268,22 @@ export function AiPanel({
     [activeKey],
   );
 
-  // 编辑器 Ctrl/Cmd+J：聚焦 AI 输入框
+  React.useEffect(() => {
+    const apply = () => {
+      const detail: HandOffDetail | null = takeHandOff();
+      if (!detail) return;
+      setDrafts((prev) => ({ ...prev, [activeKey]: detail.prompt }));
+      setMentionMap((prev) => ({
+        ...prev,
+        [activeKey]: detail.reference ? [detail.reference] : [],
+      }));
+      setTask({ id: detail.taskId, label: detail.taskLabel });
+      setFocusSignal((value) => value + 1);
+    };
+    apply();
+    window.addEventListener(HAND_OFF_EVENT, apply);
+    return () => window.removeEventListener(HAND_OFF_EVENT, apply);
+  }, [activeKey]);
   React.useEffect(() => {
     const focusComposer = () => setFocusSignal((value) => value + 1);
     window.addEventListener("yantian:editor-focus-ai", focusComposer);
@@ -243,10 +320,108 @@ export function AiPanel({
   const handleSend = React.useCallback(async () => {
     const text = draft.trim();
     if (!text || chat.streaming) return;
+    const currentTask = task;
+    // 触发判定要在清空状态之前算：显式衍生命令（derive-/fill-），或对上一份待写入清单的一句话追问
+    const pending = findPendingCodex(chat.activeTab.messages);
+    const isCodexTask = Boolean(
+      currentTask && (currentTask.id.startsWith("derive-") || currentTask.id.startsWith("fill-")),
+    );
     setDraft("");
     setMentions([]);
+    setTask(null);
+    if (isCodexTask || pending) {
+      // history 必须在本轮问答 append 之前取，否则会把刚发出去的这句话也算进历史
+      const history = codexHistory(chat.activeTab.messages);
+      const draftItems = pending?.codexItems ?? [];
+      // 带上当前章节正文节选：作者刚改的实时正文优先，其次已保存正文；拿不到就不带
+      const contextText = await readChapterExcerpt(bridge, chapterId);
+      const assistantId = chat.beginExchange(text);
+      const controller = new AbortController();
+      codexAbortRef.current = controller;
+      let raw = "";
+      let failed = false;
+      // 注意：lib/client/api 的 streamAiCodex 类型尚未声明 contextText，先落到变量再传，避免多余属性检查
+      const codexRequest = {
+        novelId,
+        message: text,
+        history,
+        draft: draftItems,
+        contextText: contextText || undefined,
+      };
+      try {
+        await streamAiCodex(codexRequest, {
+          signal: controller.signal,
+          onEvent: (event) => {
+            if (event.type === "delta") raw += event.text;
+            if (event.type === "error") {
+              failed = true;
+              chat.patchExchange(assistantId, { status: "error", error: event.message, content: "" });
+            }
+            if (event.type === "done") {
+              const parsed = parseCodexReply(raw);
+              chat.patchExchange(assistantId, {
+                status: "complete",
+                content: parsed?.message || "清单在下面，勾选后才会写入。",
+                usage: event.usage,
+                error: parsed ? "" : "没有拆成卡片。可以改一下说明再发。",
+              });
+            }
+          },
+        });
+        const parsed = parseCodexReply(raw);
+        if (parsed) {
+          // 已有卡片目录只用于幂等匹配：拉取失败必须降级为空目录 + 提示，不能把成功的回复覆盖成 error
+          let catalog: CodexCatalogCard[] = [];
+          try {
+            const [world, characters, foreshadows] = await Promise.all([
+              apiGet<{ items: { id: string; title: string }[] }>(`/api/world?novelId=${encodeURIComponent(novelId)}`),
+              apiGet<{ items: { id: string; name: string }[] }>(`/api/characters?novelId=${encodeURIComponent(novelId)}`),
+              apiGet<{ items: { id: string; title: string }[] }>(`/api/foreshadows?novelId=${encodeURIComponent(novelId)}`),
+            ]);
+            catalog = [
+              ...world.items.map((item) => ({ id: item.id, kind: "world" as const, title: item.title })),
+              ...characters.items.map((item) => ({ id: item.id, kind: "character" as const, title: item.name })),
+              ...foreshadows.items.map((item) => ({ id: item.id, kind: "foreshadow" as const, title: item.title })),
+            ];
+          } catch {
+            catalog = [];
+            toast({
+              title: "已有卡片目录加载失败",
+              description: "清单照常显示；同名卡片可能被当作新建，写入前请留意。",
+              tone: "error",
+            });
+          }
+          const items = prepareCodexItems(parsed.items, catalog);
+          // 追问确实产出了新清单才替换旧清单；模型只是反问（items 为空）时旧清单仍可直接勾选写入
+          if (pending && items.length > 0) {
+            chat.patchExchange(pending.id, { codexSuperseded: true });
+          }
+          chat.patchExchange(assistantId, {
+            status: "complete",
+            content: parsed.message || "清单在下面，勾选后才会写入。",
+            codexItems: items,
+            codexApplied: false,
+          });
+        }
+      } catch (err) {
+        failed = true;
+        if (controller.signal.aborted) {
+          chat.patchExchange(assistantId, { status: "aborted", content: "已停止", error: "" });
+        } else {
+          chat.patchExchange(assistantId, {
+            status: "error",
+            error: err instanceof Error ? err.message : "生成失败",
+          });
+        }
+      } finally {
+        codexAbortRef.current = null;
+        // 以前 codex 轮次只写在内存里，刷新/切会话就丢：结束后把整轮落库（成功才写）
+        await chat.endExchange({ persist: !failed });
+      }
+      return;
+    }
     await chat.send({ text, ...buildExtras() });
-  }, [buildExtras, chat, draft, setDraft, setMentions]);
+  }, [bridge, buildExtras, chapterId, chat, draft, novelId, setDraft, setMentions, task, toast]);
 
   const handleQuickAsk = React.useCallback(
     (prompt: string) => {
@@ -551,18 +726,29 @@ export function AiPanel({
         ) : (
           <div className="flex flex-col gap-4">
             {chat.activeTab.messages.map((message, index) => (
-              <ChatMessageView
-                key={message.id}
-                message={message}
-                agent={activeAgent}
-                streaming={chat.streaming && index === chat.activeTab.messages.length - 1}
-                canRetry={!chat.streaming}
-                onCopy={handleCopy}
-                onRetry={handleRetry}
-                onDelete={(target) => chat.removeMessage(target.id)}
-                onApplyAction={handleAction}
-                pricing={settings?.aiPricing}
-              />
+              <div key={message.id} className="flex flex-col">
+                <ChatMessageView
+                  message={message}
+                  agent={activeAgent}
+                  streaming={chat.streaming && index === chat.activeTab.messages.length - 1}
+                  canRetry={!chat.streaming}
+                  onCopy={handleCopy}
+                  onRetry={handleRetry}
+                  onDelete={(target) => chat.removeMessage(target.id)}
+                  onApplyAction={handleAction}
+                  pricing={settings?.aiPricing}
+                />
+                {message.codexItems && message.codexItems.length > 0 ? (
+                  <CodexProposal
+                    novelId={novelId}
+                    items={message.codexItems}
+                    applied={message.codexApplied === true}
+                    superseded={message.codexSuperseded === true}
+                    onChange={(items) => chat.patchExchange(message.id, { codexItems: items })}
+                    onApplied={() => chat.patchExchange(message.id, { codexApplied: true })}
+                  />
+                ) : null}
+              </div>
             ))}
           </div>
         )}
@@ -597,7 +783,10 @@ export function AiPanel({
           mentions={mentions}
           onMentionsChange={setMentions}
           onSend={() => void handleSend()}
-          onStop={chat.stop}
+          onStop={() => {
+            codexAbortRef.current?.abort();
+            chat.stop();
+          }}
           streaming={chat.streaming}
           novelId={novelId}
           chapterId={chapterId}
@@ -608,6 +797,8 @@ export function AiPanel({
           style={style}
           onStyleChange={handleStyleChange}
           skillOptions={SKILL_OPTIONS}
+          task={task}
+          onClearTask={() => setTask(null)}
           modelSlot={
             <ModelPicker
               settings={settings ?? null}

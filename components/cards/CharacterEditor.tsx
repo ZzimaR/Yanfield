@@ -6,16 +6,19 @@
  * AI 补全：POST /api/ai/task（feature: character-card）
  */
 import * as React from "react";
-import { GitBranch, Sparkles, Trash2 } from "lucide-react";
+import { Sparkles, Trash2 } from "lucide-react";
 import {
   Button,
   ConfirmDialog,
+  Dropdown,
   Input,
   Select,
   Sheet,
   Switch,
   useToast,
 } from "@/components/ui/kit";
+import { FloatWindow } from "@/components/editor/FloatWindow";
+import { CHARACTER_HANDOFF_TASKS, handToAssistant } from "@/lib/editor/hand-off";
 import { ModelKeyHint } from "@/components/ai/ModelKeyHint";
 import { AiTextField, TagsInput, stripChapterNumber, unwrapEntity, useErrorToast } from "@/components/outline/form-kit";
 import { labeledDraft } from "@/lib/ai/assist-brief";
@@ -23,7 +26,6 @@ import { parseCharacterFill } from "@/lib/ai/card-derive";
 import { apiDelete, apiPatch, apiPost, notifyDataChanged, streamAiTask, useApi } from "@/lib/client/api";
 import type { AiStreamEvent, Character, CharacterRelation } from "@/lib/types";
 import { CHARACTER_ROLE_LABEL } from "@/lib/types";
-import { CharacterDeriveSheet } from "./CharacterDeriveSheet";
 import { RelationsEditor } from "./RelationsEditor";
 
 interface CharacterDraft {
@@ -123,6 +125,7 @@ export function CharacterEditor({
   onClose,
   onSaved,
   onDeleted,
+  presentation = "sheet",
 }: {
   open: boolean;
   novelId: string;
@@ -132,6 +135,8 @@ export function CharacterEditor({
   onClose: () => void;
   onSaved: (saved: Character) => void;
   onDeleted: () => void;
+  /** 写作台里用可拖动的窗口，不盖成整页。 */
+  presentation?: "sheet" | "float";
 }) {
   const { toast } = useToast();
   const editing = Boolean(character);
@@ -140,9 +145,15 @@ export function CharacterEditor({
   const [saving, setSaving] = React.useState(false);
   const [deleting, setDeleting] = React.useState(false);
   const [confirmDeleteOpen, setConfirmDeleteOpen] = React.useState(false);
-  const [deriveOpen, setDeriveOpen] = React.useState(false);
   const [filling, setFilling] = React.useState(false);
   const [savedId, setSavedId] = React.useState<string | null>(character?.id ?? null);
+  const [minimized, setMinimized] = React.useState(false);
+  const nextFloatKey = open ? (character?.id ?? "new") : "closed";
+  const [floatKey, setFloatKey] = React.useState(nextFloatKey);
+  if (floatKey !== nextFloatKey) {
+    setFloatKey(nextFloatKey);
+    if (open) setMinimized(false);
+  }
   const initKey = `${open ? 1 : 0}:${character?.id ?? "new"}:${detailApi.data?.updatedAt ?? ""}`;
   const lastInitKey = React.useRef("");
 
@@ -256,15 +267,33 @@ export function CharacterEditor({
       .finally(() => setFilling(false));
   };
 
-  const ensureSource = async () => {
-    if (savedId) return savedId;
-    const name = draft.name.trim();
-    if (!name) return null;
-    const saved = unwrapEntity(await apiPost<Character>("/api/characters", { novelId, ...draft, name }));
-    setSavedId(saved.id);
-    onSaved(saved);
-    notifyDataChanged("characters");
-    return saved.id;
+  const relationLine = draft.relations
+    .map((relation) => {
+      const target = characters.find((item) => item.id === relation.targetId)?.name ?? "";
+      const relationText = [relation.relation.trim(), relation.note.trim()].filter(Boolean).join("，");
+      return [target, relationText].filter(Boolean).join("：");
+    })
+    .filter(Boolean)
+    .join("；");
+  const material = [
+    draft.name.trim() ? `姓名：${draft.name.trim()}` : "",
+    draft.identity.trim() ? `身份：${draft.identity.trim()}` : "",
+    draft.personality.trim() ? `性格：${draft.personality.trim()}` : "",
+    draft.currentState.trim() ? `当前状态：${draft.currentState.trim()}` : "",
+    relationLine ? `关系：${relationLine}` : "",
+  ]
+    .filter(Boolean)
+    .join("\n");
+
+  const giveToAssistant = (task: (typeof CHARACTER_HANDOFF_TASKS)[number]) => {
+    const label = draft.name.trim() || "新角色";
+    handToAssistant({
+      reference: savedId ? { type: "character", id: savedId, label } : null,
+      taskId: task.id,
+      taskLabel: `${task.label} · ${label}`,
+      prompt: material ? `${task.prompt}\n\n【当前材料】\n${material}` : task.prompt,
+    });
+    if (presentation === "float") setMinimized(true);
   };
 
   const chapterOptions = [
@@ -279,30 +308,26 @@ export function CharacterEditor({
   const initial = displayName.slice(0, 1);
   const subtitle = [CHARACTER_ROLE_LABEL[draft.role], draft.identity].filter(Boolean).join(" · ");
 
-  return (
-    <Sheet
-      open={open}
-      onClose={onClose}
-      title={editing ? "编辑角色" : "新建角色"}
-      width={700}
-      footer={
-        <div className="flex items-center gap-2 [&_a:focus-visible]:outline-none [&_a:focus-visible]:ring-2 [&_a:focus-visible]:ring-accent/60 [&_button:focus-visible]:outline-none [&_button:focus-visible]:ring-2 [&_button:focus-visible]:ring-accent/60">
-          {editing ? (
-            <Button variant="danger" size="sm" icon={<Trash2 className="size-3.5" />} onClick={() => setConfirmDeleteOpen(true)}>
-              删除
-            </Button>
-          ) : null}
-          <div className="ml-auto flex items-center gap-2">
-            <Button variant="ghost" size="sm" onClick={onClose}>
-              取消
-            </Button>
-            <Button variant="primary" size="sm" loading={saving} onClick={save}>
-              {savedId ? "保存" : "创建角色"}
-            </Button>
-          </div>
-        </div>
-      }
-    >
+  const footer = (
+    <div className="flex items-center gap-2 [&_a:focus-visible]:outline-none [&_a:focus-visible]:ring-2 [&_a:focus-visible]:ring-accent/60 [&_button:focus-visible]:outline-none [&_button:focus-visible]:ring-2 [&_button:focus-visible]:ring-accent/60">
+      {editing ? (
+        <Button variant="danger" size="sm" icon={<Trash2 className="size-3.5" />} onClick={() => setConfirmDeleteOpen(true)}>
+          删除
+        </Button>
+      ) : null}
+      <div className="ml-auto flex items-center gap-2">
+        <Button variant="ghost" size="sm" onClick={onClose}>
+          取消
+        </Button>
+        <Button variant="primary" size="sm" loading={saving} onClick={save}>
+          {savedId ? "保存" : "创建角色"}
+        </Button>
+      </div>
+    </div>
+  );
+
+  const body = (
+    <>
       <div className="space-y-3.5 p-4 [&_a:focus-visible]:outline-none [&_a:focus-visible]:ring-2 [&_a:focus-visible]:ring-accent/60 [&_button:focus-visible]:outline-none [&_button:focus-visible]:ring-2 [&_button:focus-visible]:ring-accent/60">
         {/* 概览条：角色名 / 定位 + AI 补全入口 */}
         <div className="rounded-lg border border-line bg-surface-2 px-3.5 py-3">
@@ -329,18 +354,32 @@ export function CharacterEditor({
             >
               补全这张卡
             </Button>
-            <Button variant="ghost" size="sm" icon={<GitBranch className="size-3.5" />} onClick={() => setDeriveOpen(true)}>
-              衍生相关
-            </Button>
+            {presentation === "float" ? (
+              <Dropdown
+                trigger={
+                  <Button variant="ghost" size="sm">
+                    交给助手
+                  </Button>
+                }
+                items={CHARACTER_HANDOFF_TASKS.map((task) => ({
+                  label: task.label,
+                  onSelect: () => giveToAssistant(task),
+                }))}
+              />
+            ) : null}
           </div>
         </div>
 
-        <ol className="space-y-1.5 rounded-lg border border-line bg-surface px-3.5 py-3 text-[12px] leading-5 text-ink-2">
-          <li>1. 先写姓名。已有的身份、性格可以留下，AI 会顺着你写过的事实补。</li>
-          <li>2. 「补全这张卡」只改这个人的身份、外貌、性格这些栏，不改姓名，也不会自动保存。看完点底部「{savedId ? "保存" : "创建角色"}」。</li>
-          <li>3. 如果这段话里还有对头、师兄、亲属，用「衍生相关」。它会列出几张新人卡，勾选后才另存。</li>
-          <li>字段旁边的「AI 帮我写」只改那一个框，和上面两个按钮不是一回事。</li>
-        </ol>
+        {presentation === "float" ? (
+          <p className="text-[12px] leading-5 text-ink-3">交给助手会把这张卡和任务填进右侧输入框，你改完再发送。</p>
+        ) : (
+          <ol className="space-y-1.5 rounded-lg border border-line bg-surface px-3.5 py-3 text-[12px] leading-5 text-ink-2">
+            <li>1. 先写姓名。已有的身份、性格可以留下，AI 会顺着你写过的事实补。</li>
+            <li>2. 「补全这张卡」只改这个人的身份、外貌、性格这些栏，不改姓名，也不会自动保存。看完点底部「{savedId ? "保存" : "创建角色"}」。</li>
+            <li>3. 这段话里如果还有别人，在写作台把这张卡交给右侧助手。这里只改这个人。</li>
+            <li>字段旁边的「AI 帮我写」只改那一个框，和上面的按钮不是一回事。</li>
+          </ol>
+        )}
         <ModelKeyHint />
 
         <EditorSection title="基本信息" hint="先定称呼与身份，AI 写作时会按这个口径称呼角色。">
@@ -474,20 +513,6 @@ export function CharacterEditor({
         {detailApi.loading ? <p className="text-[11px] text-ink-3">正在获取角色最新详情…</p> : null}
       </div>
 
-      <CharacterDeriveSheet
-        open={deriveOpen}
-        novelId={novelId}
-        source={{
-          id: savedId,
-          name: draft.name,
-          role: draft.role,
-          identity: draft.identity,
-          personality: draft.personality,
-        }}
-        onClose={() => setDeriveOpen(false)}
-        onEnsureSource={ensureSource}
-      />
-
       <ConfirmDialog
         open={confirmDeleteOpen}
         title="删除这个角色？"
@@ -498,6 +523,28 @@ export function CharacterEditor({
         onConfirm={() => void remove()}
         onClose={() => setConfirmDeleteOpen(false)}
       />
+    </>
+  );
+
+  if (presentation === "float") {
+    return (
+      <FloatWindow
+        open={open}
+        title={editing ? "编辑角色" : "新角色"}
+        minimized={minimized}
+        onMinimizedChange={setMinimized}
+        onClose={onClose}
+        className={confirmDeleteOpen ? "z-40" : undefined}
+        footer={footer}
+      >
+        {body}
+      </FloatWindow>
+    );
+  }
+
+  return (
+    <Sheet open={open} onClose={onClose} title={editing ? "编辑角色" : "新建角色"} width={700} footer={footer}>
+      {body}
     </Sheet>
   );
 }

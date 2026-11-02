@@ -39,6 +39,36 @@ export interface UseAiChatOptions {
   defaultAgentId: AgentId;
 }
 
+/** endExchange 选项 */
+export interface EndExchangeOptions {
+  /**
+   * 结束后是否把这一轮 user+assistant 写入服务端会话。
+   * 默认 false：普通 chat 由 runStream 自己落库，避免重复写。
+   */
+  persist?: boolean;
+}
+
+/** 一轮“外部接流”问答的上下文快照：beginExchange 记录，endExchange 落库用。 */
+interface PendingExchange {
+  assistantId: string;
+  /** 发起轮次的 tab；流式期间用户可能切走，落库必须写回发起 tab */
+  tabKey: string;
+  agentId: AgentId;
+  userText: string;
+}
+
+/** 落库用的一问一答内容（content 必需，其余字段可缺省）。 */
+interface ExchangeReply {
+  content: string;
+  reasoning?: string;
+  actions?: AiAction[];
+  status?: ChatMessage["status"];
+  provider?: string;
+  model?: string;
+  usage?: AiUsage | null;
+  error?: string;
+}
+
 export type OpenSessionResult =
   | { ok: true; loadFailed?: boolean }
   | { ok: false; reason: "max-tabs" };
@@ -60,6 +90,15 @@ export interface UseAiChatResult {
   closeTab: (key: string) => void;
   setAgent: (agentId: AgentId) => void;
   openSession: (session: ChatSession) => Promise<OpenSessionResult>;
+  /** 在当前会话里先放下一问一答，供设定任务自己接流。返回 assistant 消息 id。 */
+  beginExchange: (userText: string) => string;
+  /** 按 assistantId 精确更新回复（流式期间切 tab 也不会写错）。 */
+  patchExchange: (assistantId: string, patch: Partial<UIMessage>) => void;
+  /**
+   * 复位流式状态。codex 等外部接流轮次传 { persist: true } 把整轮写进服务端会话；
+   * 普通 chat 不要传，避免重复落库。
+   */
+  endExchange: (options?: EndExchangeOptions) => Promise<void>;
 }
 
 function createMessage(role: UIMessage["role"], content = ""): UIMessage {
@@ -112,6 +151,10 @@ export function useAiChat({ novelId, chapterId, defaultAgentId }: UseAiChatOptio
   const streamingRef = React.useRef(false);
   /** null=未知；true=可用；false=不可用（本页面内不再尝试） */
   const serverSessionRef = React.useRef<boolean | null>(null);
+  /** 外部接流（资料助手）的当前轮次；endExchange 用它复位 tab 并落库 */
+  const exchangeRef = React.useRef<PendingExchange | null>(null);
+  /** 当前轮次已应用的 patch；endExchange 落库时取最终正文/状态/用量 */
+  const exchangePatchesRef = React.useRef<Map<string, Partial<UIMessage>>>(new Map());
 
   const activeTab = tabs.find((tab) => tab.key === activeKey) ?? tabs[0];
 
@@ -145,6 +188,68 @@ export function useAiChat({ novelId, chapterId, defaultAgentId }: UseAiChatOptio
       }),
     );
   }, []);
+
+  /** 在全部 tab 中按消息 id 反向定位；避免用实时 activeKey 把回复写到切走后的 tab。 */
+  const findTabByMessage = React.useCallback(
+    (messageId: string): ChatTab | null =>
+      stateRef.current.tabs.find((tab) => tab.messages.some((message) => message.id === messageId)) ?? null,
+    [],
+  );
+
+  /** 懒创建服务端会话；失败返回 null（本轮降级为纯本地会话）。 */
+  const ensureSession = React.useCallback(
+    async (tabKey: string, agentId: AgentId, existingId: string | null): Promise<string | null> => {
+      if (existingId) return existingId;
+      if (serverSessionRef.current === false) return null;
+      try {
+        const created = await apiPost<ChatSession>("/api/chat/sessions", {
+          novelId,
+          chapterId: chapterId ?? null,
+          agentId,
+        });
+        if (!created?.id) return null;
+        serverSessionRef.current = true;
+        setTabs((prev) => prev.map((tab) => (tab.key === tabKey ? { ...tab, sessionId: created.id } : tab)));
+        return created.id;
+      } catch {
+        serverSessionRef.current = false;
+        return null;
+      }
+    },
+    [novelId, chapterId],
+  );
+
+  /** 把一问一答写入服务端会话；接口不可用时降级（本页面内不再尝试）。 */
+  const persistMessages = React.useCallback(
+    async (sessionId: string, userContent: string, reply: ExchangeReply): Promise<boolean> => {
+      if (serverSessionRef.current === false) return false;
+      try {
+        await Promise.all([
+          apiPost(`/api/chat/sessions/${encodeURIComponent(sessionId)}/messages`, {
+            role: "user",
+            content: userContent,
+          }),
+          apiPost(`/api/chat/sessions/${encodeURIComponent(sessionId)}/messages`, {
+            role: "assistant",
+            content: reply.content,
+            reasoning: reply.reasoning ?? "",
+            actions: reply.actions ?? [],
+            status: reply.status ?? "complete",
+            provider: reply.provider ?? "",
+            model: reply.model ?? "",
+            usage: reply.usage ?? null,
+            error: reply.error ?? "",
+          }),
+        ]);
+        serverSessionRef.current = true;
+        return true;
+      } catch {
+        serverSessionRef.current = false;
+        return false;
+      }
+    },
+    [],
+  );
 
   /* ---------------- 流式请求核心 ---------------- */
 
@@ -233,24 +338,7 @@ export function useAiChat({ novelId, chapterId, defaultAgentId }: UseAiChatOptio
       };
 
       // 1) 懒创建服务端会话（失败 → 纯本地会话）
-      if (!sessionId && serverSessionRef.current !== false) {
-        try {
-          const created = await apiPost<ChatSession>("/api/chat/sessions", {
-            novelId,
-            chapterId: chapterId ?? null,
-            agentId,
-          });
-          if (created?.id) {
-            sessionId = created.id;
-            serverSessionRef.current = true;
-            setTabs((prev) =>
-              prev.map((tab) => (tab.key === tabKey ? { ...tab, sessionId: created.id } : tab)),
-            );
-          }
-        } catch {
-          serverSessionRef.current = false;
-        }
-      }
+      sessionId = await ensureSession(tabKey, agentId, sessionId);
 
       try {
         const request: AiChatRequest = {
@@ -292,31 +380,19 @@ export function useAiChat({ novelId, chapterId, defaultAgentId }: UseAiChatOptio
       }
 
       // 2) 消息落库（接口不可用时降级为本地状态）
-      if (!failed && sessionId && serverSessionRef.current !== false && !serverMessageId && content.trim()) {
-        try {
-          await Promise.all([
-            apiPost(`/api/chat/sessions/${encodeURIComponent(sessionId)}/messages`, {
-              role: "user",
-              content: message,
-            }),
-            apiPost(`/api/chat/sessions/${encodeURIComponent(sessionId)}/messages`, {
-              role: "assistant",
-              content,
-              reasoning,
-              actions,
-              status: "complete",
-              provider,
-              model,
-              usage,
-            }),
-          ]);
-          serverSessionRef.current = true;
-        } catch {
-          serverSessionRef.current = false;
-        }
+      if (!failed && sessionId && !serverMessageId && content.trim()) {
+        await persistMessages(sessionId, message, {
+          content,
+          reasoning,
+          actions,
+          status: "complete",
+          provider,
+          model,
+          usage,
+        });
       }
     },
-    [novelId, chapterId, appendMessages, patchMessage],
+    [novelId, chapterId, appendMessages, patchMessage, ensureSession, persistMessages],
   );
 
   /* ---------------- 对外动作 ---------------- */
@@ -474,6 +550,103 @@ export function useAiChat({ novelId, chapterId, defaultAgentId }: UseAiChatOptio
     [],
   );
 
+  /** 外部接流轮次的落库：会话不存在时先建，再存 user+assistant。 */
+  const persistExchange = React.useCallback(
+    async (
+      sessionId: string | null,
+      tabKey: string,
+      agentId: AgentId,
+      userText: string,
+      reply: ExchangeReply,
+    ): Promise<boolean> => {
+      const target = await ensureSession(tabKey, agentId, sessionId);
+      if (!target) return false;
+      return persistMessages(target, userText, reply);
+    },
+    [ensureSession, persistMessages],
+  );
+
+  /* ---------------- 资料助手（外部接流） ---------------- */
+
+  const beginExchange = React.useCallback(
+    (userText: string): string => {
+      const current = stateRef.current;
+      const tab = current.tabs.find((item) => item.key === current.activeKey) ?? current.tabs[0];
+      const tabKey = tab?.key ?? current.activeKey;
+      const assistant = createMessage("assistant");
+      assistant.status = "streaming";
+      appendMessages(tabKey, [createMessage("user", userText), assistant]);
+      exchangeRef.current = {
+        assistantId: assistant.id,
+        tabKey,
+        agentId: tab?.agentId ?? defaultAgentId,
+        userText,
+      };
+      exchangePatchesRef.current.clear();
+      streamingRef.current = true;
+      setStreaming(true);
+      setStreamingTabKey(tabKey);
+      return assistant.id;
+    },
+    [appendMessages, defaultAgentId],
+  );
+
+  const patchExchange = React.useCallback(
+    (assistantId: string, patch: Partial<UIMessage>) => {
+      // 按 assistantId 在所有 tab 里找，而不是实时 activeKey：流式期间用户可能已切走
+      const exchange = exchangeRef.current;
+      const tab = findTabByMessage(assistantId);
+      const tabKey = tab?.key ?? (exchange?.assistantId === assistantId ? exchange.tabKey : null);
+      if (!tabKey) return;
+      if (exchange?.assistantId === assistantId) {
+        exchangePatchesRef.current.set(assistantId, {
+          ...(exchangePatchesRef.current.get(assistantId) ?? {}),
+          ...patch,
+        });
+      }
+      patchMessage(tabKey, assistantId, (message) => ({ ...message, ...patch }));
+    },
+    [findTabByMessage, patchMessage],
+  );
+
+  const endExchange = React.useCallback(
+    async (options?: EndExchangeOptions): Promise<void> => {
+      const exchange = exchangeRef.current;
+      const patch = exchange ? { ...(exchangePatchesRef.current.get(exchange.assistantId) ?? {}) } : null;
+      exchangeRef.current = null;
+      exchangePatchesRef.current.clear();
+
+      streamingRef.current = false;
+      abortRef.current = null;
+      setStreaming(false);
+      setStreamingTabKey(null);
+
+      if (!exchange) return;
+      // 复位发起轮次的 tab（流式期间可能已切走），清掉残留的 streaming 占位状态
+      const tab = findTabByMessage(exchange.assistantId);
+      if (tab) {
+        patchMessage(tab.key, exchange.assistantId, (message) =>
+          message.status === "streaming" ? { ...message, status: "complete" } : message,
+        );
+      }
+
+      if (options?.persist !== true || !patch) return;
+      const content = patch.content ?? "";
+      if (!content.trim()) return;
+      const sessionId =
+        stateRef.current.tabs.find((item) => item.key === exchange.tabKey)?.sessionId ?? null;
+      await persistExchange(sessionId, exchange.tabKey, exchange.agentId, exchange.userText, {
+        content,
+        reasoning: patch.reasoning,
+        actions: patch.actions,
+        status: patch.status === "error" || patch.status === "aborted" ? patch.status : "complete",
+        usage: patch.usage ?? null,
+        error: patch.error ?? "",
+      });
+    },
+    [findTabByMessage, patchMessage, persistExchange],
+  );
+
   return {
     tabs,
     activeKey,
@@ -490,5 +663,8 @@ export function useAiChat({ novelId, chapterId, defaultAgentId }: UseAiChatOptio
     closeTab,
     setAgent,
     openSession,
+    beginExchange,
+    patchExchange,
+    endExchange,
   };
 }

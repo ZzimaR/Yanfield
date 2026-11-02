@@ -54,6 +54,7 @@ import {
   tailText,
   textToHtml,
 } from "@/lib/ai/prompts";
+import { buildCodexUserPrompt, CODEX_SYSTEM, formatCodexCatalog, type CodexItem, type CodexTurn } from "@/lib/ai/codex";
 import {
   ProviderError,
   streamCompletion,
@@ -409,6 +410,109 @@ function errorCode(error: unknown): string {
   if (error instanceof ApiError) return "request";
   if (error instanceof Error && error.name === "AbortError") return "aborted";
   return "unknown";
+}
+
+/* ============================== 资料助手 ============================== */
+
+export interface CodexRunParams {
+  novelId: string;
+  message: string;
+  history?: CodexTurn[];
+  draft?: CodexItem[];
+  /** 当前章节正文节选（可选，建议 ≤2000 字）；传空则提示词里不带正文段。 */
+  contextText?: string;
+  signal?: AbortSignal;
+}
+
+export async function* runCodexStream(params: CodexRunParams): AsyncGenerator<AiStreamEvent> {
+  const startedAt = Date.now();
+  let target: ResolvedTarget | null = null;
+  let accumulated = "";
+  let promptTokens = 0;
+  let completionTokens = 0;
+  try {
+    if (!getNovel(params.novelId)) throw new ApiError("作品不存在", 404);
+    target = resolveTarget("chat");
+    yield {
+      type: "meta",
+      runId: uid("run"),
+      feature: "custom",
+      provider: target.provider.name,
+      model: target.model,
+    };
+    const catalog = formatCodexCatalog({
+      worlds: listWorld(params.novelId),
+      characters: listCharacters(params.novelId),
+      foreshadows: listForeshadows(params.novelId),
+    });
+    const userContent = buildCodexUserPrompt({
+      catalog,
+      history: (params.history ?? []).slice(-6),
+      draft: params.draft ?? [],
+      message: params.message,
+      contextText: params.contextText,
+    });
+    const messages: AiMessage[] = [
+      { role: "system", content: CODEX_SYSTEM },
+      { role: "user", content: userContent },
+    ];
+    promptTokens = contextTokens(messages);
+    const reported = { prompt: 0, completion: 0 };
+    for await (const chunk of streamCompletion({
+      provider: target.provider,
+      model: target.model,
+      messages,
+      temperature: 0.2,
+      maxTokens: 6000,
+      signal: params.signal,
+    })) {
+      if (absorbUsage(chunk, reported)) continue;
+      const handled = handleChunk(chunk, (text) => {
+        accumulated += text;
+      });
+      if (handled) yield handled;
+    }
+    if (reported.prompt > 0) promptTokens = reported.prompt;
+    completionTokens = reported.completion;
+    const usage = settleUsage(
+      promptTokens,
+      estimateTokens(accumulated),
+      { prompt: promptTokens, completion: completionTokens },
+      Date.now() - startedAt,
+    );
+    addAiLog({
+      novelId: params.novelId,
+      chapterId: null,
+      feature: "custom",
+      provider: target.provider.name,
+      model: target.model,
+      promptTokens: usage.promptTokens,
+      completionTokens: usage.completionTokens,
+      latencyMs: usage.latencyMs,
+      status: "ok",
+      promptPreview: params.message.slice(0, 600),
+      responsePreview: accumulated.slice(0, 600),
+    });
+    recordAiTokens(usage.totalTokens);
+    yield { type: "done", usage };
+  } catch (error) {
+    const message = errorMessage(error);
+    if (target) {
+      addAiLog({
+        novelId: params.novelId,
+        chapterId: null,
+        feature: "custom",
+        provider: target.provider.name,
+        model: target.model,
+        promptTokens,
+        completionTokens: completionTokens || estimateTokens(accumulated),
+        latencyMs: Date.now() - startedAt,
+        status: "error",
+        error: message,
+      });
+    }
+    yield { type: "error", message, code: errorCode(error) };
+  }
 }
 
 /* ============================== 定点任务 ============================== */

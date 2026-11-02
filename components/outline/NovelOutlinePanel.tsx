@@ -64,6 +64,7 @@ export function NovelOutlinePanel({
   error,
   onSaved,
   onRetry,
+  onDirtyChange,
 }: {
   novelId: string;
   outline: NovelOutline | undefined;
@@ -71,6 +72,7 @@ export function NovelOutlinePanel({
   error: string | null;
   onSaved: (outline: NovelOutline) => void;
   onRetry?: () => void;
+  onDirtyChange?: (dirty: boolean) => void;
 }) {
   const { toast } = useToast();
   const [draft, setDraft] = React.useState<OutlineDraft | null>(null);
@@ -89,6 +91,13 @@ export function NovelOutlinePanel({
     if (!draft || !baseline) return false;
     return JSON.stringify(draft) !== JSON.stringify(baseline);
   }, [draft, baseline]);
+
+  // 把未保存状态暴露给外层（例如写作台的浮窗关闭确认）。
+  React.useEffect(() => {
+    onDirtyChange?.(dirty);
+  }, [dirty, onDirtyChange]);
+
+  React.useEffect(() => () => onDirtyChange?.(false), [onDirtyChange]);
 
   const update = <K extends keyof OutlineDraft>(key: K, value: OutlineDraft[K]) => {
     dirtyRef.current = true;

@@ -1,8 +1,7 @@
 "use client";
 
 import * as React from "react";
-import Link from "next/link";
-import { ChevronRight, Library, Users } from "lucide-react";
+import { Library, Users } from "lucide-react";
 import { Badge, Skeleton } from "@/components/ui/kit";
 import { useApi } from "@/lib/client/api";
 import { formatRelativeTime } from "@/lib/ui/cn";
@@ -23,26 +22,12 @@ interface ResearchPanelProps {
 
 const MAX_ITEMS = 10;
 
-function JumpLink({ href, children }: { href: string; children: React.ReactNode }) {
-  return (
-    <Link
-      href={href}
-      className="inline-flex shrink-0 items-center gap-0.5 text-[11px] text-accent transition-opacity duration-150 hover:opacity-80"
-    >
-      {children}
-      <ChevronRight className="size-3" aria-hidden />
-    </Link>
-  );
-}
-
 function Section({
   title,
-  href,
   hint,
   children,
 }: {
   title: string;
-  href: string;
   hint?: string;
   children: React.ReactNode;
 }) {
@@ -53,7 +38,6 @@ function Section({
           {title}
           {hint ? <span className="text-[10px] font-normal normal-case tracking-normal text-ink-4">{hint}</span> : null}
         </h3>
-        <JumpLink href={href}>查看</JumpLink>
       </div>
       {children}
     </section>
@@ -100,13 +84,9 @@ export function ResearchPanel({ novelId, chapterId }: ResearchPanelProps) {
     archives.find((item) => chapterId !== null && item.chapterId === chapterId) ?? archives[0] ?? null;
   const archiveMeta = archive ? archiveTone(archive.status) : null;
 
-  const bibleHref = `/novel/${novelId}/bible`;
-  const outlineHref = `/novel/${novelId}/outline`;
-  const archivesHref = `/novel/${novelId}/archives`;
-
   return (
     <div className="min-h-0">
-      <Section title="本章章纲" href={outlineHref}>
+      <Section title="本章章纲">
         {chapterId === null ? (
           <Muted>先选择一个章节。</Muted>
         ) : blueprintApi.loading ? (
@@ -139,7 +119,7 @@ export function ResearchPanel({ novelId, chapterId }: ResearchPanelProps) {
         )}
       </Section>
 
-      <Section title="关联档案" href={archivesHref}>
+      <Section title="关联档案">
         {archiveApi.loading ? (
           <LoadingLines />
         ) : archive ? (
@@ -160,7 +140,7 @@ export function ResearchPanel({ novelId, chapterId }: ResearchPanelProps) {
         )}
       </Section>
 
-      <Section title="角色" href={bibleHref} hint={characters.length > 0 ? `${characters.length} 人` : undefined}>
+      <Section title="角色" hint={characters.length > 0 ? `${characters.length} 人` : undefined}>
         {characterApi.loading ? (
           <LoadingLines />
         ) : characters.length === 0 ? (
@@ -180,7 +160,7 @@ export function ResearchPanel({ novelId, chapterId }: ResearchPanelProps) {
         )}
       </Section>
 
-      <Section title="设定" href={bibleHref} hint={settings.length > 0 ? `${settings.length} 条` : undefined}>
+      <Section title="设定" hint={settings.length > 0 ? `${settings.length} 条` : undefined}>
         {worldApi.loading ? (
           <LoadingLines />
         ) : settings.length === 0 ? (

@@ -1,16 +1,22 @@
 "use client";
 
 import * as React from "react";
-import { BookOpen, Library, ListTree, ScrollText } from "lucide-react";
+import { Archive, BookOpen, ListTree, ScrollText } from "lucide-react";
 import { Tabs, type TabItem } from "@/components/ui/kit";
 import type { EditorTab, NovelTree, TreeActions } from "@/lib/editor/types";
+import { ArchiveInlinePanel } from "./ArchiveInlinePanel";
 import { ChapterTree } from "./ChapterTree";
 import { CodexPanel } from "./CodexPanel";
-import { OutlinePanel } from "./OutlinePanel";
-import { ResearchPanel } from "./ResearchPanel";
+import { OutlineInlinePanel } from "./OutlineInlinePanel";
 
-/** 左栏第四页「设定」：角色 / 世界观 / 伏笔速查 */
+/** 左栏四个标签页：目录 / 章纲 / 设定 / 档案 */
 export type EditorLeftTab = EditorTab | "codex";
+
+const LEFT_TABS: EditorLeftTab[] = ["toc", "outline", "codex", "archives"];
+
+function isEditorLeftTab(value: unknown): value is EditorLeftTab {
+  return value === "toc" || value === "outline" || value === "codex" || value === "archives";
+}
 
 interface LeftPanelProps {
   novelId: string;
@@ -24,7 +30,7 @@ interface LeftPanelProps {
   onSelectChapter: (chapterId: string) => void;
 }
 
-/** 编辑器左栏：目录 / 大纲速览 / 资料 / 设定 四个标签页 */
+/** 编辑器左栏：目录 / 章纲 / 设定 / 档案 四个标签页 */
 export function LeftPanel({
   novelId,
   tree,
@@ -40,11 +46,46 @@ export function LeftPanel({
     (tree?.volumes.reduce((sum, volume) => sum + volume.chapters.length, 0) ?? 0) +
     (tree?.looseChapters.length ?? 0);
 
+  // 页签保活：首屏只挂当前页签，空闲时挂其余页签，之后切回不再重新拉数据
+  const [visited, setVisited] = React.useState<Set<EditorLeftTab>>(() => new Set([tab]));
+
+  React.useEffect(() => {
+    setVisited((prev) => (prev.has(tab) ? prev : new Set(prev).add(tab)));
+  }, [tab]);
+
+  /** 其余页签延后预热：等首屏正文稳定后再挂载，空闲时执行（setTimeout 兜底），避免和正文抢请求 */
+  React.useEffect(() => {
+    let cancelled = false;
+    let idleId: number | null = null;
+    const warmAll = () => {
+      if (cancelled) return;
+      setVisited((prev) => {
+        if (LEFT_TABS.every((item) => prev.has(item))) return prev;
+        const next = new Set(prev);
+        for (const item of LEFT_TABS) next.add(item);
+        return next;
+      });
+    };
+    const timer = window.setTimeout(() => {
+      if (cancelled) return;
+      if (typeof window.requestIdleCallback === "function") {
+        idleId = window.requestIdleCallback(warmAll, { timeout: 2000 });
+      } else {
+        warmAll();
+      }
+    }, 2500);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+      if (idleId !== null) window.cancelIdleCallback(idleId);
+    };
+  }, []);
+
   const tabs: TabItem[] = [
     { value: "toc", label: "目录", icon: <ListTree className="size-3.5" />, count: chapterCount || undefined },
-    { value: "outline", label: "大纲", icon: <ScrollText className="size-3.5" /> },
-    { value: "research", label: "资料", icon: <Library className="size-3.5" /> },
+    { value: "outline", label: "章纲", icon: <ScrollText className="size-3.5" /> },
     { value: "codex", label: "设定", icon: <BookOpen className="size-3.5" /> },
+    { value: "archives", label: "档案", icon: <Archive className="size-3.5" /> },
   ];
 
   return (
@@ -53,31 +94,43 @@ export function LeftPanel({
         className="shrink-0 gap-0 px-1 [&>button]:shrink-0 [&>button]:whitespace-nowrap [&>button]:gap-1 [&>button]:px-2 [&>button]:text-[12.5px] [&>button>svg]:hidden"
         tabs={tabs}
         value={tab}
-        onChange={(value) => onTabChange(value as EditorLeftTab)}
+        onChange={(value) => {
+          if (isEditorLeftTab(value)) onTabChange(value);
+        }}
       />
       <div className="min-h-0 w-full min-w-0 flex-1 overflow-hidden">
-        {tab === "toc" ? (
-          <ChapterTree
-            novelId={novelId}
-            tree={tree}
-            loading={loading}
-            currentChapterId={currentChapterId}
-            currentVolumeId={currentVolumeId}
-            actions={actions}
-            onSelectChapter={onSelectChapter}
-          />
-        ) : null}
-        {tab === "outline" ? (
-          <div className="scroll-thin h-full overflow-y-auto">
-            <OutlinePanel novelId={novelId} chapterId={currentChapterId} volumeId={currentVolumeId} />
+        {visited.has("toc") ? (
+          <div className={tab === "toc" ? "h-full min-h-0" : "hidden"}>
+            <ChapterTree
+              novelId={novelId}
+              tree={tree}
+              loading={loading}
+              currentChapterId={currentChapterId}
+              currentVolumeId={currentVolumeId}
+              actions={actions}
+              onSelectChapter={onSelectChapter}
+            />
           </div>
         ) : null}
-        {tab === "research" ? (
-          <div className="scroll-thin h-full overflow-y-auto">
-            <ResearchPanel novelId={novelId} chapterId={currentChapterId} />
+        {visited.has("outline") ? (
+          <div className={tab === "outline" ? "h-full min-h-0" : "hidden"}>
+            <OutlineInlinePanel
+              novelId={novelId}
+              chapterId={currentChapterId}
+              onSelectChapter={onSelectChapter}
+            />
           </div>
         ) : null}
-        {tab === "codex" ? <CodexPanel novelId={novelId} /> : null}
+        {visited.has("codex") ? (
+          <div className={tab === "codex" ? "h-full min-h-0" : "hidden"}>
+            <CodexPanel novelId={novelId} />
+          </div>
+        ) : null}
+        {visited.has("archives") ? (
+          <div className={tab === "archives" ? "h-full min-h-0" : "hidden"}>
+            <ArchiveInlinePanel novelId={novelId} />
+          </div>
+        ) : null}
       </div>
     </div>
   );

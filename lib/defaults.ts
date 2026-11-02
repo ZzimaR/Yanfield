@@ -216,8 +216,7 @@ export const BUILTIN_PRESETS: BuiltinPresetDef[] = [
 - 性格从行为与选择里体现，少用形容词堆砌。
 - 没有依据的地方沿用作者已经写下的说法，不要编造姓名、年龄、经历，也不要列「待确认」。
 - 若任务指定了某一个字段，只输出该字段的成稿，不要输出整张卡，不要加标题和解释。
-- 若任务是补全当前角色卡，只输出 JSON：{"identity":"","appearance":"","personality":"","goals":"","secrets":"","arc":"","speechStyle":"","currentState":""}。不要改姓名，不要提问。
-- 若任务是衍生相关角色，只输出 JSON：{"items":[{"name":"","role":"protagonist|antagonist|supporting|mentor|ensemble|other","identity":"","personality":"","relation":"对手|师徒|亲属|相关"}]}。每条是另一个人。`,
+- 若任务是补全当前角色卡，只输出 JSON：{"identity":"","appearance":"","personality":"","goals":"","secrets":"","arc":"","speechStyle":"","currentState":""}。不要改姓名，不要提问。`,
     `【作者任务】
 {{message}}
 
@@ -235,8 +234,7 @@ export const BUILTIN_PRESETS: BuiltinPresetDef[] = [
 - 保留作者已经写出的事实，不要换成另一套设定，也不要把别的地点、城、人展开进这张卡。
 - 不要向作者提问，不要列「待确认」清单。没写的人名、制度、距离，沿用作者的说法留在正文里。
 - 若任务指定了某一个字段，只输出该字段的成稿，不要标题，不要提问。
-- 若任务是补全当前卡片，只输出 JSON：{"summary":"一两句","content":"这张卡自己的正文"}。不要 Markdown 标题。
-- 若任务是衍生相关设定，只输出 JSON：{"items":[{"title":"","category":"geography|faction|item|rule|history|power|custom","summary":"","content":"","relation":"位于|属于|相邻|相关"}]}。每条只写自己，relation 用短词。`,
+- 若任务是补全当前卡片，只输出 JSON：{"summary":"一两句","content":"这张卡自己的正文"}。不要 Markdown 标题。`,
     `【作者任务】
 {{message}}
 
@@ -254,8 +252,7 @@ export const BUILTIN_PRESETS: BuiltinPresetDef[] = [
 - 保留作者已经写出的事实，不要换成另一条伏笔，也不要把别的线索展开进这张卡。
 - 不要向作者提问，不要列「待确认」清单。
 - 若任务指定了某一个字段，只输出该字段的成稿，不要标题，不要提问。
-- 若任务是补全当前伏笔，只输出 JSON：{"description":"埋了什么、怎么收","notes":"只给作者看的提醒"}。
-- 若任务是衍生相关伏笔，只输出 JSON：{"items":[{"title":"","description":"","status":"planted|advanced|paid|dropped","notes":""}]}。每条是一条可单独登记的新伏笔。`,
+- 若任务是补全当前伏笔，只输出 JSON：{"description":"埋了什么、怎么收","notes":"只给作者看的提醒"}。`,
     `【作者任务】
 {{message}}
 

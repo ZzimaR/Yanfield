@@ -9,18 +9,14 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { novelBackTarget } from "@/lib/app-nav";
 import {
-  BookOpen,
   ChevronLeft,
   CodeXml,
-  Layers,
   LayoutDashboard,
   Library,
   Moon,
   PenLine,
-  ScrollText,
   Settings,
   Sun,
-  GitBranch,
 } from "lucide-react";
 import { cn } from "@/lib/ui/cn";
 import { useApi } from "@/lib/client/api";
@@ -39,9 +35,6 @@ const RAIL_ITEMS = [
 function novelTabs(novelId: string) {
   return [
     { key: "overview", href: `/novel/${novelId}`, label: "概览", icon: LayoutDashboard },
-    { key: "outline", href: `/novel/${novelId}/outline`, label: "大纲", icon: GitBranch },
-    { key: "bible", href: `/novel/${novelId}/bible`, label: "设定", icon: Layers },
-    { key: "archives", href: `/novel/${novelId}/archives`, label: "档案", icon: ScrollText },
     { key: "editor", href: `/editor/${novelId}`, label: "写作", icon: PenLine },
   ] as const;
 }

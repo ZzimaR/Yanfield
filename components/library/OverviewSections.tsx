@@ -280,9 +280,9 @@ export function RecentChaptersCard({ chapters, editorBase }: RecentChaptersCardP
 /* ============================== 快捷入口 ============================== */
 
 const QUICK_LINKS: { href: (id: string) => string; icon: LucideIcon; title: string; description: string }[] = [
-  { href: (id) => `/novel/${id}/outline`, icon: ListTree, title: "大纲", description: "全书 → 分卷 → 章节" },
-  { href: (id) => `/novel/${id}/bible`, icon: BookOpen, title: "设定集", description: "角色、世界、伏笔" },
-  { href: (id) => `/novel/${id}/archives`, icon: Archive, title: "故事档案", description: "五块档案与冲突" },
+  { href: (id) => `/editor/${id}?tab=outline`, icon: ListTree, title: "章纲", description: "全书 → 分卷 → 章节" },
+  { href: (id) => `/editor/${id}?tab=codex`, icon: BookOpen, title: "设定", description: "角色、世界、伏笔" },
+  { href: (id) => `/editor/${id}?tab=archives`, icon: Archive, title: "档案", description: "五块档案与冲突" },
   { href: (id) => `/editor/${id}`, icon: ScrollText, title: "写作", description: "三栏编辑器" },
 ];
 

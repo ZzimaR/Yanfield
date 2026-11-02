@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { streamCompletion } from "@/lib/ai/provider";
-import { parseCardFill, parseDerivedSettings } from "@/lib/ai/world-derive";
+import { parseCardFill } from "@/lib/ai/world-derive";
 import type { ProviderConfig } from "@/lib/types";
 
 const demo: ProviderConfig = {
@@ -40,17 +40,6 @@ describe("演示模型的设定卡", () => {
     expect(fill?.summary).toContain("澜国");
     expect(fill?.content).toContain("澜国");
     expect(text).not.toContain("chapterSummary");
-  });
-
-  it("衍生相关设定返回可勾选的独立条目，包含关系才会嵌套", async () => {
-    const text = await complete(
-      "你是设定编辑。若任务是衍生相关设定，只输出 JSON。",
-      "这是衍生相关设定。\n\n当前设定：澜国（势力）",
-    );
-    const items = parseDerivedSettings(text);
-    expect(items.map((item) => item.title)).toEqual(["澜国城", "澜国邻境"]);
-    expect(items[0]?.nest).toBe(true);
-    expect(items[1]?.nest).toBe(false);
   });
 
   it("故事档案仍然返回档案 JSON", async () => {

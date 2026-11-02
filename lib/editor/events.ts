@@ -6,7 +6,7 @@ import type { SelectionInfo } from "./types";
  * 注意：这些事件只在浏览器端派发，SSR 阶段不会执行。
  */
 
-/** Ctrl/Cmd+J：请求 AI 面板聚焦输入框（AI 面板监听） */
+/** Alt+J：请求 AI 面板聚焦输入框（AI 面板监听） */
 export const FOCUS_AI_EVENT = "yantian:editor-focus-ai";
 
 /** 选区变化广播（AI 面板监听，用于展示「已选中 N 字」等提示） */

@@ -4,6 +4,7 @@
  * AI 面板内部类型（仅组件层使用，不进入 lib/types.ts 的领域模型）。
  * 领域类型一律复用 lib/types.ts，保证与后端接口同源。
  */
+import type { CodexItem } from "@/lib/ai/codex";
 import type { AgentDef, AgentId, AiAction, AiUsage, ChatMessage, ContextConfig } from "@/lib/types";
 
 /** 面板输入模式：对话 / 起草 / 技能（技能=多智能体协作） */
@@ -32,6 +33,11 @@ export interface UIMessage {
   provider: string;
   model: string;
   usage: AiUsage | null;
+  /** 衍生设定的待确认清单，只存在于这次会话里 */
+  codexItems?: CodexItem[];
+  codexApplied?: boolean;
+  /** 这份清单已被下一份清单替换，只读保留在会话里 */
+  codexSuperseded?: boolean;
   /** 原始错误文案（保留给日志/降级展示） */
   error: string;
   /** 中文化后的错误标题（Provider 错误可读化，见 errors.ts） */

@@ -5,8 +5,10 @@
  * 编辑：GET/PATCH /api/foreshadows/[id]；新建：POST /api/foreshadows；删除：DELETE /api/foreshadows/[id]
  */
 import * as React from "react";
-import { GitBranch, Sparkles, Trash2 } from "lucide-react";
-import { Button, ConfirmDialog, Input, Select, Sheet, Textarea, useToast } from "@/components/ui/kit";
+import { Sparkles, Trash2 } from "lucide-react";
+import { Button, ConfirmDialog, Dropdown, Input, Select, Sheet, Textarea, useToast } from "@/components/ui/kit";
+import { FloatWindow } from "@/components/editor/FloatWindow";
+import { FORESHADOW_HANDOFF_TASKS, handToAssistant } from "@/lib/editor/hand-off";
 import { ModelKeyHint } from "@/components/ai/ModelKeyHint";
 import { apiDelete, apiPatch, apiPost, notifyDataChanged, streamAiTask, useApi } from "@/lib/client/api";
 import { parseForeshadowFill } from "@/lib/ai/card-derive";
@@ -14,7 +16,6 @@ import { labeledDraft } from "@/lib/ai/assist-brief";
 import type { AiStreamEvent, Foreshadow, ForeshadowStatus } from "@/lib/types";
 import { FORESHADOW_STATUS_LABEL } from "@/lib/types";
 import { stripChapterNumber, unwrapEntity, useErrorToast } from "@/components/outline/form-kit";
-import { ForeshadowDeriveSheet } from "./ForeshadowDeriveSheet";
 
 interface ForeshadowDraft {
   title: string;
@@ -69,6 +70,7 @@ export function ForeshadowEditor({
   onClose,
   onSaved,
   onDeleted,
+  presentation = "sheet",
 }: {
   open: boolean;
   novelId: string;
@@ -77,6 +79,8 @@ export function ForeshadowEditor({
   onClose: () => void;
   onSaved: (saved: Foreshadow) => void;
   onDeleted: () => void;
+  /** 写作台里用可拖动的窗口，不盖成整页。 */
+  presentation?: "sheet" | "float";
 }) {
   const { toast } = useToast();
   const editing = Boolean(foreshadow);
@@ -85,9 +89,15 @@ export function ForeshadowEditor({
   const [saving, setSaving] = React.useState(false);
   const [deleting, setDeleting] = React.useState(false);
   const [confirmDeleteOpen, setConfirmDeleteOpen] = React.useState(false);
-  const [deriveOpen, setDeriveOpen] = React.useState(false);
   const [filling, setFilling] = React.useState(false);
   const [savedId, setSavedId] = React.useState<string | null>(foreshadow?.id ?? null);
+  const [minimized, setMinimized] = React.useState(false);
+  const nextFloatKey = open ? (foreshadow?.id ?? "new") : "closed";
+  const [floatKey, setFloatKey] = React.useState(nextFloatKey);
+  if (floatKey !== nextFloatKey) {
+    setFloatKey(nextFloatKey);
+    if (open) setMinimized(false);
+  }
   const initKey = `${open ? 1 : 0}:${foreshadow?.id ?? "new"}:${detailApi.data?.updatedAt ?? foreshadow?.updatedAt ?? ""}`;
   const lastInitKey = React.useRef("");
 
@@ -202,15 +212,24 @@ export function ForeshadowEditor({
       .finally(() => setFilling(false));
   };
 
-  const ensureSource = async () => {
-    if (savedId) return savedId;
-    const title = draft.title.trim();
-    if (!title) return null;
-    const saved = unwrapEntity(await apiPost<Foreshadow>("/api/foreshadows", { novelId, ...draft, title }));
-    setSavedId(saved.id);
-    onSaved(saved);
-    notifyDataChanged("foreshadows");
-    return saved.id;
+  const material = [
+    draft.title.trim() ? `标题：${draft.title.trim()}` : "",
+    draft.description.trim() ? `描述：${draft.description.trim()}` : "",
+    draft.notes.trim() ? `备注：${draft.notes.trim()}` : "",
+    `状态：${FORESHADOW_STATUS_LABEL[draft.status]}`,
+  ]
+    .filter(Boolean)
+    .join("\n");
+
+  const giveToAssistant = (task: (typeof FORESHADOW_HANDOFF_TASKS)[number]) => {
+    const label = draft.title.trim() || "新伏笔";
+    handToAssistant({
+      reference: savedId ? { type: "foreshadow", id: savedId, label } : null,
+      taskId: task.id,
+      taskLabel: `${task.label} · ${label}`,
+      prompt: material ? `${task.prompt}\n\n【当前材料】\n${material}` : task.prompt,
+    });
+    if (presentation === "float") setMinimized(true);
   };
 
   const displayTitle = draft.title.trim() || "未命名伏笔";
@@ -221,30 +240,26 @@ export function ForeshadowEditor({
     .filter(Boolean)
     .join(" · ");
 
-  return (
-    <Sheet
-      open={open}
-      onClose={onClose}
-      title={editing ? "编辑伏笔" : "新建伏笔"}
-      width={640}
-      footer={
-        <div className="flex items-center gap-2 [&_a:focus-visible]:outline-none [&_a:focus-visible]:ring-2 [&_a:focus-visible]:ring-accent/60 [&_button:focus-visible]:outline-none [&_button:focus-visible]:ring-2 [&_button:focus-visible]:ring-accent/60">
-          {editing ? (
-            <Button variant="danger" size="sm" icon={<Trash2 className="size-3.5" />} onClick={() => setConfirmDeleteOpen(true)}>
-              删除
-            </Button>
-          ) : null}
-          <div className="ml-auto flex items-center gap-2">
-            <Button variant="ghost" size="sm" onClick={onClose}>
-              取消
-            </Button>
-            <Button variant="primary" size="sm" loading={saving} onClick={save}>
-              {savedId ? "保存" : "创建伏笔"}
-            </Button>
-          </div>
-        </div>
-      }
-    >
+  const footer = (
+    <div className="flex items-center gap-2 [&_a:focus-visible]:outline-none [&_a:focus-visible]:ring-2 [&_a:focus-visible]:ring-accent/60 [&_button:focus-visible]:outline-none [&_button:focus-visible]:ring-2 [&_button:focus-visible]:ring-accent/60">
+      {editing ? (
+        <Button variant="danger" size="sm" icon={<Trash2 className="size-3.5" />} onClick={() => setConfirmDeleteOpen(true)}>
+          删除
+        </Button>
+      ) : null}
+      <div className="ml-auto flex items-center gap-2">
+        <Button variant="ghost" size="sm" onClick={onClose}>
+          取消
+        </Button>
+        <Button variant="primary" size="sm" loading={saving} onClick={save}>
+          {savedId ? "保存" : "创建伏笔"}
+        </Button>
+      </div>
+    </div>
+  );
+
+  const body = (
+    <>
       <div className="space-y-3.5 p-4 [&_a:focus-visible]:outline-none [&_a:focus-visible]:ring-2 [&_a:focus-visible]:ring-accent/60 [&_button:focus-visible]:outline-none [&_button:focus-visible]:ring-2 [&_button:focus-visible]:ring-accent/60">
         {/* 概览条：标题 / 状态与埋设进度 */}
         <div className="rounded-lg border border-line bg-surface-2 px-3.5 py-3">
@@ -276,17 +291,31 @@ export function ForeshadowEditor({
             >
               补全这张卡
             </Button>
-            <Button variant="ghost" size="sm" icon={<GitBranch className="size-3.5" />} onClick={() => setDeriveOpen(true)}>
-              衍生相关
-            </Button>
+            {presentation === "float" ? (
+              <Dropdown
+                trigger={
+                  <Button variant="ghost" size="sm">
+                    交给助手
+                  </Button>
+                }
+                items={FORESHADOW_HANDOFF_TASKS.map((task) => ({
+                  label: task.label,
+                  onSelect: () => giveToAssistant(task),
+                }))}
+              />
+            ) : null}
           </div>
         </div>
 
-        <ol className="space-y-1.5 rounded-lg border border-line bg-surface px-3.5 py-3 text-[12px] leading-5 text-ink-2">
-          <li>1. 先写标题。已有的说明可以留下，AI 会顺着你写过的事实补。</li>
-          <li>2. 「补全这张卡」只改这一条的说明和备注，不会自动保存，也不会把别的线索写进来。看完点底部「{savedId ? "保存" : "创建伏笔"}」。</li>
-          <li>3. 如果这段话里还有可以单独登记的回收或误导，用「衍生相关」。它会列出几条新伏笔，勾选后才另存。</li>
-        </ol>
+        {presentation === "float" ? (
+          <p className="text-[12px] leading-5 text-ink-3">交给助手会把这条伏笔和任务填进右侧输入框，你改完再发送。</p>
+        ) : (
+          <ol className="space-y-1.5 rounded-lg border border-line bg-surface px-3.5 py-3 text-[12px] leading-5 text-ink-2">
+            <li>1. 先写标题。已有的说明可以留下，AI 会顺着你写过的事实补。</li>
+            <li>2. 「补全这张卡」只改这一条的说明和备注，不会自动保存，也不会把别的线索写进来。看完点底部「{savedId ? "保存" : "创建伏笔"}」。</li>
+            <li>3. 这段话里如果还有别的伏笔，在写作台把这条交给右侧助手。这里只改这一条。</li>
+          </ol>
+        )}
         <ModelKeyHint />
 
         <EditorSection title="基本信息" hint="一句话让读者记住它，状态决定统计里算不算「未收」。">
@@ -348,14 +377,6 @@ export function ForeshadowEditor({
         {detailApi.loading ? <p className="text-[11px] text-ink-3">正在获取伏笔最新详情…</p> : null}
       </div>
 
-      <ForeshadowDeriveSheet
-        open={deriveOpen}
-        novelId={novelId}
-        source={{ id: savedId, title: draft.title, description: draft.description, notes: draft.notes }}
-        onClose={() => setDeriveOpen(false)}
-        onEnsureSource={ensureSource}
-      />
-
       <ConfirmDialog
         open={confirmDeleteOpen}
         title="删除这条伏笔？"
@@ -366,6 +387,28 @@ export function ForeshadowEditor({
         onConfirm={() => void remove()}
         onClose={() => setConfirmDeleteOpen(false)}
       />
+    </>
+  );
+
+  if (presentation === "float") {
+    return (
+      <FloatWindow
+        open={open}
+        title={editing ? "编辑伏笔" : "新伏笔"}
+        minimized={minimized}
+        onMinimizedChange={setMinimized}
+        onClose={onClose}
+        className={confirmDeleteOpen ? "z-40" : undefined}
+        footer={footer}
+      >
+        {body}
+      </FloatWindow>
+    );
+  }
+
+  return (
+    <Sheet open={open} onClose={onClose} title={editing ? "编辑伏笔" : "新建伏笔"} width={640} footer={footer}>
+      {body}
     </Sheet>
   );
 }

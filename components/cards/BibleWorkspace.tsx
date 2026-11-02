@@ -396,7 +396,7 @@ export function BibleWorkspace({ novelId, initialTab }: { novelId: string; initi
         <PageHeader
           title="设定库"
           badge={<Badge tone="default">资料</Badge>}
-          description="角色、世界观与伏笔在这里统一管理；标注「AI 不可见」或「第 N 章揭示」的条目，在对应章节前不会进入 AI 上下文。"
+          description="角色、世界观与伏笔在这里统一管理。写作时在写作台里打开，不必离开章节。"
           actions={newButton()}
         />
 

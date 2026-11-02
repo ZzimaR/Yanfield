@@ -13,7 +13,7 @@ export interface NovelTree {
 }
 
 /** 左栏标签页 */
-export type EditorTab = "toc" | "outline" | "research";
+export type EditorTab = "toc" | "outline" | "archives";
 
 /**
  * 保存状态机：

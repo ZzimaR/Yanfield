@@ -58,7 +58,10 @@ export interface ChatComposerProps {
   modelSlot?: React.ReactNode;
   /** `/` 触发的技能快捷选项：选中后把 prompt 填入输入框 */
   skillOptions?: SkillOption[];
-  /** 外部聚焦信号（编辑器 Ctrl/Cmd+J），值变化时聚焦输入框 */
+  /** 设定卡交给助手时带上的任务芯片，发送前可删 */
+  task?: { label: string } | null;
+  onClearTask?: () => void;
+  /** 外部聚焦信号（编辑器 Alt+J），值变化时聚焦输入框 */
   focusSignal?: number;
   className?: string;
 }
@@ -90,6 +93,8 @@ export function ChatComposer({
   onStyleChange,
   modelSlot,
   skillOptions,
+  task = null,
+  onClearTask,
   focusSignal,
   className,
 }: ChatComposerProps) {
@@ -118,7 +123,7 @@ export function ChatComposer({
     resize();
   }, [value, resize]);
 
-  /* 外部 Ctrl/Cmd+J → 聚焦输入框 */
+  /* 外部 Alt+J → 聚焦输入框 */
   React.useEffect(() => {
     if (!focusSignal) return;
     textareaRef.current?.focus();
@@ -313,6 +318,18 @@ export function ChatComposer({
       ) : null}
 
       <div className="rounded-md border border-line bg-surface-2/60 px-2 py-1.5 transition-colors duration-150 focus-within:border-accent/50 focus-within:ring-2 focus-within:ring-accent/10 dark:bg-surface-2">
+        {task ? (
+          <div className="mb-1.5 flex flex-wrap gap-1">
+            <span className="inline-flex max-w-full items-center gap-1 rounded-md border border-line bg-paper px-2 py-0.5 text-[11px] text-ink-2">
+              <span className="truncate">任务：{task.label}</span>
+              {onClearTask ? (
+                <button type="button" aria-label="移除任务" onClick={onClearTask} className="shrink-0 text-ink-4 hover:text-danger">
+                  <X className="size-3" />
+                </button>
+              ) : null}
+            </span>
+          </div>
+        ) : null}
         <div className="mb-1 flex items-center justify-between gap-2">
           <Segmented
             size="sm"

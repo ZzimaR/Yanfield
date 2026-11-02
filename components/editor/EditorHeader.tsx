@@ -8,12 +8,10 @@ import {
   BookOpen,
   ChevronRight,
   Ellipsis,
-  Library,
   Maximize2,
   Minimize2,
   Moon,
   PanelLeft,
-  ScrollText,
   Settings2,
   Sparkles,
   Sun,
@@ -73,9 +71,6 @@ export function EditorHeader({
 
   const moreItems: DropdownItem[] = [
     { label: "作品概览", icon: <BookOpen className="size-3.5" />, onSelect: () => router.push(`/novel/${novelId}`) },
-    { label: "大纲", icon: <ScrollText className="size-3.5" />, onSelect: () => router.push(`/novel/${novelId}/outline`) },
-    { label: "角色与设定", icon: <Library className="size-3.5" />, onSelect: () => router.push(`/novel/${novelId}/bible`) },
-    { label: "故事档案", icon: <BookOpen className="size-3.5" />, onSelect: () => router.push(`/novel/${novelId}/archives`) },
     { separator: true },
     { label: "设置", icon: <Settings2 className="size-3.5" />, onSelect: () => openSettingsDialog() },
   ];
@@ -151,7 +146,7 @@ export function EditorHeader({
             {theme === "dark" ? <Sun className="size-4" /> : <Moon className="size-4" />}
           </IconButton>
         </Tooltip>
-        <Tooltip label="AI 面板 (Ctrl/Cmd+J)">
+        <Tooltip label="AI 面板 (Alt+J)">
           <IconButton
             label="AI 面板"
             active={!rightCollapsed}
