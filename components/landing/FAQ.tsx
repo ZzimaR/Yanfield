@@ -9,7 +9,7 @@ const FAQS = [
   },
   {
     q: "支持哪些模型？",
-    a: "任意 OpenAI 兼容接口都可以：OpenAI、DeepSeek、Moonshot、通义、智谱、vLLM、Ollama 等；另外原生支持 Anthropic 与 Gemini。对话和写作共用一个默认模型，在设置或 AI 面板里切换。",
+    a: "任意 OpenAI 兼容接口都可以：OpenAI、DeepSeek、Moonshot、通义、智谱、vLLM、Ollama 等；另外原生支持 Anthropic 与 Gemini。对话/大纲模型与正文模型可以分开配置，在设置或 AI 面板里切换。",
   },
   {
     q: "我的书稿数据在哪？怎么备份？",

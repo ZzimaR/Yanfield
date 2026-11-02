@@ -136,6 +136,11 @@ export function EditorWorkbench({ novelId }: EditorWorkbenchProps) {
   const chapter = React.useMemo(() => findChapter(tree, chapterId), [tree, chapterId]);
   const volume = React.useMemo(() => findVolumeOfChapter(tree, chapterId), [tree, chapterId]);
 
+  /** 当前章在全书顺序中的下标（-1 = 不在目录里，例如尚未加载/新建中） */
+  const chapterIndex = React.useMemo(() => chapters.findIndex((item) => item.id === chapterId), [chapters, chapterId]);
+  const prevChapter = chapterIndex > 0 ? chapters[chapterIndex - 1] : null;
+  const nextChapter = chapterIndex >= 0 && chapterIndex < chapters.length - 1 ? chapters[chapterIndex + 1] : null;
+
   /** 深链：/editor/<novelId>?chapterId=xxx 直接定位章节（便于把链接发给别人） */
   const linkedChapterIdRef = React.useRef<string | null>(null);
   React.useEffect(() => {
@@ -471,6 +476,12 @@ export function EditorWorkbench({ novelId }: EditorWorkbenchProps) {
             onToggleRight={toggleRight}
             onToggleImmersive={toggleImmersive}
             onToggleTheme={toggleTheme}
+            chapterPosition={chapterIndex >= 0 ? chapterIndex + 1 : null}
+            chapterTotal={chapters.length}
+            prevChapterTitle={prevChapter?.title ?? null}
+            nextChapterTitle={nextChapter?.title ?? null}
+            onPrevChapter={prevChapter ? () => selectChapter(prevChapter.id) : undefined}
+            onNextChapter={nextChapter ? () => selectChapter(nextChapter.id) : undefined}
           />
         )}
 

@@ -17,7 +17,7 @@
 | `07-archives.png` | `/novel/<novelId>/archives` | 故事档案：摘要、角色状态、资源总账、时间线 |
 | `08-settings.png` | `/settings` | 设置页：模型、提示词、外观、数据 |
 | `09-editor-dark.png` | 同 `03-editor-blue` | 深色「夜航」主题下的三栏工作台，强调色为浅蓝 |
-| `10-provider-settings.png` | `/settings`（滚动到「模型服务」） | 快捷添加主流服务商：11 家预设、单一默认模型、密钥掩码与「测试连接」 |
+| `10-provider-settings.png` | `/settings`（滚动到「模型服务」） | 快捷添加主流服务商：11 家预设、对话与写作分别配置模型、密钥掩码与「测试连接」 |
 | `11-context-drawer.png` | 同 `03`（打开 AI 面板的「上下文」抽屉） | 上下文装配面板：分节 token 估算、上下文预算滑杆、超出预算被裁掉的维度 |
 | `12-settings.png` | 书架页（点左下角齿轮） | 设置悬浮窗：左侧分区导航、模型服务 11 家预设。按钮为浅蓝 |
 

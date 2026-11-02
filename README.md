@@ -6,7 +6,7 @@
 [![Node](https://img.shields.io/badge/Node-%E2%89%A522.13-3c873a)](https://nodejs.org)
 [![Next.js](https://img.shields.io/badge/Next.js-15-000000)](https://nextjs.org)
 [![TypeScript](https://img.shields.io/badge/TypeScript-strict-3178c6)](https://www.typescriptlang.org)
-[![Tests](https://img.shields.io/badge/tests-135%20passing-2f5d62)](tests)
+[![Tests](https://img.shields.io/badge/tests-153%20passing-2f5d62)](tests)
 [![Docker](https://img.shields.io/badge/Docker-ready-2496ed)](Dockerfile)
 
 > **状态：v0.1.0 开发中，尚未发布正式版本。** 功能已能完整跑通，但接口和界面仍可能调整，欢迎试用与反馈。
@@ -56,8 +56,8 @@ pnpm dev
 
 在本地数据掌控的前提下，砚田提供 AI 辅助：
 
-- 不绑定模型厂商，OpenAI 兼容 / Anthropic / Gemini / Ollama 都能接，对话和写作共用一个默认模型，随时可换；
-- 上下文装配是可见、可调的——你决定哪些设定让 AI 看见、花多少 token；
+- 不绑定模型厂商，OpenAI 兼容 / Anthropic / Gemini / Ollama 都能接，对话/大纲与正文可以分开配置模型，随时可换；
+- 上下文装配是可见、可调的——哪些资料进入上下文、花多少 token，都能在设置和预览里看到；
 - AI 对正文的改动一律先出**逐块 diff**，接受哪块、拒绝哪块由你决定。
 
 ## 已实现（v0.1.0 开发版）
@@ -76,13 +76,13 @@ pnpm dev
 - 内置提示词预设：续写、扩写、润色、去 AI 味、章节诊断、章纲、人物卡、世界观卡、故事档案提取等
 - 兼容 OpenAI（含 DeepSeek / 通义 / Kimi / GLM / OpenRouter / SiliconFlow 等 OpenAI 兼容服务）、Anthropic、Gemini、Ollama，以及任意自定义 OpenAI 兼容网关
 - 设置页内置 11 家主流服务商预设（选品牌自动填好 Base URL 与推荐模型）；可用 API Key 从服务商**拉取真实模型列表**，也可以手动添加任意模型 id
-- **单一「默认模型」**：对话与写作任务都用同一个模型，随时切换（不再强制区分对话 / 正文模型）
+- **双模型分工**：对话/大纲模型与正文模型分开配置，可在设置或 AI 面板里随时切换
 - 也支持环境变量自动接入
 - 没有 API Key 也能用「离线演示模式」走完整个流程（模板输出，不联网）
 
 **资料与一致性**
 - 三级大纲：总纲 / 卷纲 / 章纲（目标、POV、冲突、场景、钩子）
-- 设定库：角色、世界观、伏笔，支持对 AI 可见性与揭示章节（防剧透）
+- 设定库：角色、世界观、伏笔；AI 能看到全部设定以保证前后一致，还没写到的人物与线索会标注「尚未揭示」，只用来埋伏笔；个别卡也可以关掉「AI 可见性」彻底不给 AI 读
 - 故事档案：本章摘要、人物状态、设定变动、总账、时间线、待确认冲突，改章自动标记过期
 - TXT 导入（正则拆章、预览后落库）、Markdown / TXT 导出
 
@@ -107,7 +107,7 @@ app/          页面与 REST / SSE 路由（Next.js App Router）
 components/   UI（editor / ai / cards / outline / archives / settings / landing）
 lib/          领域类型、SQLite 访问、repo、AI provider / 上下文装配 / 引擎、diff
 scripts/      seed、截图脚本
-tests/        vitest 用例（工具函数、diff、bridge、Provider 协议、环境变量注入）
+tests/        vitest 用例（工具函数、diff、bridge、Provider 协议、环境变量注入、资料助手、上下文披露）
 docs/         功能、架构、模型服务、部署、常见问题、路线图
 ```
 
@@ -115,7 +115,7 @@ docs/         功能、架构、模型服务、部署、常见问题、路线图
 
 ```bash
 pnpm typecheck   # tsc --noEmit
-pnpm test        # vitest（135 个用例）
+pnpm test        # vitest（153 个用例）
 pnpm build       # 生产构建
 pnpm db:seed     # 重新生成示例作品（不删用户数据）
 ```
@@ -165,7 +165,7 @@ Next.js 15 · React 19 · TypeScript strict · Tailwind CSS v4 · Tiptap 3 · no
 ## 路线图
 
 - **v0.1.0（当前，开发中）**：上面列出的写作、AI、资料与一致性能力；
-- **v0.2（计划）**：章节版本快照与回滚、EPUB 导出、自定义 Agent 与插件机制、多人协作审校；
+- **v0.2（计划）**：章节版本快照与回滚、EPUB 导出、插件机制与更多内置工作流、多人协作审校；
 - **更远**：知识图谱页、爆款仿写工作台、AI 配图。
 
 ## 贡献

@@ -385,9 +385,9 @@ export function BlueprintEditor({
               <span className="text-[12px] font-medium text-ink-2">本章伏笔</span>
               <a
                 className="inline-flex items-center gap-0.5 text-[11.5px] text-accent hover:underline"
-                href={`/novel/${novelId}/bible?tab=foreshadows`}
+                href={`/editor/${novelId}?tab=codex`}
               >
-                在设定页管理
+                在写作台「设定」里管理
                 <ExternalLink className="size-3" />
               </a>
             </div>

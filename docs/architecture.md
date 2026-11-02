@@ -17,7 +17,7 @@
 | 编辑器 | Tiptap 3 | 结构化 HTML 正文是 diff 与导出（Markdown/TXT）的基础；ProseMirror 生态成熟。 |
 | 存储 | `node:sqlite`（Node ≥ 22.13 内置） | 零原生依赖、零安装；单文件可备份、可直接用 sqlite3 打开检查。 |
 | AI | 自研可插拔 Provider 层 | 五种连接方式（OpenAI 兼容 / Anthropic / Gemini / Ollama / 演示）统一成一条 SSE 事件流。 |
-| 测试 | Vitest（node 环境） | 覆盖纯函数层（字数统计、diff 引擎、文本转 HTML、费用估算）、Provider 协议解析（`node:http` 起本地假上游模拟 SSE）、拉取模型列表（/models 解析）、环境变量自动建 Provider（临时 SQLite）、资料助手（codex 清单解析与合并）、渐进披露过滤（revealAtChapter / aiVisible）、智能体人设覆盖合并与校验；不需要真实 Key，共 135 个用例。 |
+| 测试 | Vitest（node 环境） | 覆盖纯函数层（字数统计、diff 引擎、文本转 HTML、费用估算）、Provider 协议解析（`node:http` 起本地假上游模拟 SSE）、拉取模型列表（/models 解析）、环境变量自动建 Provider（临时 SQLite）、资料助手（codex 清单解析与合并）、揭示标注与 `aiVisible` 过滤（`revealAtChapter` 只标注不隐藏）、智能体系统提示词的知识边界、人设覆盖合并与校验；不需要真实 Key，共 153 个用例。 |
 
 ## 运行形态
 
@@ -107,7 +107,7 @@ docker-compose.yml .env.example
 | `providers` | 模型服务 | 类型（openai/anthropic/gemini/ollama/demo）、名称、baseUrl、密钥（本地明文）、模型列表、启用状态 |
 | `prompt_presets` | 提示词预设 | 功能（`AiFeature`）、system/user 模板、温度、模型角色（chat/prose）、是否内置、是否启用 |
 | `ai_logs` | AI 调用日志 | 功能、智能体、模型、token、耗时、成功/错误码，用于成本与排障 |
-| `app_settings` | 键值设置 | 主题、编辑器字号/行高/排版、自动保存延迟、每日目标、默认上下文配置、默认模型（单一）、自定义智能体、智能体人设覆盖（`agentOverrides`） |
+| `app_settings` | 键值设置 | 主题、编辑器字号/行高/排版、自动保存延迟、每日目标、默认上下文配置、双模型（对话/正文）、自定义智能体、智能体人设覆盖（`agentOverrides`） |
 | `word_snapshots` | 每日字数快照 | 日期、累计字数、AI token 数，用于写作曲线 |
 
 关系上只有两条强约束：**作品 → 卷 → 章**、**会话 → 消息**，其余资料通过 `novelId` / `chapterId` 软关联，删作品时由 `ON DELETE CASCADE` 清理。
@@ -148,7 +148,7 @@ docker-compose.yml .env.example
 - `includeChapterSummaries` 控前多少章摘要；`chapterSummaryMode` 可选摘要或原文片段。
 - `characterDetail: brief | standard | full` 决定角色卡字段的裁剪深度。
 - 上下文预算由 `ContextConfig.contextBudget` 控制（默认 12000 token，`0` = 不限），超限时按优先级（< 90 的低优先维度从低到高）丢弃、必要时再截断最长块，并在 meta 里标记被裁掉的维度；为兼容旧配置，`contextBudget` 缺省时会回退读取 `maxTokens`，再回退到内置默认 6000 兜底。`maxTokens` 现在只表示「单次输出上限」（默认 0 = 不限），由引擎透传给 Provider。
-- `aiVisible = false` 的角色/设定、以及 `revealAtChapter` 尚未到达的条目不会进入上下文，避免剧透式幻觉。
+- `aiVisible = false` 的角色/设定不会进入上下文；`revealAtChapter` 不再隐藏条目——未到揭示章节的卡仍会进入上下文（保证前后一致），但每个条目会带「（尚未揭示，第 N 章后）」标注，并由系统提示词约束「知道不等于写出」：可以用来埋伏笔，不能提前点破。`aiVisible` 决定可见性，`revealAtChapter` 只决定标注。
 
 ### Provider 适配层
 

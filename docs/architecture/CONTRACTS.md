@@ -24,7 +24,7 @@
 | `app/api/**`（除 `app/api/ai/**`）`app/api/_lib/**` | **api-routes** | 全部 REST Route Handler：作品/卷/章/大纲/角色/世界观/伏笔/档案/对话/Provider/预设/设置/统计/搜索/导入导出/demo |
 | `app/editor/[novelId]/**` `components/editor/**` `lib/editor/**`（除 `bridge.tsx`） | **editor** | 三栏工作台 + 目录树 + Tiptap + 自动保存 + diff 审阅槽位 |
 | `components/ai/**` `components/diff/**` | **ai-assistant** | AI 面板、上下文抽屉、流式渲染、逐块 diff 审阅组件 |
-| `app/novel/[novelId]/{outline,bible,archives}/**` `components/cards/**` `components/outline/**` `components/archives/**` | **knowledge** | 三级大纲页、设定页、故事档案页 |
+| `app/novel/[novelId]/{outline,bible,archives}/**`（307 重定向到写作台）`components/cards/**` `components/outline/**` `components/archives/**` | **knowledge** | 旧大纲/设定/档案页仅保留重定向；内容在写作台左栏「章纲 / 设定 / 档案」页签就地编辑 |
 | `app/page.tsx` `app/library/**` `app/settings/**` `app/novel/[novelId]/page.tsx` `app/not-found.tsx` `app/error.tsx` `app/loading.tsx` `components/landing/**` `components/library/**` `components/settings/**` | **shell** | 落地页、书架、设置、作品概览 |
 | `README.md` `LICENSE` `CONTRIBUTING.md` `docs/**`（除 architecture、recon） `tests/**` `vitest.config.ts` `Dockerfile` `.dockerignore` `.github/**` `scripts/**` `public/**` | **docs** | 文档、测试、截图脚本、部署、许可证 |
 
@@ -330,4 +330,4 @@ export function getProviderPreset(key: string): ProviderPreset | undefined;
 
 - 旧客户端若仍只传 `maxTokens` 作为预算，装配器会回退兼容（见 8.1），不会报错；新代码应改用 `contextBudget`。
 - `/api/ai/context` 的响应结构已在 §4 更新为 `AssembledContext`，字段名是 `id`/`text`（旧文档里的 `key`/`content`/`mode` 已废弃）。
-- `tests/providers.test.ts`（协议解析：OpenAI 兼容 / Anthropic / Gemini SSE、401 中文错误、未填 Key）、`tests/provider-models.test.ts`（/models 拉取模型列表：四类协议、去重、401 中文错误）与 `tests/seed-env.test.ts`（环境变量建 Provider、demo 兜底、默认预算）是这两块的回归测试，改 Provider/seed 时必须保持通过；`pnpm test` 总计 100 例。
+- `tests/providers.test.ts`（协议解析：OpenAI 兼容 / Anthropic / Gemini SSE、401 中文错误、未填 Key）、`tests/provider-models.test.ts`（/models 拉取模型列表：四类协议、去重、401 中文错误）与 `tests/seed-env.test.ts`（环境变量建 Provider、demo 兜底、默认预算）是这两块的回归测试，改 Provider/seed 时必须保持通过；`pnpm test` 总计 153 例。

@@ -15,7 +15,7 @@ interface CodexBody {
   contextText?: unknown;
 }
 
-/** 设定页资料助手：根据作者粘贴的文字提案要新建或修改的卡片。 */
+/** 资料助手：根据作者粘贴的文字或对话，提案要新建/修改的角色、世界观与伏笔卡。 */
 export const POST = handle(async (req) => {
   const body = await readJson<CodexBody>(req);
   if (!body.novelId) throw new ApiError("缺少 novelId", 400);

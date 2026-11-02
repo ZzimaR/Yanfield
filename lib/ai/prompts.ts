@@ -35,6 +35,14 @@ export function getAgent(agentId: AgentId | undefined): AgentDef {
   return fallback;
 }
 
+/**
+ * 知识边界（所有智能体共用）：
+ * 设定卡是作者的私有资料，AI 看得见全部（未揭示的会标注），
+ * 但「知道」不等于「写出来」——正文只能写到读者已经知道的信息。
+ */
+export const KNOWLEDGE_BOUNDARY =
+  "设定卡与故事档案是作者的私有资料：你可以看到全部内容，用来保证前后一致、不写崩设定；但「知道」不等于「写出来」，正文只能写到当前章节已经揭示、读者已经知道的信息。标有「尚未揭示」的资料只能用来埋伏笔、铺线索，不能提前点破、替读者揭晓，也不能让人物说出他此刻不该知道的事。";
+
 /** 智能体人格前缀：拼在 systemPrompt 前，让同一模型切换角色（应用设置里的人设覆盖） */
 export function agentPreamble(agentId: AgentId | undefined, settings: AppSettings): string {
   const base = getAgent(agentId);
@@ -47,6 +55,7 @@ export function agentPreamble(agentId: AgentId | undefined, settings: AppSetting
       custom.role ? `定位：${custom.role}` : "",
       custom.persona ? `人设与工作方式：${custom.persona}` : "",
       "你的建议要具体、可执行；上下文没有的信息不要编造，不确定就写「待确认」。",
+      KNOWLEDGE_BOUNDARY,
       extra ? `额外要求：${extra}` : "",
     ]
       .filter(Boolean)
@@ -59,6 +68,7 @@ export function agentPreamble(agentId: AgentId | undefined, settings: AppSetting
     `强项：${agent.skills.join("、")}。`,
     agent.description,
     "上下文没有的信息不要编造；不确定就写「待确认」。",
+    KNOWLEDGE_BOUNDARY,
     agent.instructions ? `额外要求：${agent.instructions}` : "",
   ]
     .filter(Boolean)

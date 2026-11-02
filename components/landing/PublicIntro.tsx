@@ -1,4 +1,4 @@
-import { ArrowRight, BookOpenText, EyeOff, FileDiff, Layers, ListTree, Users } from "lucide-react";
+import { ArrowRight, BookOpenText, Eye, FileDiff, Layers, ListTree, Users } from "lucide-react";
 import editorPreview from "../../docs/screenshots/03-editor-blue.png";
 import { InkstoneMark } from "@/components/brand/InkstoneMark";
 import { FAQ } from "./FAQ";
@@ -11,7 +11,7 @@ const FEATURES = [
   {
     icon: BookOpenText,
     title: "三栏写作",
-    detail: "左边是目录和设定，中间写正文，右边是助手。查、写、改都在同一屏。",
+    detail: "左边是目录、章纲、设定和档案，中间写正文，右边是助手。查、写、改都在同一屏。",
   },
   {
     icon: FileDiff,
@@ -24,9 +24,9 @@ const FEATURES = [
     detail: "先定全书主线，再拆卷和章。写的时候能回到这一章要完成的事。",
   },
   {
-    icon: EyeOff,
-    title: "设定按章节可见",
-    detail: "还没写到的伏笔可以先藏起来，避免助手在前面几章把后面说破。",
+    icon: Eye,
+    title: "设定全知，标注揭示",
+    detail: "AI 能看到全部设定来保证前后一致；还没写到的人物与线索会被标注「尚未揭示」，只用来埋伏笔，不会提前说破。",
   },
   {
     icon: Layers,

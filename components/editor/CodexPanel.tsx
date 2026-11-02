@@ -157,7 +157,7 @@ export function CodexPanel({ novelId }: CodexPanelProps) {
     void foreshadowsApi.refresh();
   }, [charactersApi.refresh, worldApi.refresh, foreshadowsApi.refresh]);
 
-  // 设定集页面保存后也能同步刷新左栏
+  // 浮窗或资料助手保存设定后，同步刷新左栏列表
   useDataChanged(() => {
     void charactersApi.refresh();
     void worldApi.refresh();
@@ -297,7 +297,7 @@ export function CodexPanel({ novelId }: CodexPanelProps) {
 
   return (
     <div className="flex h-full min-h-0 w-full min-w-0 flex-col">
-      {/* 头部：条数统计 + 搜索 + 设定集入口 */}
+      {/* 头部：条数统计 + 新建入口 + 搜索 */}
       <div className="shrink-0 space-y-2 border-b border-line px-2.5 py-2">
         <div className="flex items-center justify-between gap-2">
           <span className="text-[11px] tabular-nums text-ink-3">

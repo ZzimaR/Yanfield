@@ -227,7 +227,7 @@ export function WorldEditor({
   const parentTitle = settings.find((item) => item.id === draft.parentId)?.title;
 
   const chapterOptions = [
-    { value: "", label: "立即揭示（一直可见）" },
+    { value: "", label: "不标注（AI 始终可见）" },
     ...chapters.map((chapter) => ({
       value: String(chapter.orderIndex + 1),
       label: `第 ${chapter.orderIndex + 1} 章 · ${stripChapterNumber(chapter.title)}`,
@@ -373,19 +373,19 @@ export function WorldEditor({
           <TagsInput label="标签" value={draft.tags} onChange={(tags) => update("tags", tags)} placeholder="如：规则、势力、代价" />
         </EditorSection>
 
-        <EditorSection title="AI 可见性" hint="控制 AI 什么时候能看到这条设定，避免提前剧透。">
+        <EditorSection title="AI 可见性与揭示标注" hint="AI 能看到全部设定卡，用来保证前后一致；只有确认不想让 AI 读这条设定时才关闭可见性。">
           <Switch
             checked={draft.aiVisible}
             onChange={(checked) => update("aiVisible", checked)}
             label="对 AI 可见"
-            hint="关闭后，AI 写作时看不到这条设定。"
+            hint="关闭后，任何 AI 上下文都不会包含这条设定。"
           />
           <Select
-            label="揭示时机"
+            label="揭示章节"
             value={draft.revealAtChapter === null ? "" : String(draft.revealAtChapter)}
             onChange={(event) => update("revealAtChapter", event.target.value === "" ? null : Number(event.target.value))}
             options={chapterOptions}
-            hint="早于该章之前，AI 上下文里看不到这条设定（防剧透）；留空 = 始终可见。"
+            hint="留空 = 始终可见；填章节号只是提醒 AI「这之前还没揭示、不要直接写出」（AI 仍然看得到这条设定）。"
           />
           <Switch checked={draft.pinned} onChange={(checked) => update("pinned", checked)} label="置顶" hint="置顶设定排在列表最前。" />
         </EditorSection>

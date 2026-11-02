@@ -173,7 +173,7 @@ export interface Character {
   currentState: string;
   /** 对 AI 可见 */
   aiVisible: boolean;
-  /** 从第几章开始对 AI 可见（null = 一直可见），防剧透 */
+  /** 从第几章开始算「已揭示」（null = 不标注）；AI 仍然可见，只用于提醒它不要提前点破 */
   revealAtChapter: number | null;
   tags: string[];
   pinned: boolean;
@@ -733,7 +733,7 @@ export const AGENTS: AgentDef[] = [
     englishName: "Supervisor",
     role: "通用助手：续写、改设定、理章纲、查档案都能干",
     description:
-      "默认的通用智能体：续写正文、修改设定卡、整理章纲、查档案都能直接动手，每一步改动都能查看和撤销。",
+      "默认的通用智能体：续写正文、修改设定卡、整理章纲、查档案都能直接动手；正文改动会先给你确认，保存类操作会提示你去对应页签。",
     skills: ["续写正文", "修改设定", "整理章纲", "查档案"],
     tint: "accent",
     modelRole: "chat",

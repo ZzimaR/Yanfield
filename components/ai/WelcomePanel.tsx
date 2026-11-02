@@ -114,7 +114,7 @@ export function WelcomePanel({
       </div>
 
       <p className="rounded-sm bg-surface-2/60 px-3 py-2 text-[11.5px] leading-relaxed text-ink-3">
-        我能直接读写这本书的正文、章纲、角色、设定和总纲，每一步改动都能查看和撤销。直接说要做什么，或者选一个技能：
+        我能读写这本书的正文、章纲、角色、设定和档案；正文改动会先给你确认，保存类操作会提示你去对应页签。直接说要做什么，或者选一个技能：
       </p>
 
       {/* 技能 */}

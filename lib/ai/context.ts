@@ -3,7 +3,9 @@
  *
  * 目标：把「作品大纲 / 卷纲 / 章纲 / 前文章节摘要 / 故事档案 / 角色 / 世界观 / 伏笔 / 文风」
  * 装配成一段给模型看的上下文，并满足两件事：
- * 1. 渐进披露：aiVisible 关闭或 revealAtChapter 晚于当前章节的资料，绝不出现在上下文里（防剧透）。
+ * 1. 全知但标注：AI 能看到全部设定卡（只有 aiVisible 关闭的不进上下文）；
+ *    revealAtChapter 没到的卡照常进上下文，只在行尾标注「（尚未揭示，第 N 章后）」，
+ *    由提示词约束「知道不等于写出」，这样 AI 既不会前后矛盾，也不会提前点破。
  * 2. 预算裁剪：按 token 预算给每块打分，超预算时先丢低优先级块，再截断最长的块。
  *
  * UI 的「上下文抽屉」直接消费 ContextSectionMeta[]，做到所见即所发。
@@ -159,9 +161,11 @@ function characterLine(
   character: Character,
   detail: "brief" | "standard" | "full",
   nameOf: (targetId: string) => string,
+  note = "",
 ): string {
+  const suffix = note ? ` ${note}` : "";
   if (detail === "brief") {
-    return `- ${character.name}${character.identity ? `（${character.identity}）` : ""}：${preview(character.currentState || character.personality, 60)}`;
+    return `- ${character.name}${character.identity ? `（${character.identity}）` : ""}：${preview(character.currentState || character.personality, 60)}${suffix}`;
   }
   const parts: string[] = [];
   if (character.identity) parts.push(character.identity);
@@ -183,14 +187,14 @@ function characterLine(
       .join("；");
     parts.push(`关系：${relations}`);
   }
-  return `- ${character.name}：${parts.join("；")}`;
+  return `- ${character.name}：${parts.join("；")}${suffix}`;
 }
 
-function worldLine(setting: WorldSetting, detail: "brief" | "standard" | "full"): string {
+function worldLine(setting: WorldSetting, detail: "brief" | "standard" | "full", note = ""): string {
   const content = setting.content.replace(/\s+/g, " ").trim();
   const limit = detail === "brief" ? 60 : detail === "standard" ? 140 : 260;
   const body = content || setting.summary;
-  return `- ${setting.title}：${preview(body, limit)}`;
+  return `- ${setting.title}：${preview(body, limit)}${note ? ` ${note}` : ""}`;
 }
 
 function buildSection(id: ContextSectionId, label: string, text: string, priority: number): ContextSectionMeta {
@@ -199,26 +203,29 @@ function buildSection(id: ContextSectionId, label: string, text: string, priorit
 }
 
 /**
- * 渐进披露：这张设定卡此刻能不能进入 AI 上下文（防剧透）。
- * - 「对 AI 可见」关闭 → 永远不进上下文；
- * - revealAtChapter 有值 → 写到该章及之后才可见；
- * - revealAtChapter 为 null（或当前没有章节上下文）→ 始终可见。
+ * 「对 AI 可见」是唯一硬开关：关闭的卡完全不进上下文（作者明确不想让 AI 读）。
+ * 其余卡全部进入上下文，保证 AI 对全书设定「全知」，避免前后矛盾。
  */
-export function isDisclosed(
-  item: { aiVisible: boolean; revealAtChapter: number | null },
-  chapterIndex: number | null,
-): boolean {
-  if (!item.aiVisible) return false;
-  if (item.revealAtChapter === null || chapterIndex === null) return true;
-  return item.revealAtChapter <= chapterIndex;
+export function filterAiVisible<T extends { aiVisible: boolean }>(items: T[]): T[] {
+  return items.filter((item) => item.aiVisible);
 }
 
-/** 批量过滤角色 / 世界观等设定卡；保持调用方给的顺序。 */
-export function filterDisclosed<T extends { aiVisible: boolean; revealAtChapter: number | null }>(
-  items: T[],
+/**
+ * 未揭示标注：卡照常进上下文，只在这条资料的行尾加一句「（尚未揭示，第 N 章后）」，
+ * 提示词据此约束 AI「知道但不能写出来」。
+ * - aiVisible 关闭的卡根本不会进上下文 → 不标注，返回空串；
+ * - revealAtChapter 为 null（不标注）或当前没有章节上下文 → 返回空串；
+ * - 当前章节已到揭示章节 → 返回空串。
+ * （原 isDisclosed 的双重判断拆开：aiVisible 决定卡的去留，revealAtChapter 只决定标注。）
+ */
+export function disclosureNote(
+  item: { aiVisible: boolean; revealAtChapter: number | null },
   chapterIndex: number | null,
-): T[] {
-  return items.filter((item) => isDisclosed(item, chapterIndex));
+): string {
+  if (!item.aiVisible) return "";
+  const revealAt = item.revealAtChapter;
+  if (revealAt === null || chapterIndex === null || revealAt <= chapterIndex) return "";
+  return `（尚未揭示，第 ${revealAt} 章后）`;
 }
 
 /**
@@ -304,19 +311,23 @@ export function assembleContext(input: AssembledContextInput): AssembledContext 
     sections.push(buildSection("archives", "故事档案", blocks.join("\n\n"), 6));
   }
 
-  // 5. 角色 / 世界观 / 伏笔（渐进披露过滤）
+  // 5. 角色 / 世界观 / 伏笔（全知：只过滤「对 AI 不可见」，未揭示的卡加标注而不是丢掉）
   const characters = listCharacters(novelId);
   const nameOf = (targetId: string): string => characters.find((character) => character.id === targetId)?.name ?? "";
   if (config.includeCharacters) {
-    const visible = filterDisclosed(characters, chapterIndex)
+    const visible = filterAiVisible(characters)
       .slice(0, 14)
-      .map((character) => characterLine(character, config.characterDetail, nameOf));
+      .map((character) =>
+        characterLine(character, config.characterDetail, nameOf, disclosureNote(character, chapterIndex)),
+      );
     sections.push(buildSection("characters", "角色资料", visible.join("\n"), 7));
   }
   if (config.includeWorld) {
-    const settings = filterDisclosed(listWorld(novelId), chapterIndex)
+    const settings = filterAiVisible(listWorld(novelId))
       .slice(0, 16)
-      .map((setting) => worldLine(setting, config.characterDetail));
+      .map((setting) =>
+        worldLine(setting, config.characterDetail, disclosureNote(setting, chapterIndex)),
+      );
     sections.push(buildSection("world", "世界观设定", settings.join("\n"), 8));
   }
   if (config.includeForeshadows) {
@@ -388,6 +399,13 @@ export function assembleContext(input: AssembledContextInput): AssembledContext 
   const includedSections = sections.filter((section) => section.included && section.text.trim());
   const headerLines: string[] = [`【作品】${novel.title}${novel.genre ? `（${novel.genre}）` : ""}`];
   if (novel.synopsis) headerLines.push(`【简介】${preview(novel.synopsis, 200)}`);
+  const hasUnrevealed = includedSections.some(
+    (section) =>
+      (section.id === "characters" || section.id === "world") && section.text.includes("尚未揭示"),
+  );
+  if (hasUnrevealed) {
+    headerLines.push("【资料说明】标有「尚未揭示」的设定读者还不知道：可以拿来埋伏笔、铺线索，但不要提前点破或替读者揭晓。");
+  }
   if (currentChapter) {
     headerLines.push(`【当前章节】第${chapterIndex ?? "?"}章《${currentChapter.title}》${volume ? `（${volume.title}）` : ""}`);
     if (currentChapter.summary) headerLines.push(`【本章已有摘要】${currentChapter.summary}`);

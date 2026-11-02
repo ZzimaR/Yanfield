@@ -7,14 +7,18 @@ import Placeholder from "@tiptap/extension-placeholder";
 import CharacterCount from "@tiptap/extension-character-count";
 import Highlight from "@tiptap/extension-highlight";
 import { Minimize2 } from "lucide-react";
-import { IconButton, Kbd, Skeleton, Tooltip } from "@/components/ui/kit";
+import { IconButton, Skeleton, Tooltip } from "@/components/ui/kit";
 import { cn, countWords, formatDateTime, formatWords } from "@/lib/ui/cn";
+import { useLocalStorageState } from "@/lib/ui/hooks";
 import type { ChapterStatus } from "@/lib/types";
 import { emitSelection } from "@/lib/editor/events";
 import type { SaveState, SelectionInfo } from "@/lib/editor/types";
 import { SaveIndicator } from "./SaveIndicator";
 import { StatusMenu } from "./StatusMenu";
 import { SelectionToolbar } from "./SelectionToolbar";
+import { FindReplaceBar } from "./FindReplaceBar";
+import { FormatToolbar } from "./FormatToolbar";
+import { EditorStatusBar } from "./EditorStatusBar";
 
 interface EditorCanvasProps {
   chapterId: string | null;
@@ -61,6 +65,47 @@ function readSelection(editor: Editor): SelectionInfo {
   const { from, to, empty } = editor.state.selection;
   const text = empty ? "" : editor.state.doc.textBetween(from, to, "\n");
   return { text, from, to, empty };
+}
+
+/** 打字机滚动：把光标放到滚动容器可见高度的约 38% 处 */
+const TYPEWRITER_TARGET_RATIO = 0.38;
+
+/**
+ * 专注段落的样式：globals.css 不在本次改动范围，所以随组件内联注入。
+ * 只作用在 .prose-paper 的直接子块上：当前块保留完整对比度，其余块整体淡化。
+ */
+const FOCUS_PARAGRAPH_CSS = `
+.prose-paper[data-focus-paragraph="on"] > :is(p, h1, h2, h3, blockquote, ul, ol, pre, hr) {
+  opacity: 0.4;
+  transition: opacity 180ms ease;
+}
+.prose-paper[data-focus-paragraph="on"] > .is-focus-block {
+  opacity: 1;
+}
+@media (prefers-reduced-motion: reduce) {
+  .prose-paper[data-focus-paragraph="on"] > :is(p, h1, h2, h3, blockquote, ul, ol, pre, hr) {
+    transition: none;
+  }
+}
+`;
+
+/** 统计非空文本块（段落）数量 */
+function countParagraphs(doc: {
+  descendants(callback: (node: { isTextblock: boolean; textContent: string }) => void): void;
+}): number {
+  let count = 0;
+  doc.descendants((node) => {
+    if (node.isTextblock && node.textContent.trim().length > 0) count += 1;
+  });
+  return count;
+}
+
+/** 取光标所在「顶层块」的 DOM（段落 / 标题 / 引用 / 列表），供专注段落加 is-focus-block */
+function findFocusBlockDom(editor: Editor): HTMLElement | null {
+  const { $from } = editor.state.selection;
+  if ($from.depth < 1) return null;
+  const dom = editor.view.nodeDOM($from.before(1));
+  return dom instanceof HTMLElement ? dom : null;
 }
 
 /**
@@ -111,6 +156,18 @@ export function EditorCanvas(props: EditorCanvasProps) {
   const [selection, setSelection] = React.useState<SelectionInfo>(EMPTY_SELECTION);
   const selectionSetterRef = React.useRef(setSelection);
   selectionSetterRef.current = setSelection;
+
+  /** 正文滚动容器：打字机滚动需要它来算可视区 */
+  const scrollRef = React.useRef<HTMLDivElement | null>(null);
+  const [paragraphCount, setParagraphCount] = React.useState(0);
+
+  /** 查找替换浮条 */
+  const [findOpen, setFindOpen] = React.useState(false);
+  const [findRequest, setFindRequest] = React.useState(0);
+
+  /** 写作辅助开关：默认关闭，localStorage 记忆（刷新后保持） */
+  const [typewriter, setTypewriter] = useLocalStorageState<boolean>("yantian:editor:typewriter", false);
+  const [focusParagraph, setFocusParagraph] = useLocalStorageState<boolean>("yantian:editor:focus-paragraph", false);
 
   const extensions = React.useMemo(
     () => [
@@ -172,6 +229,98 @@ export function EditorCanvas(props: EditorCanvasProps) {
     }
   }, [editor, chapterId, initialContent]);
 
+  // 段落数：随正文更新刷新；切章时 setContent 不派发 update，所以依赖 chapterId 兜底重算
+  React.useEffect(() => {
+    if (!editor) {
+      setParagraphCount(0);
+      return;
+    }
+    const recount = () => setParagraphCount(countParagraphs(editor.state.doc));
+    recount();
+    editor.on("update", recount);
+    return () => {
+      editor.off("update", recount);
+    };
+  }, [editor, chapterId]);
+
+  // 专注段落 / 打字机滚动：关闭时不干预滚动，并在切换、卸载时清理干净
+  React.useEffect(() => {
+    if (!editor) return;
+    const root = editor.view.dom as HTMLElement;
+
+    const clearFocusBlock = () => {
+      root.querySelectorAll(".is-focus-block").forEach((node) => node.classList.remove("is-focus-block"));
+      root.removeAttribute("data-focus-paragraph");
+    };
+
+    const syncFocusBlock = () => {
+      if (!focusParagraph) {
+        clearFocusBlock();
+        return;
+      }
+      root.setAttribute("data-focus-paragraph", "on");
+      const block = findFocusBlockDom(editor);
+      root.querySelectorAll(".is-focus-block").forEach((node) => {
+        if (node !== block) node.classList.remove("is-focus-block");
+      });
+      block?.classList.add("is-focus-block");
+    };
+
+    const scrollCaretToViewport = () => {
+      const container = scrollRef.current;
+      if (!container) return;
+      try {
+        const caret = editor.view.coordsAtPos(editor.state.selection.head);
+        const rect = container.getBoundingClientRect();
+        const caretOffset = caret.top - rect.top;
+        const targetOffset = rect.height * TYPEWRITER_TARGET_RATIO;
+        const delta = caretOffset - targetOffset;
+        if (Math.abs(delta) < 24) return;
+        const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+        container.scrollTo({ top: container.scrollTop + delta, behavior: reduceMotion ? "auto" : "smooth" });
+      } catch {
+        /* coordsAtPos 在极端光标位置可能抛错，忽略即可，不影响写作 */
+      }
+    };
+
+    const handleSelectionUpdate = () => {
+      syncFocusBlock();
+      if (typewriter) scrollCaretToViewport();
+    };
+
+    syncFocusBlock();
+    if (typewriter) scrollCaretToViewport();
+    editor.on("selectionUpdate", handleSelectionUpdate);
+    return () => {
+      editor.off("selectionUpdate", handleSelectionUpdate);
+      clearFocusBlock();
+    };
+  }, [editor, typewriter, focusParagraph]);
+
+  // Ctrl/⌘+F 打开查找替换、Esc 关闭。
+  // useHotkeys 会过滤输入控件内的按键，查找是全局能力，所以在捕获阶段单独监听，
+  // 并 stopPropagation 抢在 Workbench 的 Esc（退出沉浸）等快捷键之前处理。
+  React.useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if ((event.metaKey || event.ctrlKey) && !event.shiftKey && !event.altKey && event.key.toLowerCase() === "f") {
+        event.preventDefault();
+        event.stopPropagation();
+        setFindOpen(true);
+        setFindRequest((value) => value + 1);
+        return;
+      }
+      if (event.isComposing) return;
+      if (findOpen && event.key === "Escape") {
+        event.preventDefault();
+        event.stopPropagation();
+        setFindOpen(false);
+        editor?.commands.focus();
+      }
+    };
+    window.addEventListener("keydown", onKeyDown, true);
+    return () => window.removeEventListener("keydown", onKeyDown, true);
+  }, [findOpen, editor]);
+
   // 排版设置全部走 CSS 变量 + 内联样式：设置页改动即时生效，无需重挂编辑器
   const styleVars = {
     "--prose-size": `${fontSize}px`,
@@ -195,6 +344,17 @@ export function EditorCanvas(props: EditorCanvasProps) {
 
   return (
     <div className="relative flex h-full min-h-0 flex-col bg-paper" style={styleVars}>
+      {/* 专注段落样式内联注入：globals.css 不在本次改动范围 */}
+      <style>{FOCUS_PARAGRAPH_CSS}</style>
+      {findOpen ? (
+        <FindReplaceBar
+          editor={editor}
+          open
+          focusRequest={findRequest}
+          onClose={() => setFindOpen(false)}
+          className={immersive ? "top-14" : undefined}
+        />
+      ) : null}
       {immersive ? (
         <div className="absolute right-3 top-3 z-20">
           <Tooltip label="退出沉浸" side="left">
@@ -208,7 +368,7 @@ export function EditorCanvas(props: EditorCanvasProps) {
           </Tooltip>
         </div>
       ) : null}
-      <div className="scroll-thin min-h-0 flex-1 overflow-y-auto">
+      <div ref={scrollRef} className="scroll-thin min-h-0 flex-1 overflow-y-auto">
         <div
           className="mx-auto w-full pb-24 sm:pb-32"
           style={pageStyle}
@@ -241,6 +401,9 @@ export function EditorCanvas(props: EditorCanvasProps) {
               ) : null}
             </div>
           )}
+
+          {/* 格式工具栏：紧跟 meta 行、不进入沉浸模式 */}
+          {!immersive ? <FormatToolbar editor={editor} className="mb-4 border-b border-line/70 pb-2" /> : null}
 
           {/* AI 快捷任务条：正文顶部的常驻入口（沉浸模式下隐藏，留给纯粹写作） */}
           {!immersive && aiBar ? (
@@ -284,21 +447,17 @@ export function EditorCanvas(props: EditorCanvasProps) {
           </span>
         </div>
       ) : showStatusBar ? (
-        <div className="flex h-9 shrink-0 items-center gap-2.5 border-t border-line bg-surface/80 px-3 text-[11.5px] text-ink-3 sm:gap-3 sm:px-4">
-          <span className="tabular-nums">{formatWords(wordCount)} 字</span>
-          <span className="h-3 w-px bg-line" aria-hidden />
-          <SaveIndicator state={saveState} lastSavedAt={lastSavedAt} />
-          <div className="ml-auto hidden items-center gap-3 sm:flex">
-            {selection.empty ? null : (
-              <span className="text-accent">已选中 {selection.text.length} 字</span>
-            )}
-            <span className="flex items-center gap-1 text-ink-4" title="保存快捷键">
-              <Kbd>Ctrl</Kbd>
-              <span>+</span>
-              <Kbd>S</Kbd>
-            </span>
-          </div>
-        </div>
+        <EditorStatusBar
+          wordCount={wordCount}
+          paragraphCount={paragraphCount}
+          selection={selection}
+          saveState={saveState}
+          lastSavedAt={lastSavedAt}
+          typewriter={typewriter}
+          focusParagraph={focusParagraph}
+          onToggleTypewriter={() => setTypewriter((prev) => !prev)}
+          onToggleFocusParagraph={() => setFocusParagraph((prev) => !prev)}
+        />
       ) : null}
 
       <SelectionToolbar editor={editor} selection={selection} onAskAi={onAskAi} />

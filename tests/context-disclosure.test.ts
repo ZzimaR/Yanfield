@@ -1,62 +1,61 @@
 import { describe, expect, it } from "vitest";
-import { filterDisclosed, isDisclosed } from "@/lib/ai/context";
+import { disclosureNote, filterAiVisible } from "@/lib/ai/context";
+import { agentPreamble } from "@/lib/ai/prompts";
 import { DEMO_CHARACTERS, DEMO_WORLD } from "@/lib/defaults";
+import { DEFAULT_APP_SETTINGS } from "@/lib/types";
 
 /**
- * 渐进披露（防剧透）纯逻辑单测。
- * 只测 context.ts 导出的纯函数，不连数据库：数据库句柄在 getDb() 里才创建，模块导入本身无副作用。
+ * 上下文「全知但标注」纯逻辑单测。
+ * - AI 能看到全部设定卡（只有 aiVisible=false 的卡不进上下文）；
+ * - revealAtChapter 没到的卡照常进上下文，只在行尾标注「尚未揭示」，不丢内容；
+ * - 智能体提示词带「知道不等于写出」的输出约束。
+ * 只测纯函数，不连数据库：数据库句柄在 getDb() 里才创建，模块导入本身无副作用。
  */
-describe("isDisclosed", () => {
-  it("揭示章节留空 = 任何章节都可见", () => {
-    expect(isDisclosed({ aiVisible: true, revealAtChapter: null }, 1)).toBe(true);
-    expect(isDisclosed({ aiVisible: true, revealAtChapter: null }, 99)).toBe(true);
-  });
-
-  it("没有章节上下文时不过滤（聊天场景）", () => {
-    expect(isDisclosed({ aiVisible: true, revealAtChapter: 10 }, null)).toBe(true);
-  });
-
-  it("只有写到揭示章节及之后才可见", () => {
-    const item = { aiVisible: true, revealAtChapter: 6 };
-    expect(isDisclosed(item, 1)).toBe(false);
-    expect(isDisclosed(item, 5)).toBe(false);
-    expect(isDisclosed(item, 6)).toBe(true);
-    expect(isDisclosed(item, 7)).toBe(true);
-  });
-
-  it("「对 AI 可见」关闭时永远不可见", () => {
-    expect(isDisclosed({ aiVisible: false, revealAtChapter: null }, 1)).toBe(false);
-    expect(isDisclosed({ aiVisible: false, revealAtChapter: 6 }, 10)).toBe(false);
-  });
-});
-
-describe("filterDisclosed", () => {
+describe("filterAiVisible", () => {
   const items = [
-    { name: "一直可见", aiVisible: true, revealAtChapter: null },
-    { name: "第十章才出场", aiVisible: true, revealAtChapter: 10 },
-    { name: "隐藏卡", aiVisible: false, revealAtChapter: null },
-    { name: "第六章出场", aiVisible: true, revealAtChapter: 6 },
+    { name: "一直可见", aiVisible: true },
+    { name: "早就揭示", aiVisible: true },
+    { name: "隐藏卡", aiVisible: false },
   ];
 
-  it("按当前章节过滤，并保持原顺序", () => {
-    expect(filterDisclosed(items, 1).map((item) => item.name)).toEqual(["一直可见"]);
-    expect(filterDisclosed(items, 6).map((item) => item.name)).toEqual(["一直可见", "第六章出场"]);
-    expect(filterDisclosed(items, 10).map((item) => item.name)).toEqual(["一直可见", "第十章才出场", "第六章出场"]);
+  it("只过滤 aiVisible=false 的卡，保持原顺序", () => {
+    expect(filterAiVisible(items).map((item) => item.name)).toEqual(["一直可见", "早就揭示"]);
   });
 
   it("不修改传入数组", () => {
     const before = items.map((item) => item.name);
-    filterDisclosed(items, 1);
+    filterAiVisible(items);
     expect(items.map((item) => item.name)).toEqual(before);
-  });
-
-  it("章节未知时只按 aiVisible 过滤", () => {
-    expect(filterDisclosed(items, null).map((item) => item.name)).toEqual(["一直可见", "第十章才出场", "第六章出场"]);
   });
 });
 
-describe("demo seed 不再提前埋雷", () => {
-  it("小满 / 顾衡 的揭示章节为 null（否则第一章 AI 看不到）", () => {
+describe("disclosureNote", () => {
+  it("没填揭示章节 = 不标注", () => {
+    expect(disclosureNote({ aiVisible: true, revealAtChapter: null }, 1)).toBe("");
+  });
+
+  it("没有章节上下文（聊天场景）不标注", () => {
+    expect(disclosureNote({ aiVisible: true, revealAtChapter: 6 }, null)).toBe("");
+  });
+
+  it("还没写到揭示章节：标注出来，而不是丢卡", () => {
+    expect(disclosureNote({ aiVisible: true, revealAtChapter: 6 }, 1)).toBe("（尚未揭示，第 6 章后）");
+    expect(disclosureNote({ aiVisible: true, revealAtChapter: 6 }, 5)).toBe("（尚未揭示，第 6 章后）");
+  });
+
+  it("已写到揭示章节及之后：不再标注", () => {
+    expect(disclosureNote({ aiVisible: true, revealAtChapter: 6 }, 6)).toBe("");
+    expect(disclosureNote({ aiVisible: true, revealAtChapter: 6 }, 7)).toBe("");
+  });
+
+  it("aiVisible 关闭的卡不进上下文，也就不标注", () => {
+    expect(disclosureNote({ aiVisible: false, revealAtChapter: 6 }, 1)).toBe("");
+    expect(disclosureNote({ aiVisible: false, revealAtChapter: null }, 1)).toBe("");
+  });
+});
+
+describe("demo seed 没有未揭示标注", () => {
+  it("小满 / 顾衡 / 周晚 的揭示章节为 null", () => {
     const byName = new Map(DEMO_CHARACTERS.map((character) => [character.name, character]));
     expect(byName.get("小满")?.revealAtChapter).toBeNull();
     expect(byName.get("顾衡")?.revealAtChapter).toBeNull();
@@ -69,11 +68,35 @@ describe("demo seed 不再提前埋雷", () => {
   });
 
   it("第一章上下文里四个 demo 角色都在", () => {
-    const names = filterDisclosed(DEMO_CHARACTERS, 1).map((character) => character.name);
+    const names = filterAiVisible(DEMO_CHARACTERS).map((character) => character.name);
     for (const name of ["周晚", "小满", "顾衡", "陈伯"]) expect(names).toContain(name);
   });
 
   it("demo 世界观在第一章全部可见", () => {
-    expect(filterDisclosed(DEMO_WORLD, 1)).toHaveLength(DEMO_WORLD.length);
+    expect(filterAiVisible(DEMO_WORLD)).toHaveLength(DEMO_WORLD.length);
+  });
+});
+
+describe("智能体提示词的知识边界", () => {
+  it("内置智能体：能看到全部设定，但知道不等于写出", () => {
+    const text = agentPreamble("writer", DEFAULT_APP_SETTINGS);
+    expect(text).toContain("设定卡");
+    expect(text).toContain("知道");
+    expect(text).toContain("写出来");
+    expect(text).toContain("尚未揭示");
+  });
+
+  it("主编与设定智能体同样带约束", () => {
+    for (const agentId of ["supervisor", "setting"] as const) {
+      const text = agentPreamble(agentId, DEFAULT_APP_SETTINGS);
+      expect(text).toContain("知道");
+      expect(text).toContain("尚未揭示");
+    }
+  });
+
+  it("自定义智能体同样带约束", () => {
+    const text = agentPreamble("custom", DEFAULT_APP_SETTINGS);
+    expect(text).toContain("知道");
+    expect(text).toContain("写出来");
   });
 });

@@ -49,7 +49,7 @@ export const GET = handle(async (request) => {
     if (!chapter) return notFound("章节不存在");
     const archive = repo.getArchiveByChapter(chapterId);
     // 同时带 novelId：返回整部作品的档案列表 + 本章档案，
-    // 兼容资料面板「优先本章档案、否则回退到最新一卷」的读取方式
+    // 兼容写作台「档案」页签「优先本章档案、否则回退到最新一卷」的读取方式
     if (novelId && novelId === chapter.novelId) {
       return ok({ item: archive ?? null, items: repo.listArchives(novelId) });
     }

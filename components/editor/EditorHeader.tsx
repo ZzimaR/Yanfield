@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import {
   ArrowLeft,
   BookOpen,
+  ChevronLeft,
   ChevronRight,
   Ellipsis,
   Maximize2,
@@ -45,6 +46,15 @@ interface EditorHeaderProps {
   onToggleRight: () => void;
   onToggleImmersive: () => void;
   onToggleTheme: () => void;
+  /** 当前章在全书的顺序（从 1 开始），null 表示未知/无章节 */
+  chapterPosition?: number | null;
+  chapterTotal?: number;
+  /** 相邻章标题，用于按钮 Tooltip */
+  prevChapterTitle?: string | null;
+  nextChapterTitle?: string | null;
+  /** 相邻章导航；到头（或章节顺序未知）时不传，按钮禁用 */
+  onPrevChapter?: () => void;
+  onNextChapter?: () => void;
 }
 
 /** 编辑器顶栏：返回上一级、作品名、面包屑、保存状态、字数、主题、沉浸、AI */
@@ -66,6 +76,12 @@ export function EditorHeader({
   onToggleRight,
   onToggleImmersive,
   onToggleTheme,
+  chapterPosition = null,
+  chapterTotal = 0,
+  prevChapterTitle = null,
+  nextChapterTitle = null,
+  onPrevChapter,
+  onNextChapter,
 }: EditorHeaderProps) {
   const router = useRouter();
 
@@ -112,6 +128,38 @@ export function EditorHeader({
           {title || "未命名章节"}
         </span>
       </div>
+
+      {/* 上下章导航：顺序未知（如新建/移出）时不展示 */}
+      {chapterPosition != null && chapterTotal > 0 ? (
+        <div className="hidden shrink-0 items-center gap-0.5 sm:flex">
+          <Tooltip label={prevChapterTitle ? `上一章：${prevChapterTitle}` : "上一章"}>
+            <IconButton
+              label="上一章"
+              onClick={onPrevChapter}
+              disabled={!onPrevChapter}
+              className="disabled:pointer-events-none disabled:opacity-35"
+            >
+              <ChevronLeft className="size-4" />
+            </IconButton>
+          </Tooltip>
+          <span
+            className="select-none px-1 text-[11.5px] tabular-nums text-ink-3"
+            title={`第 ${chapterPosition} / ${chapterTotal} 章`}
+          >
+            第 {chapterPosition} / {chapterTotal} 章
+          </span>
+          <Tooltip label={nextChapterTitle ? `下一章：${nextChapterTitle}` : "下一章"}>
+            <IconButton
+              label="下一章"
+              onClick={onNextChapter}
+              disabled={!onNextChapter}
+              className="disabled:pointer-events-none disabled:opacity-35"
+            >
+              <ChevronRight className="size-4" />
+            </IconButton>
+          </Tooltip>
+        </div>
+      ) : null}
 
       <div className="ml-auto flex shrink-0 items-center gap-1">
         <SaveIndicator state={saveState} lastSavedAt={lastSavedAt} className="mr-1 hidden sm:inline-flex" />
