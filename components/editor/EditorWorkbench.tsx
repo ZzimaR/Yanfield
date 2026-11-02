@@ -16,6 +16,7 @@ import { toOne } from "@/lib/editor/normalize";
 import { readEditorLayoutSettings } from "@/lib/editor/settings";
 import { findChapter, findVolumeOfChapter, flattenChapters } from "@/lib/editor/types";
 import type { ChapterPatch, SelectionInfo } from "@/lib/editor/types";
+import { useChapterContent } from "@/lib/editor/useChapterContent";
 import { useChapterDraft } from "@/lib/editor/useChapterDraft";
 import { useEditorBridgeValue } from "@/lib/editor/useEditorBridgeValue";
 import { useNovelTree } from "@/lib/editor/useNovelTree";
@@ -135,7 +136,12 @@ export function EditorWorkbench({ novelId }: EditorWorkbenchProps) {
   });
 
   const chapters = React.useMemo(() => flattenChapters(tree), [tree]);
-  const chapter = React.useMemo(() => findChapter(tree, chapterId), [tree, chapterId]);
+  const chapterMeta = React.useMemo(() => findChapter(tree, chapterId), [tree, chapterId]);
+  const chapterApi = useChapterContent(chapterMeta?.id ?? null);
+  // Never show the previous request's body while switching chapters.
+  const chapter = React.useMemo(() => chapterMeta && chapterApi.data?.id === chapterMeta.id
+    ? { ...chapterApi.data, ...chapterMeta, content: chapterApi.data.content }
+    : null, [chapterMeta, chapterApi.data]);
   const volume = React.useMemo(() => findVolumeOfChapter(tree, chapterId), [tree, chapterId]);
 
   /** 当前章在全书顺序中的下标（-1 = 不在目录里，例如尚未加载/新建中） */
@@ -559,7 +565,14 @@ export function EditorWorkbench({ novelId }: EditorWorkbenchProps) {
 
           {/* 中栏：正文 */}
           <main className="flex min-h-0 min-w-0 flex-1 flex-col">
-            {chapter ? (
+            {chapterApi.error && !chapter ? (
+              <div role="alert" className="m-auto space-y-3 p-6 text-sm text-ink-3">
+                <p>正文加载失败：{chapterApi.error}</p>
+                <button type="button" className="text-accent" onClick={() => void chapterApi.refresh()}>重新加载</button>
+              </div>
+            ) : chapterMeta && !chapter ? (
+              <p role="status" className="m-auto text-sm text-ink-4">正在加载正文…</p>
+            ) : chapter ? (
               <EditorCanvas
                 chapterId={chapter.id}
                 initialContent={chapter.content}

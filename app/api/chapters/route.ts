@@ -25,7 +25,7 @@ export const GET = handle(async (request) => {
   const novelId = requireQueryParam(request, "novelId", "novelId");
   // 列表端点对父资源缺失保持宽松：级联删除后的陈旧请求返回空列表而不是 404
   if (!repo.getNovel(novelId)) return ok({ items: [] });
-  let items = repo.listChapters(novelId);
+  let items = repo.listChapters(novelId, queryParam(request, "view") !== "summary");
   const volumeId = queryParam(request, "volumeId");
   if (volumeId) items = items.filter((chapter) => chapter.volumeId === volumeId);
   return ok({ items });

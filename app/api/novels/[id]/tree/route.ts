@@ -5,7 +5,7 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export const GET = handle<{ id: string }>(async (_request, { params }) => {
-  const tree = repo.getNovelTree(params.id);
+  const tree = repo.getNovelTree(params.id, new URL(_request.url).searchParams.get("view") !== "summary");
   if (!tree) return notFound("作品不存在");
   return ok(tree);
 });

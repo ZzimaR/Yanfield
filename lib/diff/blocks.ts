@@ -173,31 +173,39 @@ export function diffBlocks(beforeHtml: string, afterHtml: string): BlockDiff {
   const counts = { added: 0, removed: 0, changed: 0 };
 
   // 块级 LCS（按归一化文本比较）
-  const eq = (i: number, j: number) => normalize(a[i].text) === normalize(b[j].text);
-  const dp: Uint16Array[] = [];
-  for (let i = 0; i <= n; i++) dp.push(new Uint16Array(m + 1));
-  for (let i = n - 1; i >= 0; i--) {
-    for (let j = m - 1; j >= 0; j--) {
-      dp[i][j] = eq(i, j) ? dp[i + 1][j + 1] + 1 : Math.max(dp[i + 1][j], dp[i][j + 1]);
-    }
-  }
-
-  // 先得到对齐关系：samePairs + 中间的空隙区间
+  const aText = a.map((block) => normalize(block.text));
+  const bText = b.map((block) => normalize(block.text));
+  const eq = (i: number, j: number) => aText[i] === bText[j];
   type Pair = { i: number; j: number };
   const samePairs: Pair[] = [];
-  let i = 0;
-  let j = 0;
-  while (i < n && j < m) {
-    if (eq(i, j)) {
-      samePairs.push({ i, j });
-      i++;
-      j++;
-    } else if (dp[i + 1][j] >= dp[i][j + 1]) {
-      i++;
-    } else {
-      j++;
+  let start = 0;
+  while (start < n && start < m && eq(start, start)) {
+    samePairs.push({ i: start, j: start });
+    start++;
+  }
+  let tail = 0;
+  while (n - tail > start && m - tail > start && eq(n - tail - 1, m - tail - 1)) tail++;
+  const an = n - tail - start;
+  const bm = m - tail - start;
+  // Bound memory/work on unusually long chapters. A huge unmatched middle is
+  // conservatively offered as replacements, preserving exact accept/reject behavior.
+  if (an > 0 && bm > 0 && (an + 1) * (bm + 1) <= 1_000_000) {
+    const dp = Array.from({ length: an + 1 }, () => new Uint32Array(bm + 1));
+    for (let i = an - 1; i >= 0; i--) {
+      for (let j = bm - 1; j >= 0; j--) {
+        dp[i][j] = eq(start + i, start + j) ? dp[i + 1][j + 1] + 1 : Math.max(dp[i + 1][j], dp[i][j + 1]);
+      }
+    }
+    let i = 0, j = 0;
+    while (i < an && j < bm) {
+      if (eq(start + i, start + j)) {
+        samePairs.push({ i: start + i, j: start + j });
+        i++; j++;
+      } else if (dp[i + 1][j] >= dp[i][j + 1]) i++;
+      else j++;
     }
   }
+  for (let k = tail; k > 0; k--) samePairs.push({ i: n - k, j: m - k });
 
   let ai = 0;
   let bj = 0;

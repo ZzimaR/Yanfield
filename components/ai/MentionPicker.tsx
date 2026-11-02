@@ -71,7 +71,7 @@ function toOption(type: MentionOption["type"], row: RawRow): MentionOption | nul
 async function loadMentionOptions(novelId: string): Promise<MentionOption[]> {
   const query = `?novelId=${encodeURIComponent(novelId)}`;
   const endpoints: Array<[MentionOption["type"], string]> = [
-    ["chapter", `/api/chapters${query}`],
+    ["chapter", `/api/chapters${query}&view=summary`],
     ["character", `/api/characters${query}`],
     ["world", `/api/world${query}`],
     ["foreshadow", `/api/foreshadows${query}`],

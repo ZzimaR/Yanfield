@@ -6,7 +6,7 @@
 [![Node](https://img.shields.io/badge/Node-%E2%89%A522.13-3c873a)](https://nodejs.org)
 [![Next.js](https://img.shields.io/badge/Next.js-15-000000)](https://nextjs.org)
 [![TypeScript](https://img.shields.io/badge/TypeScript-strict-3178c6)](https://www.typescriptlang.org)
-[![Tests](https://img.shields.io/badge/tests-200%20passing-2f5d62)](tests)
+[![Tests](https://img.shields.io/badge/tests-206%20passing-2f5d62)](tests)
 [![Docker](https://img.shields.io/badge/Docker-ready-2496ed)](Dockerfile)
 
 > **状态：v0.1.0 开发中，尚未发布正式版本。** 核心流程可试用，多步 Agent 需配置实际模型；接口和界面仍可能调整，欢迎试用与反馈。
@@ -39,7 +39,9 @@ pnpm dev
 
 接模型可以等写完再做。左下角齿轮打开设置，选 DeepSeek（或其他 OpenAI 兼容服务），粘贴 API Key 即可。也可以把 `.env.example` 复制成 `.env`，填一个 `*_API_KEY`，下次启动会自动建好服务。细节见 [docs/ai-providers.md](docs/ai-providers.md)。
 
-![写作台：正文、资料与 Agent 改动回执](docs/screenshots/13-agent-workbench.jpg)
+[![写作台功能示意：资料、正文与可审阅的 AI 修改](docs/screenshots/workspace-overview.svg)](docs/screenshots/workspace-overview.svg)
+
+主图为可缩放的矢量功能示意，放大仍可清楚阅读；真实界面见下方[截图](#截图)。
 
 ## 本地部署，隐私优先
 
@@ -71,6 +73,7 @@ pnpm dev
 
 **AI**
 - 右侧统一 Agent 助手：续写、改稿、建卡、修改设定和整理章纲都在同一对话中执行；保留技能预设、文风选择与可自定义的人设
+- 对话会用第一条提问自动命名，历史中的默认标题也会从消息中补出；空会话保留「新对话」
 - `Enter` 发送、`Shift + Enter` 换行；点「技能」在输入框内展开技能清单，选中后自动填好提示词
 - `@` 引用章节、角色、设定、伏笔和档案；可配置上下文预算与逐节预览
 - 运行卡片显示执行过程、引用资料、正文候选和资料改动；可选择条目或字段应用，服务端校验版本并以事务写入
@@ -120,12 +123,12 @@ docs/         功能、架构、模型服务、部署、常见问题、路线图
 
 ```bash
 pnpm typecheck   # tsc --noEmit
-pnpm test        # vitest（200 个用例）
+pnpm test        # vitest（206 个用例）
 pnpm build       # 生产构建
 pnpm db:seed     # 重新生成示例作品（不删用户数据）
 ```
 
-旧版页面截图脚本：`node scripts/capture-screenshots.mjs`（自动探测本机 Edge / Chrome）。新版 Agent、资料弹窗和用量截图见 `docs/screenshots/13–17` 对应文件，须在运行中的写作台验证交互后重截。
+旧版页面截图脚本：`node scripts/capture-screenshots.mjs`（自动探测本机 Edge / Chrome）。真实界面原图与资料窗口近景保存在 `docs/screenshots/`；重新截图时优先截取需要说明的区域，按原尺寸展示，不把整屏文字缩成两栏。
 
 ## 技术栈
 
@@ -135,34 +138,20 @@ Next.js 15 · React 19 · TypeScript strict · Tailwind CSS v4 · Tiptap 3 · no
 
 介绍页也可在本地 `/intro` 预览。新版介绍页围绕本地保存、免费自托管、自带 API 和可审阅的 AI 修改展开；写作台演示直接渲染文字，支持切换正文与改动视图。
 
-![介绍页](docs/screenshots/19-public-intro.jpg)
+资料弹窗单独展示，保留原始尺寸，不再把整屏文字挤进两栏小图。点击图片可查看原图。
 
-<table>
-  <tr>
-    <td align="center" width="50%">
-      <img src="docs/screenshots/14-card-editor.jpg" alt="资料编辑弹窗：统一 AI 助手入口、档案排版与居中的保存按钮" width="480" /><br />
-      <sub>资料弹窗：统一 AI 入口</sub>
-    </td>
-    <td align="center" width="50%">
-      <img src="docs/screenshots/15-usage-details.jpg" alt="底部用量状态行与本次接口费用明细" width="480" /><br />
-      <sub>用量与费用来源</sub>
-    </td>
-  </tr>
-  <tr>
-    <td align="center" width="50%">
-      <img src="docs/screenshots/16-agent-dark.jpg" alt="深色夜航主题下的正文、资料与 Agent 改动回执" width="480" /><br />
-      <sub>深色「夜航」写作台</sub>
-    </td>
-    <td align="center" width="50%">
-      <img src="docs/screenshots/17-card-reference.jpg" alt="从资料弹窗打开 AI 助手，自动引用当前角色" width="480" /><br />
-      <sub>自动 @ 当前资料</sub>
-    </td>
-  </tr>
-</table>
+[![资料编辑窗口：统一 AI 助手入口与档案排版](docs/screenshots/20-card-editor-focus.jpg)](docs/screenshots/20-card-editor-focus.jpg)
 
-写作台截图使用独立示例书稿与本地模拟模型；介绍页交互预览使用固定示例数据，演示费用不代表真实服务商价格。
+其余界面保留完整原图，按需打开：
 
-更多截图（书架、设定、故事档案、上下文预算抽屉等）见 [docs/screenshots](docs/screenshots/)。
+- [三栏写作台与 Agent 改动回执](docs/screenshots/13-agent-workbench.jpg)
+- [正文中的逐处修改审阅](docs/screenshots/18-inline-review.jpg)
+- [用量与费用来源明细](docs/screenshots/15-usage-details.jpg)
+- [深色「夜航」写作台](docs/screenshots/16-agent-dark.jpg)
+- [资料自动 @ 引用](docs/screenshots/17-card-reference.jpg)
+- [介绍页](https://yanfield.com/)
+
+真实截图使用独立示例书稿与本地模拟模型，费用不代表真实服务商价格。主图为简化的功能示意，不是运行截图。历史界面原图见 [docs/screenshots](docs/screenshots/)。
 
 ## 文档
 
@@ -170,6 +159,7 @@ Next.js 15 · React 19 · TypeScript strict · Tailwind CSS v4 · Tiptap 3 · no
 
 - [功能说明](docs/features.md)
 - [架构与数据模型](docs/architecture.md)
+- [长篇性能检查与当前边界](docs/performance-audit.md)
 - [模型服务与接入](docs/ai-providers.md)
 - [部署指南](docs/deploy.md)
 - [常见问题](docs/faq.md)

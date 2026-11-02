@@ -290,8 +290,7 @@ export function ChapterTree({
   }, [prompt]);
 
   /** 章节行下拉菜单 */
-  const chapterMenuItems = (chapter: Chapter, siblings: Chapter[]): DropdownItem[] => {
-    const index = siblings.findIndex((item) => item.id === chapter.id);
+  const chapterMenuItems = (chapter: Chapter, siblings: Chapter[], index: number): DropdownItem[] => {
     const items: DropdownItem[] = [
       {
         label: "重命名",
@@ -405,7 +404,7 @@ export function ChapterTree({
           <Dropdown
             align="end"
             width={196}
-            items={chapterMenuItems(chapter, siblings)}
+            items={chapterMenuItems(chapter, siblings, index)}
             trigger={
               <IconButton label="章节操作" size="sm" className="text-ink-4">
                 <MoreHorizontal className="size-3.5" />

@@ -12,8 +12,6 @@ import { OutlineInlinePanel } from "./OutlineInlinePanel";
 /** 左栏四个标签页：目录 / 章纲 / 设定 / 档案 */
 export type EditorLeftTab = EditorTab | "codex";
 
-const LEFT_TABS: EditorLeftTab[] = ["toc", "outline", "codex", "archives"];
-
 function isEditorLeftTab(value: unknown): value is EditorLeftTab {
   return value === "toc" || value === "outline" || value === "codex" || value === "archives";
 }
@@ -31,7 +29,7 @@ interface LeftPanelProps {
 }
 
 /** 编辑器左栏：目录 / 章纲 / 设定 / 档案 四个标签页 */
-export function LeftPanel({
+export const LeftPanel = React.memo(function LeftPanel({
   novelId,
   tree,
   loading,
@@ -46,40 +44,12 @@ export function LeftPanel({
     (tree?.volumes.reduce((sum, volume) => sum + volume.chapters.length, 0) ?? 0) +
     (tree?.looseChapters.length ?? 0);
 
-  // 页签保活：首屏只挂当前页签，空闲时挂其余页签，之后切回不再重新拉数据
+  // 页签保活：只在首次打开时挂载，之后切回不再重新拉数据
   const [visited, setVisited] = React.useState<Set<EditorLeftTab>>(() => new Set([tab]));
 
   React.useEffect(() => {
     setVisited((prev) => (prev.has(tab) ? prev : new Set(prev).add(tab)));
   }, [tab]);
-
-  /** 其余页签延后预热：等首屏正文稳定后再挂载，空闲时执行（setTimeout 兜底），避免和正文抢请求 */
-  React.useEffect(() => {
-    let cancelled = false;
-    let idleId: number | null = null;
-    const warmAll = () => {
-      if (cancelled) return;
-      setVisited((prev) => {
-        if (LEFT_TABS.every((item) => prev.has(item))) return prev;
-        const next = new Set(prev);
-        for (const item of LEFT_TABS) next.add(item);
-        return next;
-      });
-    };
-    const timer = window.setTimeout(() => {
-      if (cancelled) return;
-      if (typeof window.requestIdleCallback === "function") {
-        idleId = window.requestIdleCallback(warmAll, { timeout: 2000 });
-      } else {
-        warmAll();
-      }
-    }, 2500);
-    return () => {
-      cancelled = true;
-      window.clearTimeout(timer);
-      if (idleId !== null) window.cancelIdleCallback(idleId);
-    };
-  }, []);
 
   const tabs: TabItem[] = [
     { value: "toc", label: "目录", icon: <ListTree className="size-3.5" />, count: chapterCount || undefined },
@@ -134,4 +104,4 @@ export function LeftPanel({
       </div>
     </div>
   );
-}
+});

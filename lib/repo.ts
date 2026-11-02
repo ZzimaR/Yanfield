@@ -14,6 +14,7 @@ import {
   tx,
   type Row,
 } from "./db";
+import { chatTitleFromMessage, isDefaultChatTitle } from "./chat-title";
 import { unifyModelSettings } from "./model-settings";
 import { countWords } from "./ui/cn";
 import { DEFAULT_APP_SETTINGS } from "./types";
@@ -307,8 +308,12 @@ function chapterFromRow(r: Row): Chapter {
   };
 }
 
-export function listChapters(novelId: ID): Chapter[] {
-  return all<Row>("SELECT * FROM chapters WHERE novel_id = ? ORDER BY order_index, created_at", [novelId]).map(chapterFromRow);
+// List views must not read or serialize every chapter body in a long novel.
+const CHAPTER_SUMMARY_COLUMNS = "id, novel_id, volume_id, title, summary, status, order_index, word_count, notes, created_at, updated_at";
+
+export function listChapters(novelId: ID, includeContent = true): Chapter[] {
+  const columns = includeContent ? "*" : CHAPTER_SUMMARY_COLUMNS;
+  return all<Row>(`SELECT ${columns} FROM chapters WHERE novel_id = ? ORDER BY order_index, created_at`, [novelId]).map(chapterFromRow);
 }
 
 export function getChapter(id: ID): Chapter | undefined {
@@ -384,18 +389,20 @@ export function moveChapter(id: ID, target: { volumeId?: ID | null; orderIndex?:
 /** 卷 + 章的总览树 */
 export function getNovelTree(
   novelId: ID,
+  includeContent = true,
 ): { novel: Novel; volumes: (Volume & { chapters: Chapter[] })[]; looseChapters: Chapter[] } | undefined {
   const novel = getNovel(novelId);
   if (!novel) return undefined;
+  const columns = includeContent ? "*" : CHAPTER_SUMMARY_COLUMNS;
   const volumes = listVolumes(novelId).map((v) => ({
     ...v,
     chapters: all<Row>(
-      "SELECT * FROM chapters WHERE novel_id = ? AND volume_id = ? ORDER BY order_index",
+      `SELECT ${columns} FROM chapters WHERE novel_id = ? AND volume_id = ? ORDER BY order_index`,
       [novelId, v.id],
     ).map(chapterFromRow),
   }));
   const looseChapters = all<Row>(
-    "SELECT * FROM chapters WHERE novel_id = ? AND volume_id IS NULL ORDER BY order_index",
+    `SELECT ${columns} FROM chapters WHERE novel_id = ? AND volume_id IS NULL ORDER BY order_index`,
     [novelId],
   ).map(chapterFromRow);
   return { novel, volumes, looseChapters };
@@ -823,7 +830,7 @@ function sessionFromRow(r: Row): ChatSession {
     id: s(r.id),
     novelId: s(r.novel_id),
     chapterId: r.chapter_id ? s(r.chapter_id) : null,
-    title: s(r.title, "新对话"),
+    title: isDefaultChatTitle(s(r.title)) ? chatTitleFromMessage(s(r.first_user_content)) || "新对话" : s(r.title),
     agentId: s(r.agent_id, "supervisor") as ChatSession["agentId"],
     mode: s(r.mode, "chat") === "collaborate" ? "collaborate" : "chat",
     createdAt: s(r.created_at),
@@ -831,12 +838,18 @@ function sessionFromRow(r: Row): ChatSession {
   };
 }
 
+// Resolve legacy default titles without loading full message histories or changing ordering.
+const SESSION_SELECT = `SELECT chat_sessions.*, CASE WHEN trim(title) = '' OR trim(title) = '新对话' THEN
+  (SELECT substr(content, 1, 256) FROM chat_messages WHERE session_id = chat_sessions.id
+   AND role = 'user' AND trim(content) <> '' ORDER BY created_at, rowid LIMIT 1)
+  END AS first_user_content FROM chat_sessions`;
+
 export function listChatSessions(novelId: ID): ChatSession[] {
-  return all<Row>("SELECT * FROM chat_sessions WHERE novel_id = ? ORDER BY updated_at DESC", [novelId]).map(sessionFromRow);
+  return all<Row>(`${SESSION_SELECT} WHERE novel_id = ? ORDER BY updated_at DESC`, [novelId]).map(sessionFromRow);
 }
 
 export function getChatSession(id: ID): ChatSession | undefined {
-  const row = get<Row>("SELECT * FROM chat_sessions WHERE id = ?", [id]);
+  const row = get<Row>(`${SESSION_SELECT} WHERE id = ?`, [id]);
   return row ? sessionFromRow(row) : undefined;
 }
 
@@ -863,7 +876,7 @@ export function createChatSession(
 
 export function updateChatSession(id: ID, data: Partial<ChatSession>): ChatSession {
   patch("chat_sessions", id, { title: "title", agentId: "agent_id", mode: "mode", chapterId: "chapter_id" }, data as Record<string, unknown>);
-  const row = get<Row>("SELECT * FROM chat_sessions WHERE id = ?", [id]);
+  const row = get<Row>(`${SESSION_SELECT} WHERE id = ?`, [id]);
   if (!row) throw new Error(`chat session not found: ${id}`);
   return sessionFromRow(row);
 }
@@ -913,7 +926,10 @@ export function addMessage(
   run("INSERT INTO chat_messages (id,session_id,role,content,actions,status,provider,model,usage,error,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)", [
     msg.id, sessionId, msg.role, msg.content, toJson(msg.actions), msg.status, msg.provider, msg.model, msg.usage ? toJson(msg.usage) : null, msg.error, now,
   ]);
-  run("UPDATE chat_sessions SET updated_at = ? WHERE id = ?", [now, sessionId]);
+  const title = input.role === "user" ? chatTitleFromMessage(msg.content) : "";
+  run(`UPDATE chat_sessions SET updated_at = ?, title = CASE
+    WHEN (trim(title) = '' OR trim(title) = '新对话') AND ? <> '' THEN ? ELSE title END WHERE id = ?`,
+    [now, title, title, sessionId]);
   return msg;
 }
 

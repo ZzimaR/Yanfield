@@ -60,7 +60,7 @@ export function useNovelTree({ novelId, onError, onSuccess }: UseNovelTreeOption
       setError(null);
       setNotFound(false);
       try {
-        const data = await apiGet<NovelTree>(`/api/novels/${novelId}/tree`);
+        const data = await apiGet<NovelTree>(`/api/novels/${novelId}/tree?view=summary`);
         if (!data || !data.novel) throw new Error("目录数据格式异常");
         const volumes: TreeVolume[] = (data.volumes ?? []).map((volume) => ({
           ...volume,

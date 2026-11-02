@@ -13,6 +13,8 @@
 import type { Chapter, Character, ContextConfig, ID, WorldSetting } from "@/lib/types";
 import {
   getNovel,
+  getChapter,
+  getVolume,
   getNovelOutline,
   getNovelTree,
   getVolumeOutline,
@@ -76,8 +78,8 @@ export interface AssembledContextInput {
 export const DEFAULT_CONTEXT_BUDGET = 6000;
 
 /** 把卷章树拍平成全书顺序的章节列表 */
-export function flattenChapters(novelId: ID): ChapterRef[] {
-  const tree = getNovelTree(novelId);
+export function flattenChapters(novelId: ID, includeContent = true): ChapterRef[] {
+  const tree = getNovelTree(novelId, includeContent);
   if (!tree) return [];
   const result: ChapterRef[] = [];
   let index = 0;
@@ -237,17 +239,11 @@ export function assembleContext(input: AssembledContextInput): AssembledContext 
   const novel = getNovel(novelId);
   if (!novel) throw new Error("作品不存在");
 
-  const chapters = flattenChapters(novelId);
+  const chapters = flattenChapters(novelId, false);
   const currentRef = chapterId ? chapters.find((ref) => ref.chapter.id === chapterId) : undefined;
   const chapterIndex = currentRef ? currentRef.index : null;
   const currentChapter = currentRef?.chapter ?? null;
-  const volume = currentRef
-    ? (() => {
-        const tree = getNovelTree(novelId);
-        if (!tree) return undefined;
-        return tree.volumes.find((item) => item.chapters.some((chapter) => chapter.id === currentRef.chapter.id));
-      })()
-    : undefined;
+  const volume = currentChapter?.volumeId ? getVolume(currentChapter.volumeId) : undefined;
 
   const sections: ContextSectionMeta[] = [];
 
@@ -278,9 +274,11 @@ export function assembleContext(input: AssembledContextInput): AssembledContext 
   if (config.includeChapterSummaries > 0 && chapterIndex !== null && chapterIndex > 1) {
     const previous = chapters.slice(0, chapterIndex - 1).slice(-config.includeChapterSummaries);
     const lines = previous.map((ref) => {
+      const content = config.chapterSummaryMode === "tail" || !ref.chapter.summary
+        ? getChapter(ref.chapter.id)?.content ?? "" : "";
       const chapterText = config.chapterSummaryMode === "tail"
-        ? firstSentences(stripTags(ref.chapter.content).slice(-320), 2)
-        : ref.chapter.summary || firstSentences(stripTags(ref.chapter.content), 3);
+        ? firstSentences(stripTags(content).slice(-320), 2)
+        : ref.chapter.summary || firstSentences(stripTags(content), 3);
       return `第${ref.index}章《${ref.chapter.title}》：${chapterText || "（暂无摘要）"}`;
     });
     sections.push(buildSection("chapter-summaries", "前情摘要", lines.join("\n"), 5));
@@ -454,7 +452,7 @@ function resolveMention(
     case "chapter": {
       const ref = chapters.find((item) => item.chapter.id === mention.id);
       if (!ref) return "";
-      return `- 第${ref.index}章《${ref.chapter.title}》：${ref.chapter.summary || preview(stripTags(ref.chapter.content), 200)}`;
+      return `- 第${ref.index}章《${ref.chapter.title}》：${ref.chapter.summary || preview(stripTags(getChapter(ref.chapter.id)?.content ?? ""), 200)}`;
     }
     case "archive": {
       const archive = listArchives(novelId).find((item) => item.id === mention.id);

@@ -1,0 +1,69 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="840" viewBox="0 0 1280 840" role="img" aria-labelledby="title desc">
+<title id="title">砚田写作台功能示意</title><desc id="desc">资料、正文与写作助手并排，AI 提出修改，作者逐处审阅后应用。此图为矢量功能示意，非运行截图。</desc>
+<style>text{font-family:Inter,"Segoe UI","Microsoft YaHei",sans-serif;fill:#292c31}.muted{fill:#807d77}.blue{fill:#315d7e}.serif{font-family:"Noto Serif SC","Songti SC",SimSun,serif}.small{font-size:17px}.body{font-size:21px}.label{font-size:19px}.line{stroke:#e0dbd0;stroke-width:1}</style>
+<rect width="1280" height="840" rx="16" fill="#f8f5ee"/>
+<rect x="1" y="1" width="1278" height="838" rx="15" fill="none" stroke="#d8d1c5"/>
+<path d="M1 62H1279M280 62V776M842 62V776M1 776H1279" class="line"/>
+<rect x="281" y="63" width="560" height="712" fill="#f3efe6"/>
+<text x="26" y="39" font-size="22" font-weight="600">砚田</text><text x="104" y="39" class="label muted">潮信 / 第一章 退潮</text>
+<circle cx="1110" cy="32" r="4" fill="#315d7e"/><text x="1123" y="39" class="small blue">本地保存</text>
+<text x="23" y="107" class="label muted">目录</text><text x="89" y="107" class="label muted">章纲</text><text x="155" y="107" class="label blue" font-weight="600">设定</text><text x="221" y="107" class="label muted">档案</text><path d="M153 123H196" stroke="#315d7e" stroke-width="2"/>
+<text x="24" y="164" class="small muted">角色 · 2</text>
+
+<rect x="17" y="184" width="246" height="185" rx="10" fill="#faf8f2" stroke="#e0dbd0"/>
+<text x="37" y="222" class="body" font-weight="600">周晚</text>
+<text x="37" y="253" class="small muted" >渡口的记账人</text>
+<text x="37" y="292" class="small" >性格  话少，守规矩。</text>
+<text x="37" y="323" class="small" >目标  查清重复的收信记录。</text>
+<text x="37" y="349" class="small blue" >配角 · 记账人 · 收信</text>
+<rect x="17" y="385" width="246" height="143" rx="10" fill="#faf8f2" stroke="#e0dbd0"/>
+<text x="37" y="424" class="body" font-weight="600">小满</text>
+<text x="37" y="455" class="small muted" >提着布袋的送信人</text>
+<text x="37" y="491" class="small" >「这封信早上送过了。」</text>
+<text x="24" y="574" class="small muted" >世界观 · 1</text>
+<rect x="17" y="592" width="246" height="129" rx="10" fill="#faf8f2" stroke="#e0dbd0"/>
+<text x="37" y="630" class="body" font-weight="600">晚记</text>
+<text x="37" y="664" class="small" >渡口收信铺，按潮时</text>
+<text x="37" y="692" class="small" >登记与转送来信。</text>
+<text x="325" y="126" class="serif" font-size="36">第一章 退潮</text>
+<text x="325" y="164" class="small muted" >草稿 · 1,986 字</text>
+<path d="M325 189H798" class="line"/>
+<text x="325" y="222" class="small muted" >正文    H2    B    I    引用</text>
+<path d="M325 244H798" class="line"/>
+<text x="325" y="288" class="body serif" >退潮时，周晚把账本翻到最后一页。</text>
+<text x="325" y="329" class="body serif" >柜台上的灯摇了一下。</text>
+<rect x="313" y="367" width="493" height="174" rx="6" fill="#e9ecea" stroke="#cbd5d3"/>
+<text x="331" y="398" class="small muted" >AI 修改 · 第 1 / 3 处</text>
+<text x="331" y="438" class="body serif" >先把收件人的名字写进账本。</text>
+<path d="M330 431H642" stroke="#a35e58"/>
+<text x="331" y="478" class="body serif" >他没有拆信，先核对了账本上的姓名。</text>
+<rect x="653" y="495" width="128" height="31" rx="5" fill="#faf8f2" stroke="#cbd5d3"/>
+<text x="666" y="517" class="small blue" >✓ 保留   ↶ 还原</text>
+<text x="325" y="584" class="body serif" >那一栏已经有一行相同的字，</text>
+<text x="325" y="625" class="body serif" >墨迹却干透了。</text>
+<text x="325" y="686" class="body serif" >小满推门进来，脚步忽然停了。</text>
+<text x="868" y="108" class="body" font-weight="600">写作助手</text>
+<text x="868" y="144" class="small muted" >主编 · 续写、改稿、整理资料</text>
+<rect x="868" y="181" width="384" height="76" rx="12" fill="#eeeadf" stroke="#e0dbd0"/>
+<text x="884" y="214" class="small" >重写这一章，保留收信场景，</text>
+<text x="884" y="241" class="small" >再加强一点悬念。</text>
+<text x="868" y="303" class="small" >候选已完成。请在正文逐处审阅。</text>
+<rect x="868" y="331" width="384" height="286" rx="10" fill="#faf8f2" stroke="#e0dbd0"/>
+<text x="886" y="369" class="label blue" font-weight="600">✓ 待审阅</text>
+<text x="886" y="410" class="small muted" >正文 · 1    资料 · 3</text>
+<path d="M869 430H1251" class="line"/>
+<text x="886" y="467" class="small muted" >▸ 执行过程 · 5 步</text>
+<text x="886" y="504" class="small muted" >▸ 引用资料 · 第一章</text>
+<text x="886" y="548" class="small" >资料改动</text>
+<rect x="885" y="565" width="105" height="30" rx="6" fill="#e8e4ed" stroke="#e8e4ed"/>
+<text x="895" y="587" class="small" >角色 周晚</text>
+<rect x="999" y="565" width="105" height="30" rx="6" fill="#e8e4ed" stroke="#e8e4ed"/>
+<text x="1009" y="587" class="small" >角色 小满</text>
+<rect x="1112" y="565" width="119" height="30" rx="6" fill="#e4ecee" stroke="#e4ecee"/>
+<text x="1122" y="587" class="small" >设定 晚记</text>
+<rect x="868" y="642" width="384" height="103" rx="10" fill="#faf8f2" stroke="#e0dbd0"/>
+<text x="884" y="674" class="small muted" >@ 引用资料    / 选择技能</text>
+<text x="884" y="714" class="small muted" >描述需求，让助手继续工作…</text>
+<text x="28" y="814" class="label blue" >书稿归你 · 自带 API · 改动先审阅</text>
+<text x="881" y="814" class="small muted" >功能示意 · 可缩放矢量图</text>
+</svg>

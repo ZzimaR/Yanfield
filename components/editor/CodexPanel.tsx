@@ -102,7 +102,7 @@ export function CodexPanel({ novelId }: CodexPanelProps) {
   const charactersApi = useApi<unknown>(`/api/characters?novelId=${encodeURIComponent(novelId)}`);
   const worldApi = useApi<unknown>(`/api/world?novelId=${encodeURIComponent(novelId)}`);
   const foreshadowsApi = useApi<unknown>(`/api/foreshadows?novelId=${encodeURIComponent(novelId)}`);
-  const chaptersApi = useApi<unknown>(`/api/chapters?novelId=${encodeURIComponent(novelId)}`);
+  const chaptersApi = useApi<unknown>(`/api/chapters?view=summary&novelId=${encodeURIComponent(novelId)}`);
   const volumesApi = useApi<unknown>(`/api/volumes?novelId=${encodeURIComponent(novelId)}`);
 
   const characters = React.useMemo(() => toItems<Character>(charactersApi.data), [charactersApi.data]);

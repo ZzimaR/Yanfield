@@ -140,7 +140,7 @@ export async function* runAgent(request: AgentRequest, signal?: AbortSignal): As
         try {
           const args=call.args;
           if(call.name==="workspace") {
-            const tree=repo.getNovelTree(novel.id)!;
+            const tree=repo.getNovelTree(novel.id,false)!;
             const ordered=[...tree.volumes.flatMap(v=>v.chapters),...tree.looseChapters];
             result={novel:{id:novel.id,title:novel.title,synopsis:novel.synopsis,styleGuide:novel.styleGuide,pov:novel.pov},volumes:tree.volumes.map(v=>({id:v.id,title:v.title})),chapters:ordered.map((c,index)=>({id:c.id,title:c.title,index:index+1,volumeId:c.volumeId,orderIndex:c.orderIndex,words:c.wordCount})),characters:(config.includeCharacters?repo.listCharacters(novel.id):[]).filter(c=>c.aiVisible).map(c=>({id:c.id,name:c.name})),world:(config.includeWorld?repo.listWorld(novel.id):[]).filter(c=>c.aiVisible).map(c=>({id:c.id,title:c.title})),foreshadows:(config.includeForeshadows?repo.listForeshadows(novel.id):[]).map(c=>({id:c.id,title:c.title})),recentArchives:(config.includeArchives?repo.listArchives(novel.id):[]).slice(-3).map(a=>({chapterId:a.chapterId,status:a.status,summary:a.chapterSummary}))};
           } else if(call.name==="list") {

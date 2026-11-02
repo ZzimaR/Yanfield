@@ -8,6 +8,7 @@
  * - done 后写库（POST /api/chat/sessions/[id]/messages）；失败后本次会话内不再尝试
  */
 import * as React from "react";
+import { chatTitleFromMessage, isDefaultChatTitle } from "@/lib/chat-title";
 import { apiGet, apiPost, streamAiChat } from "@/lib/client/api";
 import { ApiError } from "@/lib/client/api";
 import { uid } from "@/lib/ui/cn";
@@ -184,7 +185,7 @@ export function useAiChat({ novelId, chapterId, defaultAgentId }: UseAiChatOptio
       prev.map((tab) => {
         if (tab.key !== tabKey) return tab;
         const firstUser = messages.find((message) => message.role === "user");
-        const title = tab.title || (firstUser ? firstUser.content.replace(/\s+/g, " ").slice(0, 16) : "");
+        const title = isDefaultChatTitle(tab.title) && firstUser ? chatTitleFromMessage(firstUser.content) : tab.title;
         return { ...tab, title, messages: [...tab.messages, ...messages] };
       }),
     );

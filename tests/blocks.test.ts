@@ -231,3 +231,24 @@ describe("diffTextLines", () => {
     expect(lines.every((line) => line.type === "same")).toBe(true);
   });
 });
+
+
+describe("长章 diff 预算", () => {
+  it("一万段只有一处修改时保留其余段落的审阅粒度", () => {
+    const blocks = Array.from({ length: 10000 }, (_, i) => `<p>第${i}段，潮水退去。</p>`);
+    const before = blocks.join("");
+    const next = [...blocks]; next[5000] = "<p>这一段已修订。</p>";
+    const after = next.join("");
+    const diff = diffBlocks(before, after);
+    expect(diff.items).toHaveLength(1);
+    expect(applyBlockDiff(before, diff, [])).toBe(before);
+    expect(applyBlockDiff(before, diff, diff.items.map(c => c.id))).toBe(after);
+  });
+  it("超过矩阵预算的整章重写仍可完整接受或拒绝", () => {
+    const before = Array.from({ length: 1200 }, (_, i) => `<p>原文第${i}段。</p>`).join("");
+    const after = Array.from({ length: 1300 }, (_, i) => `<p>新稿第${i}段。</p>`).join("");
+    const diff = diffBlocks(before, after);
+    expect(applyBlockDiff(before, diff, [])).toBe(before);
+    expect(applyBlockDiff(before, diff, diff.items.map(c => c.id))).toBe(after);
+  });
+});

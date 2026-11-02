@@ -173,7 +173,7 @@ export function OutlineInlinePanel({ novelId, chapterId, onSelectChapter }: Outl
 
   const outlineApi = useApi<unknown>(`/api/outlines/novel/${encodedNovelId}`);
   const volumesApi = useApi<unknown>(`/api/volumes?novelId=${encodedNovelId}`);
-  const chaptersApi = useApi<unknown>(`/api/chapters?novelId=${encodedNovelId}`);
+  const chaptersApi = useApi<unknown>(`/api/chapters?view=summary&novelId=${encodedNovelId}`);
   const foreshadowsApi = useApi<unknown>(`/api/foreshadows?novelId=${encodedNovelId}`);
 
   const outline = toOne<NovelOutline>(outlineApi.data);
