@@ -199,6 +199,29 @@ function buildSection(id: ContextSectionId, label: string, text: string, priorit
 }
 
 /**
+ * 渐进披露：这张设定卡此刻能不能进入 AI 上下文（防剧透）。
+ * - 「对 AI 可见」关闭 → 永远不进上下文；
+ * - revealAtChapter 有值 → 写到该章及之后才可见；
+ * - revealAtChapter 为 null（或当前没有章节上下文）→ 始终可见。
+ */
+export function isDisclosed(
+  item: { aiVisible: boolean; revealAtChapter: number | null },
+  chapterIndex: number | null,
+): boolean {
+  if (!item.aiVisible) return false;
+  if (item.revealAtChapter === null || chapterIndex === null) return true;
+  return item.revealAtChapter <= chapterIndex;
+}
+
+/** 批量过滤角色 / 世界观等设定卡；保持调用方给的顺序。 */
+export function filterDisclosed<T extends { aiVisible: boolean; revealAtChapter: number | null }>(
+  items: T[],
+  chapterIndex: number | null,
+): T[] {
+  return items.filter((item) => isDisclosed(item, chapterIndex));
+}
+
+/**
  * 组装上下文。
  * @throws Error("作品不存在")
  */
@@ -285,17 +308,13 @@ export function assembleContext(input: AssembledContextInput): AssembledContext 
   const characters = listCharacters(novelId);
   const nameOf = (targetId: string): string => characters.find((character) => character.id === targetId)?.name ?? "";
   if (config.includeCharacters) {
-    const visible = characters
-      .filter((character) => character.aiVisible)
-      .filter((character) => character.revealAtChapter === null || chapterIndex === null || character.revealAtChapter <= chapterIndex)
+    const visible = filterDisclosed(characters, chapterIndex)
       .slice(0, 14)
       .map((character) => characterLine(character, config.characterDetail, nameOf));
     sections.push(buildSection("characters", "角色资料", visible.join("\n"), 7));
   }
   if (config.includeWorld) {
-    const settings = listWorld(novelId)
-      .filter((setting) => setting.aiVisible)
-      .filter((setting) => setting.revealAtChapter === null || chapterIndex === null || setting.revealAtChapter <= chapterIndex)
+    const settings = filterDisclosed(listWorld(novelId), chapterIndex)
       .slice(0, 16)
       .map((setting) => worldLine(setting, config.characterDetail));
     sections.push(buildSection("world", "世界观设定", settings.join("\n"), 8));

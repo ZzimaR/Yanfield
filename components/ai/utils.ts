@@ -9,6 +9,7 @@ import {
   AGENTS,
   CUSTOM_AGENT,
   DEFAULT_CONTEXT_CONFIG,
+  applyAgentOverride,
   type AgentDef,
   type AgentId,
   type AiAction,
@@ -73,23 +74,47 @@ export function agentInitial(agent: AgentDef): string {
   return /[a-z]/.test(first) ? first.toUpperCase() : first;
 }
 
-/** 把 AgentId 解析为完整 AgentDef；custom 会用 settings.customAgent 覆盖展示信息 */
-export function resolveAgent(agentId: AgentId, settings?: AppSettings | null): AgentDef {
-  const builtin = AGENTS.find((agent) => agent.id === agentId);
-  if (builtin) return builtin;
+/** 是否真的配置了自定义智能体人设（任一字段有值才算） */
+export function hasCustomAgent(settings?: AppSettings | null): boolean {
   const custom = settings?.customAgent;
-  return {
-    ...CUSTOM_AGENT,
-    name: custom?.name?.trim() || CUSTOM_AGENT.name,
-    role: custom?.role?.trim() || CUSTOM_AGENT.role,
-    greeting: custom?.greeting?.trim() || CUSTOM_AGENT.greeting,
-    description: custom?.persona?.trim() || CUSTOM_AGENT.description,
-  };
+  if (!custom) return false;
+  return Boolean(
+    custom.name?.trim() || custom.role?.trim() || custom.greeting?.trim() || custom.persona?.trim(),
+  );
 }
 
-/** 9 个内置智能体 + 自定义智能体 */
+/**
+ * 把 AgentId 解析为完整 AgentDef：
+ * - 内置智能体（主编 / 写作 / 设定）直接返回；
+ * - id=custom 且真的配置了人设时，用 settings.customAgent 覆盖展示信息；
+ * - 其余 id（含已精简掉的 blueprint / archivist / critic / consistency / structure）一律回落主编，
+ *   保证历史会话恢复时不报错、不出现空智能体。
+ */
+export function resolveAgent(agentId: AgentId, settings?: AppSettings | null): AgentDef {
+  const builtin = AGENTS.find((agent) => agent.id === agentId);
+  if (builtin) return applyAgentOverride(builtin, settings?.agentOverrides?.[builtin.id]);
+  if (agentId === "custom" && hasCustomAgent(settings)) {
+    const custom = settings?.customAgent;
+    const instructions = settings?.agentOverrides?.custom?.instructions?.trim();
+    return {
+      ...CUSTOM_AGENT,
+      name: custom?.name?.trim() || CUSTOM_AGENT.name,
+      role: custom?.role?.trim() || CUSTOM_AGENT.role,
+      greeting: custom?.greeting?.trim() || CUSTOM_AGENT.greeting,
+      description: custom?.persona?.trim() || CUSTOM_AGENT.description,
+      ...(instructions ? { instructions } : {}),
+    };
+  }
+  const fallback = AGENTS.find((agent) => agent.id === "supervisor");
+  if (fallback) return applyAgentOverride(fallback, settings?.agentOverrides?.supervisor);
+  throw new Error("AGENTS 配置缺失：至少需要保留主编（supervisor）");
+}
+
+/** 可选智能体：内置智能体 + 真配置了人设的自定义智能体（没配置时不出现），均应用设置覆盖 */
 export function listAgents(settings?: AppSettings | null): AgentDef[] {
-  return [...AGENTS, resolveAgent("custom", settings)];
+  const builtins = AGENTS.map((agent) => applyAgentOverride(agent, settings?.agentOverrides?.[agent.id]));
+  if (!hasCustomAgent(settings)) return builtins;
+  return [...builtins, resolveAgent("custom", settings)];
 }
 
 /* ---------------- 上下文配置 ---------------- */
@@ -278,7 +303,11 @@ export function normalizeContextPreview(raw: unknown): ContextPreview {
 
 /* ---------------- 模式与请求体 ---------------- */
 
-/** 面板模式 → AiChatRequest.mode（技能模式走后端多智能体协作） */
+/**
+ * 面板模式 → AiChatRequest.mode
+ * 注：「技能」mode 现在只是输入框内的技能选择器，AiPanel 发送前会把 mode 归一化为 chat；
+ * 这里保留 collaborate 映射，兼容其它调用方/历史请求体。
+ */
 export function modeToRequestMode(mode: PanelMode): "chat" | "collaborate" {
   return mode === "skill" ? "collaborate" : "chat";
 }

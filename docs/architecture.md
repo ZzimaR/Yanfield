@@ -1,4 +1,4 @@
-﻿# 砚田架构设计
+# 砚田架构设计
 
 > 面向贡献者的技术文档。产品视角的功能说明见 [features.md](./features.md)，AI 供应商配置见 [ai-providers.md](./ai-providers.md)。
 > 本文件描述 0.1.0（开发中，未发布）的架构与取舍；接口契约的权威来源是 [architecture/CONTRACTS.md](./architecture/CONTRACTS.md)。
@@ -17,7 +17,7 @@
 | 编辑器 | Tiptap 3 | 结构化 HTML 正文是 diff 与导出（Markdown/TXT）的基础；ProseMirror 生态成熟。 |
 | 存储 | `node:sqlite`（Node ≥ 22.13 内置） | 零原生依赖、零安装；单文件可备份、可直接用 sqlite3 打开检查。 |
 | AI | 自研可插拔 Provider 层 | 五种连接方式（OpenAI 兼容 / Anthropic / Gemini / Ollama / 演示）统一成一条 SSE 事件流。 |
-| 测试 | Vitest（node 环境） | 覆盖纯函数层（字数统计、diff 引擎、文本转 HTML、费用估算）、Provider 协议解析（`node:http` 起本地假上游模拟 SSE）、拉取模型列表（/models 解析）、环境变量自动建 Provider（临时 SQLite）、资料助手（codex 清单解析与合并）；不需要真实 Key，共 115 个用例。 |
+| 测试 | Vitest（node 环境） | 覆盖纯函数层（字数统计、diff 引擎、文本转 HTML、费用估算）、Provider 协议解析（`node:http` 起本地假上游模拟 SSE）、拉取模型列表（/models 解析）、环境变量自动建 Provider（临时 SQLite）、资料助手（codex 清单解析与合并）、渐进披露过滤（revealAtChapter / aiVisible）、智能体人设覆盖合并与校验；不需要真实 Key，共 135 个用例。 |
 
 ## 运行形态
 
@@ -55,7 +55,7 @@ app/
   library/                   # 书架
   novels/[id]/               # 作品概览（门厅）；大纲 / 设定 / 档案旧页面 307 重定向到写作台页签
   editor/[id]/               # 写作台：左栏 目录·章纲·设定·档案（就地浮窗编辑）+ 正文 + 右栏 AI；⌘K 快速跳转
-  settings/                  # 模型、提示词、外观、数据
+  settings/                  # 模型、提示词、智能体（人设/prompt 覆盖）、外观、数据
   api/
     novels/…                 # 作品、卷、章、树、导入导出
     ai/chat|task|context|codex|archives/extract   # SSE、资料助手清单与上下文预览
@@ -107,7 +107,7 @@ docker-compose.yml .env.example
 | `providers` | 模型服务 | 类型（openai/anthropic/gemini/ollama/demo）、名称、baseUrl、密钥（本地明文）、模型列表、启用状态 |
 | `prompt_presets` | 提示词预设 | 功能（`AiFeature`）、system/user 模板、温度、模型角色（chat/prose）、是否内置、是否启用 |
 | `ai_logs` | AI 调用日志 | 功能、智能体、模型、token、耗时、成功/错误码，用于成本与排障 |
-| `app_settings` | 键值设置 | 主题、编辑器字号/行高/排版、自动保存延迟、每日目标、默认上下文配置、默认模型（单一）、自定义智能体 |
+| `app_settings` | 键值设置 | 主题、编辑器字号/行高/排版、自动保存延迟、每日目标、默认上下文配置、默认模型（单一）、自定义智能体、智能体人设覆盖（`agentOverrides`） |
 | `word_snapshots` | 每日字数快照 | 日期、累计字数、AI token 数，用于写作曲线 |
 
 关系上只有两条强约束：**作品 → 卷 → 章**、**会话 → 消息**，其余资料通过 `novelId` / `chapterId` 软关联，删作品时由 `ON DELETE CASCADE` 清理。

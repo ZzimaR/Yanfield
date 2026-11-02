@@ -6,7 +6,7 @@
 [![Node](https://img.shields.io/badge/Node-%E2%89%A522.13-3c873a)](https://nodejs.org)
 [![Next.js](https://img.shields.io/badge/Next.js-15-000000)](https://nextjs.org)
 [![TypeScript](https://img.shields.io/badge/TypeScript-strict-3178c6)](https://www.typescriptlang.org)
-[![Tests](https://img.shields.io/badge/tests-115%20passing-2f5d62)](tests)
+[![Tests](https://img.shields.io/badge/tests-135%20passing-2f5d62)](tests)
 [![Docker](https://img.shields.io/badge/Docker-ready-2496ed)](Dockerfile)
 
 > **状态：v0.1.0 开发中，尚未发布正式版本。** 功能已能完整跑通，但接口和界面仍可能调整，欢迎试用与反馈。
@@ -70,7 +70,8 @@ pnpm dev
 - 浅色「宣纸」与深色「夜航」双主题，强调色为浅蓝；手机 / 平板响应式布局
 
 **AI**
-- 对话、起草、技能三种输入模式；8 个内置智能体（主编 / 策划 / 写作 / 档案 / 审稿 / 设定 / 考据 / 结构）+ 自定义智能体（共 9 种）
+- 对话、起草、技能三种输入模式；主编 / 写作 / 设定 3 个内置智能体 + 可自定义人设的智能体；智能体的名称、职责、人设与额外要求可在「设置 · 智能体」里改
+- `Enter` 发送、`Shift + Enter` 换行；点「技能」在输入框内展开技能清单，选中后自动填好提示词
 - `@` 引用章节、角色、设定；上下文预算（默认 12000 tokens，可设为不限）与逐节预览
 - 内置提示词预设：续写、扩写、润色、去 AI 味、章节诊断、章纲、人物卡、世界观卡、故事档案提取等
 - 兼容 OpenAI（含 DeepSeek / 通义 / Kimi / GLM / OpenRouter / SiliconFlow 等 OpenAI 兼容服务）、Anthropic、Gemini、Ollama，以及任意自定义 OpenAI 兼容网关
@@ -114,7 +115,7 @@ docs/         功能、架构、模型服务、部署、常见问题、路线图
 
 ```bash
 pnpm typecheck   # tsc --noEmit
-pnpm test        # vitest（115 个用例）
+pnpm test        # vitest（135 个用例）
 pnpm build       # 生产构建
 pnpm db:seed     # 重新生成示例作品（不删用户数据）
 ```

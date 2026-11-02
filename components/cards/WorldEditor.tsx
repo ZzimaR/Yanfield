@@ -385,7 +385,7 @@ export function WorldEditor({
             value={draft.revealAtChapter === null ? "" : String(draft.revealAtChapter)}
             onChange={(event) => update("revealAtChapter", event.target.value === "" ? null : Number(event.target.value))}
             options={chapterOptions}
-            hint="到指定章之前，AI 不会看到这条设定。"
+            hint="早于该章之前，AI 上下文里看不到这条设定（防剧透）；留空 = 始终可见。"
           />
           <Switch checked={draft.pinned} onChange={(checked) => update("pinned", checked)} label="置顶" hint="置顶设定排在列表最前。" />
         </EditorSection>

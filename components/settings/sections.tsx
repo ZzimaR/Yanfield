@@ -7,6 +7,7 @@
 
 import * as React from "react";
 import {
+  Bot,
   Cpu,
   Database,
   Info,
@@ -20,6 +21,7 @@ import {
 import { Button, Spinner } from "@/components/ui/kit";
 import type { AppSettings } from "@/lib/types";
 import { AboutSection } from "./AboutSection";
+import { AgentSection } from "./AgentSection";
 import { AppearanceSection } from "./AppearanceSection";
 import { ContextSection } from "./ContextSection";
 import { DataSection } from "./DataSection";
@@ -28,7 +30,15 @@ import { PresetsSection } from "./PresetsSection";
 import { ProvidersSection } from "./ProvidersSection";
 import type { SettingsEditor } from "./useSettingsEditor";
 
-export type SettingsSectionKey = "providers" | "presets" | "context" | "editor" | "appearance" | "data" | "about";
+export type SettingsSectionKey =
+  | "providers"
+  | "presets"
+  | "agents"
+  | "context"
+  | "editor"
+  | "appearance"
+  | "data"
+  | "about";
 
 export interface SettingsSectionMeta {
   key: SettingsSectionKey;
@@ -49,6 +59,12 @@ export const SETTINGS_SECTIONS: SettingsSectionMeta[] = [
     label: "提示词预设",
     description: "白盒提示词，可改可恢复",
     icon: <ScrollText className="size-3.5" aria-hidden />,
+  },
+  {
+    key: "agents",
+    label: "智能体",
+    description: "人设、职责与提示词要求",
+    icon: <Bot className="size-3.5" aria-hidden />,
   },
   {
     key: "context",
@@ -101,6 +117,8 @@ export function SettingsSectionContent({
       return <ProvidersSection settings={settings} update={update} />;
     case "presets":
       return <PresetsSection />;
+    case "agents":
+      return <AgentSection settings={settings} update={update} />;
     case "context":
       return <ContextSection settings={settings} update={update} />;
     case "editor":

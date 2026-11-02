@@ -505,7 +505,7 @@ export function CharacterEditor({
             value={draft.revealAtChapter === null ? "" : String(draft.revealAtChapter)}
             onChange={(event) => update("revealAtChapter", event.target.value === "" ? null : Number(event.target.value))}
             options={chapterOptions}
-            hint="到指定章之前，AI 不会看到这条角色信息。"
+            hint="早于该章之前，AI 上下文里看不到这张卡（防剧透）；留空 = 始终可见。"
           />
           <Switch checked={draft.pinned} onChange={(checked) => update("pinned", checked)} label="置顶" hint="置顶角色排在设定列表最前。" />
         </EditorSection>

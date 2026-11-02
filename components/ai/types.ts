@@ -7,7 +7,7 @@
 import type { CodexItem } from "@/lib/ai/codex";
 import type { AgentDef, AgentId, AiAction, AiUsage, ChatMessage, ContextConfig } from "@/lib/types";
 
-/** 面板输入模式：对话 / 起草 / 技能（技能=多智能体协作） */
+/** 面板输入模式：对话 / 起草 / 技能（技能=一键填入能力提示词模板） */
 export type PanelMode = "chat" | "draft" | "skill";
 
 /** @ 引用资料（与 AiChatRequest.mentions 结构一致） */

@@ -4,8 +4,8 @@
  * 底部输入区：
  * - Textarea 自适应高度（最高 180px）
  * - `@` 触发引用选择器，引用 chips 可删除
- * - 模式切换：对话 / 起草 / 技能（技能=多智能体协作）
- * - ⌘/Ctrl+Enter 发送；生成中显示停止按钮
+ * - 模式切换：对话 / 起草 / 技能（技能=在输入框内展开技能列表，选中后填入 prompt 并切回对话）
+ * - Enter 发送，Shift+Enter 换行（输入法合成中不误发）；生成中显示停止按钮
  * - 监听编辑器选区事件，提示「将引用选中正文 N 字」
  */
 import * as React from "react";
@@ -111,6 +111,8 @@ export function ChatComposer({
     start: 0,
   });
   const [selectionText, setSelectionText] = React.useState("");
+  /** 中文输入法合成中：Enter 用来确认候选词，不能触发发送 */
+  const composingRef = React.useRef(false);
 
   /* 自适应高度 */
   const resize = React.useCallback(() => {
@@ -171,23 +173,6 @@ export function ChatComposer({
     detectSlash(event.target);
   };
 
-  const handleKeyDown = (event: React.KeyboardEvent<HTMLTextAreaElement>) => {
-    if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) {
-      event.preventDefault();
-      onSend();
-      return;
-    }
-    if (event.key === "Escape") {
-      if (mention.open) {
-        event.preventDefault();
-        setMention({ open: false, query: "", start: 0 });
-      } else if (slash.open) {
-        event.preventDefault();
-        setSlash({ open: false, query: "", start: 0 });
-      }
-    }
-  };
-
   const pickMention = (option: MentionOption) => {
     const el = textareaRef.current;
     const caret = el?.selectionStart ?? value.length;
@@ -233,12 +218,62 @@ export function ChatComposer({
     });
   };
 
+  /** 「技能」mode 展开的技能列表：选中后填入输入框，并切回「对话」 */
+  const skillPanelOpen = mode === "skill" && (skillOptions?.length ?? 0) > 0;
+
+  /** 点「技能」时展开列表；已经是技能 mode 再点一次则收起 */
+  const handleModeChange = (next: PanelMode) => {
+    onModeChange(next === "skill" && mode === "skill" ? "chat" : next);
+  };
+
+  const pickSkillFromPanel = (option: SkillOption) => {
+    pickSkill(option);
+    onModeChange("chat");
+  };
+
   const visibleSkills = React.useMemo(() => {
     const options = skillOptions ?? [];
     const query = slash.query.trim().toLowerCase();
     if (!query) return options;
     return options.filter((option) => option.label.toLowerCase().includes(query));
   }, [skillOptions, slash.query]);
+
+  /**
+   * Enter 发送、Shift+Enter 换行；Ctrl / ⌘ + Enter 不再作为发送键（保持普通换行）。
+   * 中文输入法合成中的 Enter 只用于确认候选词，绝不发送。
+   */
+  const handleKeyDown = (event: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (event.key === "Enter" && !event.shiftKey && !event.metaKey && !event.ctrlKey && !event.altKey) {
+      // keyCode 229 = 输入法合成中的 Enter（Safari 下 compositionend 可能早于 keydown，需要兜底）
+      if (composingRef.current || event.nativeEvent.isComposing || event.nativeEvent.keyCode === 229) return;
+      if (slash.open) {
+        // `/` 技能菜单打开时优先选中第一个候选，避免把半截指令发出去
+        const first = visibleSkills[0];
+        if (first) {
+          event.preventDefault();
+          pickSkill(first);
+        }
+        return;
+      }
+      // @ 引用选择器打开时先选引用，不发送
+      if (mention.open) return;
+      event.preventDefault();
+      onSend();
+      return;
+    }
+    if (event.key === "Escape") {
+      if (mention.open) {
+        event.preventDefault();
+        setMention({ open: false, query: "", start: 0 });
+      } else if (slash.open) {
+        event.preventDefault();
+        setSlash({ open: false, query: "", start: 0 });
+      } else if (skillPanelOpen) {
+        event.preventDefault();
+        onModeChange("chat");
+      }
+    }
+  };
 
   /** 文风下拉：5 种常用文风 + 清除 */
   const styleItems = React.useMemo<DropdownItem[]>(() => {
@@ -335,7 +370,7 @@ export function ChatComposer({
             size="sm"
             options={MODE_OPTIONS}
             value={mode}
-            onChange={(next) => onModeChange(next as PanelMode)}
+            onChange={(next) => handleModeChange(next as PanelMode)}
           />
           {selectionLength > 0 ? (
             <span className="min-w-0 truncate text-[10.5px] text-jade" title={selectionText}>
@@ -343,6 +378,32 @@ export function ChatComposer({
             </span>
           ) : null}
         </div>
+
+        {/* 「技能」mode：在输入框内展开技能列表，选中后填 prompt 并切回对话 */}
+        {skillPanelOpen && !slash.open ? (
+          <div className="mb-1.5 rounded-sm border border-line bg-surface p-1 rise-in">
+            <p className="px-1.5 py-0.5 text-[10.5px] text-ink-4">选一个技能填入输入框（可改完再发送）</p>
+            <div className="scroll-thin max-h-52 overflow-y-auto">
+              {(skillOptions ?? []).map((option) => (
+                <button
+                  key={option.label}
+                  type="button"
+                  onMouseDown={(event) => event.preventDefault()}
+                  onClick={() => pickSkillFromPanel(option)}
+                  className="flex w-full items-start gap-1.5 rounded-sm px-1.5 py-1.5 text-left transition-colors duration-150 hover:bg-surface-2"
+                >
+                  <Sparkles className="mt-0.5 size-3 shrink-0 text-ink-4" />
+                  <span className="min-w-0 flex-1">
+                    <span className="block text-[12px] text-ink-2">{option.label}</span>
+                    {option.hint ? (
+                      <span className="mt-0.5 block text-[10.5px] leading-snug text-ink-4">{option.hint}</span>
+                    ) : null}
+                  </span>
+                </button>
+              ))}
+            </div>
+          </div>
+        ) : null}
 
         {/* 输入区快捷 chips：智能体 / 文风 / 档案 */}
         <div className="mb-1 flex flex-wrap items-center gap-1">
@@ -388,6 +449,15 @@ export function ChatComposer({
           rows={1}
           onChange={handleChange}
           onKeyDown={handleKeyDown}
+          onCompositionStart={() => {
+            composingRef.current = true;
+          }}
+          onCompositionEnd={() => {
+            composingRef.current = false;
+          }}
+          onBlur={() => {
+            composingRef.current = false;
+          }}
           onClick={(event) => detectMention(event.currentTarget)}
           onSelect={(event) => detectMention(event.currentTarget)}
           placeholder={placeholder}
@@ -407,10 +477,14 @@ export function ChatComposer({
           ) : null}
           <span
             className="ml-auto hidden items-center gap-1 text-[10.5px] text-ink-4 sm:flex dark:text-ink-3"
-            title="Ctrl / ⌘ + Enter 发送"
+            title="Enter 发送，Shift + Enter 换行"
           >
-            <Kbd>⌘</Kbd>
-            <Kbd>↵</Kbd>
+            <Kbd>Enter</Kbd>
+            <span>发送</span>
+            <span className="text-ink-4/60">·</span>
+            <Kbd>⇧</Kbd>
+            <Kbd>Enter</Kbd>
+            <span>换行</span>
           </span>
           {streaming ? (
             <Button

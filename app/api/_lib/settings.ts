@@ -4,11 +4,12 @@
  */
 import { ApiError } from "@/lib/api-utils";
 import { unifyModelSettings } from "@/lib/model-settings";
-import type { AiPricing, AppSettings, ContextConfig } from "@/lib/types";
-import { isObject, pickEnum, pickFields, type FieldSpec, type Json } from "./http";
+import type { AgentId, AgentPersonaOverride, AiPricing, AppSettings, ContextConfig } from "@/lib/types";
+import { AGENT_IDS, isObject, pickEnum, pickFields, type FieldSpec, type Json } from "./http";
 
 type Models = AppSettings["models"];
 type CustomAgent = AppSettings["customAgent"];
+type AgentOverrides = AppSettings["agentOverrides"];
 
 const SIMPLE_FIELDS: FieldSpec = {
   editorFontSize: "num",
@@ -50,6 +51,10 @@ const CONTEXT_BOOL_KEYS = [
 const CONTEXT_NUM_KEYS = ["includeChapterSummaries", "archiveDepth", "contextBudget", "maxTokens"] as const;
 
 const AGENT_KEYS = ["name", "role", "persona", "greeting"] as const;
+
+/** 智能体人设覆盖允许的字段与长度上限（与设置「智能体」分组一一对应）。 */
+const AGENT_OVERRIDE_KEYS = ["name", "role", "description", "greeting", "instructions"] as const;
+const AGENT_OVERRIDE_LIMIT = 500;
 
 function clampInt(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, Math.round(value)));
@@ -121,6 +126,36 @@ function mergeCustomAgent(current: CustomAgent, raw: unknown): CustomAgent {
   return next;
 }
 
+/** 合并单个智能体的人设覆盖：字符串字段 trim + 限长，空字符串表示删除该字段。 */
+function mergeAgentOverride(current: AgentPersonaOverride, raw: Json, agentId: AgentId): AgentPersonaOverride {
+  const next: AgentPersonaOverride = { ...current };
+  for (const key of AGENT_OVERRIDE_KEYS) {
+    const value = raw[key];
+    if (value === undefined) continue;
+    if (typeof value !== "string") throw new ApiError(`agentOverrides.${agentId}.${key} 必须是字符串`, 400);
+    const trimmed = value.trim().slice(0, AGENT_OVERRIDE_LIMIT);
+    if (trimmed) next[key] = trimmed;
+    else delete next[key];
+  }
+  return next;
+}
+
+function mergeAgentOverrides(current: AgentOverrides, raw: unknown): AgentOverrides {
+  if (!isObject(raw)) throw new ApiError("agentOverrides 必须是对象", 400);
+  const next: AgentOverrides = { ...current };
+  for (const [agentId, value] of Object.entries(raw)) {
+    if (!AGENT_IDS.includes(agentId as AgentId)) {
+      throw new ApiError(`agentOverrides.${agentId} 不是有效的智能体 id`, 400);
+    }
+    const id = agentId as AgentId;
+    if (!isObject(value)) throw new ApiError(`agentOverrides.${agentId} 必须是对象`, 400);
+    const merged = mergeAgentOverride(next[id] ?? {}, value, id);
+    if (Object.keys(merged).length > 0) next[id] = merged;
+    else delete next[id];
+  }
+  return next;
+}
+
 function mergePricing(current: AiPricing, raw: unknown): AiPricing {
   if (!isObject(raw)) throw new ApiError("aiPricing 必须是对象", 400);
   const next: AiPricing = { ...current };
@@ -168,6 +203,9 @@ export function buildSettingsPatch(current: AppSettings, body: Json): Partial<Ap
   if (body.defaultContext !== undefined) patch.defaultContext = mergeContext(current.defaultContext, body.defaultContext);
   if (body.models !== undefined) patch.models = mergeModels(current.models, body.models);
   if (body.customAgent !== undefined) patch.customAgent = mergeCustomAgent(current.customAgent, body.customAgent);
+  if (body.agentOverrides !== undefined) {
+    patch.agentOverrides = mergeAgentOverrides(current.agentOverrides, body.agentOverrides);
+  }
   if (body.aiPricing !== undefined) patch.aiPricing = mergePricing(current.aiPricing, body.aiPricing);
   return patch;
 }

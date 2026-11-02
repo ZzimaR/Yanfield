@@ -279,6 +279,11 @@ export interface StoryArchive {
 
 /* ============================== 智能体 / AI ============================== */
 
+/**
+ * 智能体 id。
+ * 内置智能体已精简为 3 个（supervisor / writer / setting）；blueprint / archivist / critic /
+ * consistency / structure 只保留在类型里兼容历史会话数据，UI 侧由 resolveAgent 统一回落主编。
+ */
 export type AgentId =
   | "supervisor"
   | "blueprint"
@@ -305,8 +310,27 @@ export interface AgentDef {
   modelRole: "chat" | "prose";
   /** 建议开场白 */
   greeting: string;
+  /**
+   * 额外要求（来自设置「智能体」分组的覆盖，不写进 AGENTS 内置定义）。
+   * 装配 system prompt 时作为「额外要求」附在人格前缀最后。
+   */
+  instructions?: string;
   /** 快捷指令 */
   quickActions: { label: string; prompt: string }[];
+}
+
+/**
+ * 设置里对智能体人设的覆盖。
+ * 只存字符串字段；空字符串或未提供表示沿用内置默认值。
+ * 内置智能体写 AppSettings.agentOverrides[agentId]；自定义智能体的展示信息仍写 customAgent，
+ * 只有额外要求（instructions）落在 agentOverrides.custom。
+ */
+export interface AgentPersonaOverride {
+  name?: string;
+  role?: string;
+  description?: string;
+  greeting?: string;
+  instructions?: string;
 }
 
 export type AiFeature =
@@ -550,6 +574,11 @@ export interface AppSettings {
   models: ModelSetting;
   /** 自定义智能体人设（AGENTS 里 id=custom 时使用） */
   customAgent: { name: string; role: string; persona: string; greeting: string };
+  /**
+   * 设置「智能体」分组里对内置智能体人设的覆盖。
+   * 缺省 / 空字符串字段沿用内置默认；自定义智能体只有 instructions 存这里。
+   */
+  agentOverrides: Partial<Record<AgentId, AgentPersonaOverride>>;
   /** 费用估算单价，人民币 / 百万 tokens。两项都为 0 时只统计 token。 */
   aiPricing: AiPricing;
 }
@@ -702,36 +731,18 @@ export const AGENTS: AgentDef[] = [
     id: "supervisor",
     name: "主编",
     englishName: "Supervisor",
-    role: "统筹整本书的创作节奏",
+    role: "通用助手：续写、改设定、理章纲、查档案都能干",
     description:
-      "拆解你的写作目标，安排谁来做什么；卡文时帮你判断该先补设定、改大纲，还是直接硬写。",
-    skills: ["任务拆解", "写作卡点诊断", "多智能体调度", "整书节奏建议"],
+      "默认的通用智能体：续写正文、修改设定卡、整理章纲、查档案都能直接动手，每一步改动都能查看和撤销。",
+    skills: ["续写正文", "修改设定", "整理章纲", "查档案"],
     tint: "accent",
     modelRole: "chat",
     greeting:
-      "我是你的主编。告诉我今天想推进什么——续写下一章、梳理大纲，还是解决某个卡点？我会给出路线并调度合适的智能体。",
+      "我是你的主编，这本书里的活都能交给我——续写正文、改设定卡、理章纲、查档案，直接说要做什么就行。",
     quickActions: [
-      { label: "诊断我的卡点", prompt: "我卡文了，请先了解我的作品状态，再判断问题出在大纲、设定还是动机，并给出具体下一步。" },
-      { label: "规划今日写作", prompt: "请根据当前进度，帮我规划今天 2 小时的写作任务，要具体到章节与目标字数。" },
-      { label: "调度写作智能体", prompt: "按「先补章纲 → 再写正文 → 最后抽档案」的顺序，安排接下来的工作。" },
-    ],
-  },
-  {
-    id: "blueprint",
-    name: "策划",
-    englishName: "Blueprint",
-    role: "大纲、分场与结构设计",
-    description:
-      "把模糊的想法变成可执行的三级大纲与分场计划：先总纲，再卷纲，最后落到章纲的冲突、钩子与情绪曲线。",
-    skills: ["总纲/卷纲/章纲", "分场设计", "冲突与钩子", "节奏曲线"],
-    tint: "jade",
-    modelRole: "chat",
-    greeting:
-      "我是策划。你给我题材、主角和想要的爽点，我帮你搭出三级大纲；已经有大纲的话，我可以帮你检查结构漏洞。",
-    quickActions: [
-      { label: "搭建总纲", prompt: "请根据现有作品信息，为我生成一份总纲：一句话故事、主题、主线、支线、人物弧光与结局走向。" },
-      { label: "生成本章章纲", prompt: "请结合前后章与大纲，生成本章章纲：目标、核心冲突、分场计划、章末钩子。" },
-      { label: "检查结构", prompt: "请检查当前卷的结构：主线推进是否够、冲突是否升级、有没有拖沓或断档。" },
+      { label: "续写本章", prompt: "请接着本章最后一段续写 800 字左右，保持当前视角、文风与节奏，结尾留一个钩子。" },
+      { label: "检查设定冲突", prompt: "请对照现有大纲、设定卡与已写正文，检查最近两章有没有前后矛盾的地方，列成待确认清单。" },
+      { label: "整理接下来三章章纲", prompt: "请根据现有大纲与已写内容，整理接下来三章的章纲：目标、核心冲突、分场与章末钩子。" },
     ],
   },
   {
@@ -753,42 +764,6 @@ export const AGENTS: AgentDef[] = [
     ],
   },
   {
-    id: "archivist",
-    name: "档案",
-    englishName: "Archivist",
-    role: "抽取故事档案与连续性事实",
-    description:
-      "从本章正文里抽取只发生过的事实：角色状态、设定变化、数值总账、时间线与伏笔；推不出的不编，冲突列待确认。",
-    skills: ["本章档案", "角色状态", "数值总账", "时间线", "伏笔追踪"],
-    tint: "gold",
-    modelRole: "chat",
-    greeting:
-      "我是档案智能体。写完一章后找我抽取档案，我会只记录正文里真实发生的事；发现前后矛盾会列成「待确认」。",
-    quickActions: [
-      { label: "抽取本章档案", prompt: "请从本章正文抽取故事档案：本章摘要、角色状态变化、设定变化、数值总账、时间线、伏笔，以及冲突待确认项。" },
-      { label: "检查前后一致性", prompt: "请对照既有档案检查本章：有没有和前面章节矛盾的地方？列成待确认清单。" },
-      { label: "补建全书档案", prompt: "请按顺序梳理已写章节，生成缺失的故事档案。" },
-    ],
-  },
-  {
-    id: "critic",
-    name: "审稿",
-    englishName: "Critic",
-    role: "去 AI 味、改稿与章节体检",
-    description:
-      "用网文编辑的标准挑毛病：AI 味、节奏拖沓、信息密度、爽点与钩子；并给出可以直接采纳的改写版本。",
-    skills: ["去 AI 味", "章节体检", "爽点/钩子", "逐段改写"],
-    tint: "accent",
-    modelRole: "prose",
-    greeting:
-      "我是审稿智能体。把章节发给我，我会指出 AI 味和节奏问题，并给出可逐段采纳的修改；也可以只做「去 AI 味」。",
-    quickActions: [
-      { label: "给本章做体检", prompt: "请从读者视角给本章做体检：开头钩子、信息密度、冲突推进、爽点、章末悬念、AI 味，逐项打分并给修改建议。" },
-      { label: "去 AI 味", prompt: "请去除本章的 AI 味：删掉空泛排比与总结句，把抽象形容改成具体动作与感官细节，打散过于齐整的句式。" },
-      { label: "加强章末钩子", prompt: "请改写本章最后 3 段，让章末钩子更强，但不要剧透下一章的具体解法。" },
-    ],
-  },
-  {
     id: "setting",
     name: "设定",
     englishName: "Setting",
@@ -806,42 +781,6 @@ export const AGENTS: AgentDef[] = [
       { label: "梳理势力关系", prompt: "请梳理目前出现的势力及其关系，指出矛盾点与可开发的冲突。" },
     ],
   },
-  {
-    id: "consistency",
-    name: "考据",
-    englishName: "Consistency",
-    role: "知识图谱与全书一致性",
-    description:
-      "跨章节核对人物、时间、数值、地理与因果：谁在第几章知道了什么、死了的人有没有再出现、境界有没有跳级。",
-    skills: ["跨章核对", "时间线", "数值校验", "因果链"],
-    tint: "jade",
-    modelRole: "chat",
-    greeting:
-      "我是考据智能体。选中章节范围，我会对照档案与设定，找出前后矛盾并按严重程度排序。",
-    quickActions: [
-      { label: "全书一致性检查", prompt: "请检查全书已写内容的一致性：人物状态、时间线、数值、地理与因果，按严重程度列出问题与依据章节。" },
-      { label: "核对本章设定", prompt: "请核对本章涉及的设定与既有设定是否冲突，冲突处给出两套修正方案。" },
-      { label: "检查伏笔回收", prompt: "请盘点已埋伏笔的回收情况，指出逾期未回收的伏笔并建议回收章节。" },
-    ],
-  },
-  {
-    id: "structure",
-    name: "结构",
-    englishName: "Structure",
-    role: "节奏、爽点与追读率分析",
-    description:
-      "从数据与结构角度分析：章节节奏曲线、爽点密度、信息释放速度、黄金三章，并对比同类爆款的常见节拍。",
-    skills: ["节奏分析", "黄金三章", "追读率", "爆款对标"],
-    tint: "gold",
-    modelRole: "chat",
-    greeting:
-      "我是结构智能体。给我一段章节或全书目录，我会分析节奏与爽点分布，告诉你读者可能在哪里流失。",
-    quickActions: [
-      { label: "节奏分析", prompt: "请分析当前章节/卷的节奏：紧张与松弛的分布、信息密度、爽点间隔，给出调整建议。" },
-      { label: "黄金三章体检", prompt: "请按网文黄金三章标准给前三章打分：代入感、冲突、金手指/悬念、爽点、章末钩子。" },
-      { label: "对标爆款节拍", prompt: "请按同类爆款的常见节拍，指出本书前 10 章哪些节点可以更早出现或加强。" },
-    ],
-  },
 ];
 
 export const CUSTOM_AGENT: AgentDef = {
@@ -856,6 +795,41 @@ export const CUSTOM_AGENT: AgentDef = {
   greeting: "请先在设置里定义我的人设与职责，然后我们就可以开始了。",
   quickActions: [],
 };
+
+/**
+ * 把设置里的覆盖应用到智能体定义（纯函数，服务端提示词与客户端展示共用）。
+ * 空字符串 / 未提供的字段保留内置默认；instructions 只在有值时带上。
+ */
+export function applyAgentOverride(agent: AgentDef, override?: AgentPersonaOverride | null): AgentDef {
+  if (!override) return agent;
+  const read = (value?: string): string | undefined => {
+    if (typeof value !== "string") return undefined;
+    const trimmed = value.trim();
+    return trimmed ? trimmed : undefined;
+  };
+  const name = read(override.name) ?? agent.name;
+  const role = read(override.role) ?? agent.role;
+  const description = read(override.description) ?? agent.description;
+  const greeting = read(override.greeting) ?? agent.greeting;
+  const instructions = read(override.instructions);
+  if (
+    name === agent.name &&
+    role === agent.role &&
+    description === agent.description &&
+    greeting === agent.greeting &&
+    instructions === agent.instructions
+  ) {
+    return agent;
+  }
+  return {
+    ...agent,
+    name,
+    role,
+    description,
+    greeting,
+    ...(instructions ? { instructions } : {}),
+  };
+}
 
 export const DEFAULT_CONTEXT_CONFIG: ContextConfig = {
   includeNovelOutline: true,
@@ -907,6 +881,7 @@ export const DEFAULT_APP_SETTINGS: AppSettings = {
     persona: "你是一位熟悉本书题材与作者文风的编辑，说话直接，只给具体可执行的建议。",
     greeting: "我已按你的设定就位。今天想让我做什么？",
   },
+  agentOverrides: {},
   aiPricing: {
     inputPerMillion: 0,
     outputPerMillion: 0,

@@ -5,7 +5,7 @@
  *
  * 能力：
  * - 会话 Tab（最多 3 个）+ 历史会话 Sheet（新建/删除/打开）
- * - 8 个内置智能体 + 设置里的自定义智能体选择
+ * - 3 个内置智能体（主编/写作/设定）+ 设置里的自定义智能体选择；旧内置 id 自动回落到主编
  * - 流式对话（/api/ai/chat）、reasoning 折叠、Markdown、消息复制/重试/删除
  * - @ 引用（章节/角色/世界观/伏笔/档案）、模式切换（对话/起草/技能）
  * - 上下文用量条 + 分节开关抽屉（/api/ai/context）
@@ -17,7 +17,7 @@ import * as React from "react";
 import Link from "next/link";
 import { Check, CircleAlert, Cpu, MessagesSquare, Plus, Settings2, X } from "lucide-react";
 import { DiffReview } from "@/components/diff/DiffReview";
-import { IconButton, Sheet, Tooltip, useToast } from "@/components/ui/kit";
+import { Button, IconButton, Sheet, Tooltip, useToast } from "@/components/ui/kit";
 import { openSettingsDialog } from "@/components/settings/open";
 import { apiGet, apiPatch, notifyDataChanged, streamAiCodex, useApi } from "@/lib/client/api";
 import { ApiError } from "@/lib/client/api";
@@ -158,10 +158,21 @@ export function AiPanel({
   const { data: providers } = useApi<{ items: ProviderConfig[] }>("/api/providers");
   const { data: presets } = useApi<{ items: PromptPreset[] }>(`/api/presets?novelId=${novelId}`);
   const agents = React.useMemo(() => listAgents(settings), [settings]);
+  /** 只有一个智能体时隐藏选择器（内置已精简到 3 个，通常仍会显示） */
+  const hasAgentChoice = agents.length > 1;
   const activeAgent = React.useMemo(
     () => resolveAgent(chat.activeTab.agentId, settings),
     [chat.activeTab.agentId, settings],
   );
+
+  // 历史会话可能带着已精简掉的旧智能体 id：等设置加载完统一回落到主编，
+  // 避免恢复会话后新建服务端会话时被白名单拒绝。
+  const activeAgentId = chat.activeTab.agentId;
+  React.useEffect(() => {
+    if (settings === undefined) return;
+    if (agents.some((agent) => agent.id === activeAgentId)) return;
+    chat.setAgent("supervisor");
+  }, [activeAgentId, agents, chat.setAgent, settings]);
 
   React.useEffect(() => {
     if (wasStreaming.current && !chat.streaming) void statsApi.refresh();
@@ -263,10 +274,18 @@ export function AiPanel({
   const handlePickSkill = React.useCallback(
     (prompt: string) => {
       setDrafts((prev) => ({ ...prev, [activeKey]: prompt }));
+      // 从「技能」mode 里选完技能后回到「对话」，避免输入框一直停在技能列表
+      setMode("chat");
       setFocusSignal((value) => value + 1);
     },
     [activeKey],
   );
+
+  /** 「编辑人设」：打开设置里的「智能体」分组。 */
+  const handleOpenAgentSettings = React.useCallback(() => {
+    setAgentSheetOpen(false);
+    openSettingsDialog("agents");
+  }, []);
 
   React.useEffect(() => {
     const apply = () => {
@@ -308,7 +327,8 @@ export function AiPanel({
     const selection = bridge?.getSelectionText().trim();
     return {
       mentions,
-      mode,
+      // 「技能」现在只是输入框里的技能选择器：发送时按普通对话处理
+      mode: mode === "skill" ? "chat" : mode,
       context: contextConfig,
       selection: selection || undefined,
       presetId: null,
@@ -702,15 +722,17 @@ export function AiPanel({
         </div>
       </header>
 
-      {/* 智能体选择 */}
-      <div className="shrink-0 border-b border-line px-2.5 py-1.5">
-        <AgentPicker
-          value={chat.activeTab.agentId}
-          onChange={chat.setAgent}
-          agents={agents}
-          className="w-full"
-        />
-      </div>
+      {/* 智能体选择：只有一个智能体时不显示，避免出现空下拉 */}
+      {hasAgentChoice ? (
+        <div className="shrink-0 border-b border-line px-2.5 py-1.5">
+          <AgentPicker
+            value={chat.activeTab.agentId}
+            onChange={chat.setAgent}
+            agents={agents}
+            className="w-full"
+          />
+        </div>
+      ) : null}
 
       {/* 对话区 */}
       <div ref={scrollRef} className="scroll-thin min-h-0 flex-1 overflow-y-auto px-3 py-3">
@@ -793,7 +815,7 @@ export function AiPanel({
           placeholder="输入要求，/ 选技能，@ 引用资料…"
           onOpenContext={() => setContextOpen(true)}
           agentName={activeAgent.name}
-          onOpenAgent={() => setAgentSheetOpen(true)}
+          onOpenAgent={hasAgentChoice ? () => setAgentSheetOpen(true) : undefined}
           style={style}
           onStyleChange={handleStyleChange}
           skillOptions={SKILL_OPTIONS}
@@ -865,6 +887,20 @@ export function AiPanel({
               </button>
             );
           })}
+          <div className="mt-1 border-t border-line pt-2">
+            <Button
+              variant="ghost"
+              size="sm"
+              icon={<Settings2 className="size-3.5" />}
+              onClick={handleOpenAgentSettings}
+              className="w-full justify-start"
+            >
+              编辑人设
+            </Button>
+            <p className="mt-0.5 px-1 text-[10.5px] leading-snug text-ink-4">
+              智能体的名字、职责、人设与额外要求都在「设置 · 智能体」里配置。
+            </p>
+          </div>
         </div>
       </Sheet>
 

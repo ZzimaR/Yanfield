@@ -6,7 +6,7 @@
  * - 结构化输出解析：extractJson（兼容 ```json 围栏与前后废话）
  */
 import type { AgentDef, AgentId, AiFeature, AppSettings, PromptPreset } from "@/lib/types";
-import { AGENTS, AI_FEATURE_LABEL } from "@/lib/types";
+import { AGENTS, AI_FEATURE_LABEL, CUSTOM_AGENT, applyAgentOverride } from "@/lib/types";
 import { BUILTIN_PRESETS, type BuiltinPresetDef } from "@/lib/defaults";
 
 export type PresetLike = Pick<
@@ -27,6 +27,7 @@ export function renderTemplate(template: string, vars: Record<string, string | n
 
 export function getAgent(agentId: AgentId | undefined): AgentDef {
   if (!agentId) return getAgent("supervisor");
+  if (agentId === "custom") return CUSTOM_AGENT;
   const found = AGENTS.find((agent) => agent.id === agentId);
   if (found) return found;
   const fallback = AGENTS.find((agent) => agent.id === "supervisor");
@@ -34,27 +35,34 @@ export function getAgent(agentId: AgentId | undefined): AgentDef {
   return fallback;
 }
 
-/** 智能体人格前缀：拼在 systemPrompt 前，让同一模型切换角色 */
+/** 智能体人格前缀：拼在 systemPrompt 前，让同一模型切换角色（应用设置里的人设覆盖） */
 export function agentPreamble(agentId: AgentId | undefined, settings: AppSettings): string {
-  const agent = getAgent(agentId);
-  if (agent.id === "custom") {
+  const base = getAgent(agentId);
+  const overrides = settings.agentOverrides ?? {};
+  if (base.id === "custom") {
     const custom = settings.customAgent;
+    const extra = overrides.custom?.instructions?.trim();
     return [
       `现在由作者的「${custom.name}」协助创作。`,
       custom.role ? `定位：${custom.role}` : "",
       custom.persona ? `人设与工作方式：${custom.persona}` : "",
       "你的建议要具体、可执行；上下文没有的信息不要编造，不确定就写「待确认」。",
+      extra ? `额外要求：${extra}` : "",
     ]
       .filter(Boolean)
       .join("\n");
   }
+  const agent = applyAgentOverride(base, overrides[base.id]);
   return [
     `现在由「${agent.name}」（${agent.englishName}）协助创作。`,
     `职责：${agent.role}。`,
     `强项：${agent.skills.join("、")}。`,
     agent.description,
     "上下文没有的信息不要编造；不确定就写「待确认」。",
-  ].join("\n");
+    agent.instructions ? `额外要求：${agent.instructions}` : "",
+  ]
+    .filter(Boolean)
+    .join("\n");
 }
 
 export function featureLabel(feature: AiFeature): string {
