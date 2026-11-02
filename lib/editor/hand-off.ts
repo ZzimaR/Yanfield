@@ -12,7 +12,11 @@ export interface HandOffDetail {
   reference: HandOffReference | null;
   taskId: string;
   taskLabel: string;
+  selection?:string;
+  autoSend?:boolean;
+  referenceOnly?:boolean;
   prompt: string;
+  snapshot?:{kind:"world"|"character"|"foreshadow";id:string|null;fields:Record<string,unknown>};
 }
 
 let pending: HandOffDetail | null = null;
@@ -27,6 +31,10 @@ export function takeHandOff(): HandOffDetail | null {
   const detail = pending;
   pending = null;
   return detail;
+}
+
+export function referenceCardInAssistant(kind:"character"|"world"|"foreshadow",id:string|null,label:string,fields:Record<string,unknown>):void {
+  handToAssistant({reference:id?{type:kind,id,label}:null,referenceOnly:true,taskId:"reference-card",taskLabel:`未保存资料 · ${label}`,prompt:"",snapshot:{kind,id,fields}});
 }
 
 export const WORLD_HANDOFF_TASKS = [

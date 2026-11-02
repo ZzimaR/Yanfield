@@ -92,6 +92,7 @@ export interface UseAiChatResult {
   openSession: (session: ChatSession) => Promise<OpenSessionResult>;
   /** 在当前会话里先放下一问一答，供设定任务自己接流。返回 assistant 消息 id。 */
   beginExchange: (userText: string) => string;
+  prepareSession:()=>Promise<string|null>;
   /** 按 assistantId 精确更新回复（流式期间切 tab 也不会写错）。 */
   patchExchange: (assistantId: string, patch: Partial<UIMessage>) => void;
   /**
@@ -640,6 +641,8 @@ export function useAiChat({ novelId, chapterId, defaultAgentId }: UseAiChatOptio
         reasoning: patch.reasoning,
         actions: patch.actions,
         status: patch.status === "error" || patch.status === "aborted" ? patch.status : "complete",
+        provider: patch.provider,
+        model: patch.model,
         usage: patch.usage ?? null,
         error: patch.error ?? "",
       });
@@ -647,7 +650,12 @@ export function useAiChat({ novelId, chapterId, defaultAgentId }: UseAiChatOptio
     [findTabByMessage, patchMessage, persistExchange],
   );
 
+  const prepareSession=React.useCallback(async()=>{
+    const current=stateRef.current.tabs.find(t=>t.key===stateRef.current.activeKey);
+    return current?ensureSession(current.key,current.agentId,current.sessionId):null;
+  },[ensureSession]);
   return {
+    prepareSession,
     tabs,
     activeKey,
     activeTab,

@@ -5,15 +5,15 @@ import { SectionHeading } from "./SectionHeading";
 const FAQS = [
   {
     q: "我的 API Key 存在哪？会被上传吗？",
-    a: "只存在你电脑本地的设置里（SQLite 的 settings 表）。请求由你的机器直接发往模型服务商，砚田没有任何中转服务器，也不会把 Key 写进日志或上报。界面上展示时会自动掩码，随时可以删除。",
+    a: "保存在运行砚田的电脑或自有服务器的 SQLite 数据库中。调用模型时，会把 Key 发给你配置的服务商用于鉴权；砚田没有自有中转服务器。界面展示时会掩码，也不会把 Key 写进 AI 日志。",
   },
   {
     q: "支持哪些模型？",
-    a: "任意 OpenAI 兼容接口都可以：OpenAI、DeepSeek、Moonshot、通义、智谱、vLLM、Ollama 等；另外原生支持 Anthropic 与 Gemini。对话/大纲模型与正文模型可以分开配置，在设置或 AI 面板里切换。",
+    a: "任意 OpenAI 兼容接口都可以：OpenAI、DeepSeek、Moonshot、通义、智谱、vLLM、Ollama 等；另外原生支持 Anthropic 与 Gemini。助手与写作任务共用默认模型，可在设置或 AI 面板切换。",
   },
   {
     q: "我的书稿数据在哪？怎么备份？",
-    a: "全部在本地：默认是项目下的 SQLite 文件（data/yanfield.db），复制这个文件就是完整备份。也可以把单本书导出为 Markdown / TXT，或直接对整个数据目录做 git 版本管理。",
+    a: "保存在运行砚田的设备上，默认使用 data/yanfield.db。可停服后备份 data 目录，或使用 SQLite 在线备份；单本书也可以导出为 Markdown / TXT。",
   },
   {
     q: "能导入已有的 TXT 小说吗？",

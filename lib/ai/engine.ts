@@ -21,6 +21,7 @@ import type {
   ProviderConfig,
   StoryArchive,
 } from "@/lib/types";
+import { trimChatHistory } from "@/lib/ai/history";
 import {
   addAiLog,
   addMessage,
@@ -184,16 +185,26 @@ export interface ChatRunParams extends AiChatRequest {
   signal?: AbortSignal;
 }
 
-function historyMessages(sessionId: string): ChatMessage[] {
-  return listMessages(sessionId)
-    .filter((message) => message.content.trim() && (message.status === "complete" || message.status === "streaming"))
-    .slice(-10);
+function historyMessages(sessionId: string): { messages: ChatMessage[]; trimmed: boolean } {
+  const all = listMessages(sessionId).filter(
+    (message) => message.content.trim() && (message.status === "complete" || message.status === "streaming"),
+  );
+  const { kept, trimmed } = trimChatHistory(all);
+  return { messages: kept, trimmed };
 }
 
-function toAiMessages(history: ChatMessage[], system: string, userContent: string): AiMessage[] {
-  const messages: AiMessage[] = [{ role: "system", content: system }];
+function toAiMessages(
+  history: ChatMessage[],
+  system: string,
+  userContent: string,
+  historyTrimmed = false,
+): AiMessage[] {
+  const effectiveSystem = historyTrimmed
+    ? `${system}\n\n（更早的对话记录已省略，请以最近的消息与上下文为准；不要追问被省略的内容。）`
+    : system;
+  const messages: AiMessage[] = [{ role: "system", content: effectiveSystem }];
   for (const item of history) {
-    messages.push({ role: item.role === "assistant" ? "assistant" : "user", content: item.content.slice(0, 4000) });
+    messages.push({ role: item.role === "assistant" ? "assistant" : "user", content: item.content });
   }
   messages.push({ role: "user", content: userContent });
   return messages;
@@ -228,7 +239,7 @@ export async function* runChatStream(params: ChatRunParams): AsyncGenerator<AiSt
     const agent = getAgent(agentId);
     const mode = params.mode ?? session.mode;
 
-    // 历史消息要在写入本轮 user 消息之前读取
+    // 历史消息要在写入本轮 user 消息之前读取；超出预算的旧消息会被压缩掉
     const history = historyMessages(session.id);
     addMessage(session.id, { role: "user", content: params.message });
 
@@ -267,7 +278,7 @@ export async function* runChatStream(params: ChatRunParams): AsyncGenerator<AiSt
       selection: params.selection ?? "",
     };
     const userContent = renderTemplate(preset.userTemplate || "{{message}}", vars);
-    const messages = toAiMessages(history, system, userContent);
+    const messages = toAiMessages(history.messages, system, userContent, history.trimmed);
     promptTokens = contextTokens(messages);
 
     assistantMessageId = addMessage(session.id, {

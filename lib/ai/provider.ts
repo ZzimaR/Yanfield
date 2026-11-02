@@ -31,7 +31,7 @@ export interface CompletionRequest {
 export type ProviderChunk =
   | { type: "delta"; text: string }
   | { type: "reasoning"; text: string }
-  | { type: "usage"; promptTokens: number; completionTokens: number }
+  | { type: "usage"; promptTokens: number; completionTokens: number; cost?:{amount:number;currency:"USD"|"CNY"} }
   | { type: "done" };
 
 const DEFAULT_BASE: Record<ProviderConfig["kind"], string> = {
@@ -93,6 +93,18 @@ function pickString(value: unknown): string {
 
 function pickNumber(value: unknown): number {
   return typeof value === "number" && Number.isFinite(value) ? value : 0;
+}
+
+/** Never guess a currency for an arbitrary compatible endpoint. OpenRouter documents USD credits. */
+export function reportedUsageCost(usage:Record<string,unknown>,baseUrl:string):{amount:number;currency:"USD"|"CNY"}|undefined {
+  const amount=usage.cost;
+  if(typeof amount!=="number"||!Number.isFinite(amount)||amount<0)return;
+  let currency=usage.cost_currency??usage.currency;
+  if(currency===undefined) {
+    try {if(/(^|\.)openrouter\.ai$/.test(new URL(baseUrl).hostname))currency="USD";}catch {return;}
+  }
+  if(currency!=="USD"&&currency!=="CNY")return;
+  return {amount,currency};
 }
 
 function safeJson(payload: string): unknown {
@@ -233,6 +245,7 @@ async function* streamOpenAiCompatible(request: CompletionRequest): AsyncGenerat
         type: "usage",
         promptTokens: pickNumber(usage.prompt_tokens),
         completionTokens: pickNumber(usage.completion_tokens),
+        ...(reportedUsageCost(usage,resolveBaseUrl(provider))?{cost:reportedUsageCost(usage,resolveBaseUrl(provider))}:{}),
       };
     }
   }

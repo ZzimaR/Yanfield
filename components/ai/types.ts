@@ -28,6 +28,7 @@ export interface UIMessage {
   role: "user" | "assistant";
   content: string;
   reasoning?: string;
+  agentRun?: import("@/lib/ai/agent/types").AgentRun;
   actions: AiAction[];
   status: ChatMessage["status"];
   provider: string;

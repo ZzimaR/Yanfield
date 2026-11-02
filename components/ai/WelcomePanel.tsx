@@ -61,7 +61,7 @@ export function WelcomePanel({
             离线演示模式（无需 Key）
           </p>
           <p className="mt-0.5 text-ink-3">
-            当前不会调用外部服务，适合先体验写作流程。要接真实模型：设置 → 模型服务，或设置环境变量。
+            当前不会调用外部服务。多步任务需要真实模型，请在设置 → 模型服务中配置。
           </p>
           <Link
             href="/settings"
@@ -114,7 +114,7 @@ export function WelcomePanel({
       </div>
 
       <p className="rounded-sm bg-surface-2/60 px-3 py-2 text-[11.5px] leading-relaxed text-ink-3">
-        我能读写这本书的正文、章纲、角色、设定和档案；正文改动会先给你确认，保存类操作会提示你去对应页签。直接说要做什么，或者选一个技能：
+        可以让我续写正文、修改设定、整理角色或完善章纲。正文和资料都会先展示改动，确认后才写入，也可以撤回。
       </p>
 
       {/* 技能 */}

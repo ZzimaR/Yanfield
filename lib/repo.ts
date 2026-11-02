@@ -1224,6 +1224,7 @@ export function getStats(): DashboardStats {
     todayAiCalls: todayAi.calls,
     todayPromptTokens: todayAi.promptTokens,
     todayCompletionTokens: todayAi.completionTokens,
+    aiPricing: getSettings().aiPricing,
     streakDays,
     daily,
     recentNovels: listNovels().slice(0, 4).map((nv) => ({

@@ -6,14 +6,13 @@
  */
 import * as React from "react";
 import { Sparkles, Trash2 } from "lucide-react";
-import { Button, ConfirmDialog, Dropdown, Input, Select, Sheet, Textarea, useToast } from "@/components/ui/kit";
+import { Button, ConfirmDialog, Select, Sheet, Textarea, useToast } from "@/components/ui/kit";
+import { CardEditorDocument, CardEditorHero, CardEditorSection as EditorSection } from "./CardEditorDocument";
 import { FloatWindow } from "@/components/editor/FloatWindow";
-import { FORESHADOW_HANDOFF_TASKS, handToAssistant } from "@/lib/editor/hand-off";
+import { referenceCardInAssistant } from "@/lib/editor/hand-off";
 import { ModelKeyHint } from "@/components/ai/ModelKeyHint";
-import { apiDelete, apiPatch, apiPost, notifyDataChanged, streamAiTask, useApi } from "@/lib/client/api";
-import { parseForeshadowFill } from "@/lib/ai/card-derive";
-import { labeledDraft } from "@/lib/ai/assist-brief";
-import type { AiStreamEvent, Foreshadow, ForeshadowStatus } from "@/lib/types";
+import { apiDelete, apiPatch, apiPost, notifyDataChanged, useApi } from "@/lib/client/api";
+import type { Foreshadow, ForeshadowStatus } from "@/lib/types";
 import { FORESHADOW_STATUS_LABEL } from "@/lib/types";
 import { stripChapterNumber, unwrapEntity, useErrorToast } from "@/components/outline/form-kit";
 
@@ -41,27 +40,6 @@ function toDraft(foreshadow: Foreshadow): ForeshadowDraft {
   };
 }
 
-/** 编辑区统一的分组卡片（与角色编辑保持一致） */
-function EditorSection({
-  title,
-  hint,
-  children,
-}: {
-  title: string;
-  hint?: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <section className="rounded-lg border border-line bg-surface-2/60 p-3.5">
-      <div className="mb-3">
-        <h3 className="text-[13px] font-semibold text-ink">{title}</h3>
-        {hint ? <p className="mt-0.5 text-[11px] leading-relaxed text-ink-3">{hint}</p> : null}
-      </div>
-      <div className="space-y-3">{children}</div>
-    </section>
-  );
-}
-
 export function ForeshadowEditor({
   open,
   novelId,
@@ -87,15 +65,17 @@ export function ForeshadowEditor({
   const detailApi = useApi<Foreshadow>(open && foreshadow ? `/api/foreshadows/${foreshadow.id}` : null);
   const [draft, setDraft] = React.useState<ForeshadowDraft>(() => (foreshadow ? toDraft(foreshadow) : emptyDraft()));
   const [saving, setSaving] = React.useState(false);
+  const dirtyRef=React.useRef(false);
+  const baseStampRef=React.useRef(foreshadow?.updatedAt);
   const [deleting, setDeleting] = React.useState(false);
   const [confirmDeleteOpen, setConfirmDeleteOpen] = React.useState(false);
-  const [filling, setFilling] = React.useState(false);
   const [savedId, setSavedId] = React.useState<string | null>(foreshadow?.id ?? null);
   const [minimized, setMinimized] = React.useState(false);
   const nextFloatKey = open ? (foreshadow?.id ?? "new") : "closed";
   const [floatKey, setFloatKey] = React.useState(nextFloatKey);
   if (floatKey !== nextFloatKey) {
     setFloatKey(nextFloatKey);
+    dirtyRef.current=false;
     if (open) setMinimized(false);
   }
   const initKey = `${open ? 1 : 0}:${foreshadow?.id ?? "new"}:${detailApi.data?.updatedAt ?? foreshadow?.updatedAt ?? ""}`;
@@ -108,14 +88,17 @@ export function ForeshadowEditor({
   React.useEffect(() => {
     if (lastInitKey.current === initKey) return;
     lastInitKey.current = initKey;
-    if (!open) return;
+    if (!open || dirtyRef.current) return;
+    baseStampRef.current=source?.updatedAt;
     setSavedId(source?.id ?? null);
     setDraft(source ? toDraft(source) : emptyDraft());
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initKey, open]);
 
-  const update = <K extends keyof ForeshadowDraft>(key: K, value: ForeshadowDraft[K]) =>
-    setDraft((prev) => ({ ...prev, [key]: value }));
+  const update = <K extends keyof ForeshadowDraft>(key: K, value: ForeshadowDraft[K]) => {
+    dirtyRef.current=true;
+    setDraft((prev)=>({...prev,[key]:value}));
+  };
 
   const chapterOptions = [
     { value: "", label: "未关联" },
@@ -140,7 +123,7 @@ export function ForeshadowEditor({
     try {
       const payload = { ...draft, title };
       const saved = savedId
-        ? await apiPatch<Foreshadow>(`/api/foreshadows/${savedId}`, payload)
+        ? await apiPatch<Foreshadow>(`/api/foreshadows/${savedId}`, {...payload,expectedUpdatedAt:baseStampRef.current})
         : await apiPost<Foreshadow>(`/api/foreshadows`, { novelId, ...payload });
       const entity = unwrapEntity(saved);
       setSavedId(entity.id);
@@ -172,68 +155,11 @@ export function ForeshadowEditor({
     }
   };
 
-  const fillCard = () => {
-    setFilling(true);
-    let text = "";
-    void streamAiTask(
-      {
-        novelId,
-        feature: "foreshadow-card",
-        message: ["这是补全当前伏笔。", labeledDraft([
-          { label: "标题", value: draft.title },
-          { label: "说明", value: draft.description },
-          { label: "备注", value: draft.notes },
-        ])].filter(Boolean).join("\n\n"),
-        instruction:
-          "这是补全当前伏笔。只输出 JSON：{\"description\":\"\",\"notes\":\"\"}。只写这一条自己埋了什么、以后怎么收，不要提问，不要把别的线索写进来。",
-      },
-      {
-        onEvent: (event: AiStreamEvent) => {
-          if (event.type === "delta") text += event.text;
-        },
-      },
-    )
-      .then(() => {
-        const fill = parseForeshadowFill(text);
-        if (!fill) {
-          toast({ title: "没有填进卡片", description: "生成结果不是这条伏笔的说明和备注。", tone: "error" });
-          return;
-        }
-        setDraft((prev) => ({
-          ...prev,
-          description: fill.description || prev.description,
-          notes: fill.notes || prev.notes,
-        }));
-        toast({ title: "已填入当前卡片", description: "还没保存。确认后点保存才会写入。", tone: "success" });
-      })
-      .catch((err: unknown) => {
-        toast({ title: "补全失败", description: err instanceof Error ? err.message : "请稍后再试", tone: "error" });
-      })
-      .finally(() => setFilling(false));
+  const openAssistant = () => {
+    referenceCardInAssistant("foreshadow",savedId,draft.title.trim()||"新伏笔",{...draft});
+    if(presentation==="float")setMinimized(true);
   };
 
-  const material = [
-    draft.title.trim() ? `标题：${draft.title.trim()}` : "",
-    draft.description.trim() ? `描述：${draft.description.trim()}` : "",
-    draft.notes.trim() ? `备注：${draft.notes.trim()}` : "",
-    `状态：${FORESHADOW_STATUS_LABEL[draft.status]}`,
-  ]
-    .filter(Boolean)
-    .join("\n");
-
-  const giveToAssistant = (task: (typeof FORESHADOW_HANDOFF_TASKS)[number]) => {
-    const label = draft.title.trim() || "新伏笔";
-    handToAssistant({
-      reference: savedId ? { type: "foreshadow", id: savedId, label } : null,
-      taskId: task.id,
-      taskLabel: `${task.label} · ${label}`,
-      prompt: material ? `${task.prompt}\n\n【当前材料】\n${material}` : task.prompt,
-    });
-    if (presentation === "float") setMinimized(true);
-  };
-
-  const displayTitle = draft.title.trim() || "未命名伏笔";
-  const initial = displayTitle.slice(0, 1);
   const plantedTitle = chapterTitle(draft.plantedChapterId);
   const payoffTitle = chapterTitle(draft.payoffChapterId);
   const subtitle = [FORESHADOW_STATUS_LABEL[draft.status], plantedTitle ? `埋于${plantedTitle}` : "未关联埋设章"]
@@ -241,9 +167,9 @@ export function ForeshadowEditor({
     .join(" · ");
 
   const footer = (
-    <div className="flex items-center gap-2 [&_a:focus-visible]:outline-none [&_a:focus-visible]:ring-2 [&_a:focus-visible]:ring-accent/60 [&_button:focus-visible]:outline-none [&_button:focus-visible]:ring-2 [&_button:focus-visible]:ring-accent/60">
+    <div className="card-editor-actions flex items-center gap-2 [&_a:focus-visible]:outline-none [&_a:focus-visible]:ring-2 [&_a:focus-visible]:ring-accent/60 [&_button:focus-visible]:outline-none [&_button:focus-visible]:ring-2 [&_button:focus-visible]:ring-accent/60">
       {editing ? (
-        <Button variant="danger" size="sm" icon={<Trash2 className="size-3.5" />} onClick={() => setConfirmDeleteOpen(true)}>
+        <Button variant="ghost" className="text-ink-4 hover:text-danger" size="sm" icon={<Trash2 className="size-3.5" />} onClick={() => setConfirmDeleteOpen(true)}>
           删除
         </Button>
       ) : null}
@@ -251,7 +177,7 @@ export function ForeshadowEditor({
         <Button variant="ghost" size="sm" onClick={onClose}>
           取消
         </Button>
-        <Button variant="primary" size="sm" loading={saving} onClick={save}>
+        <Button variant="primary" className="min-w-20 bg-accent text-accent-ink hover:bg-accent-hover" size="sm" loading={saving} onClick={save}>
           {savedId ? "保存" : "创建伏笔"}
         </Button>
       </div>
@@ -260,72 +186,12 @@ export function ForeshadowEditor({
 
   const body = (
     <>
-      <div className="space-y-3.5 p-4 [&_a:focus-visible]:outline-none [&_a:focus-visible]:ring-2 [&_a:focus-visible]:ring-accent/60 [&_button:focus-visible]:outline-none [&_button:focus-visible]:ring-2 [&_button:focus-visible]:ring-accent/60">
-        {/* 概览条：标题 / 状态与埋设进度 */}
-        <div className="rounded-lg border border-line bg-surface-2 px-3.5 py-3">
-          <div className="flex items-center gap-3">
-            <span
-              className="flex size-10 shrink-0 items-center justify-center rounded-full bg-gold-soft font-serif text-[16px] font-semibold text-gold"
-              aria-hidden
-            >
-              {initial}
-            </span>
-            <div className="min-w-0 flex-1">
-              <p className="truncate text-[14px] font-medium text-ink">{displayTitle}</p>
-              <p className="mt-0.5 truncate text-[11.5px] text-ink-3">{subtitle}</p>
-            </div>
-            {payoffTitle ? (
-              <span className="shrink-0 rounded-full border border-line bg-surface px-2 py-0.5 text-[10.5px] text-ink-3">
-                已安排回收
-              </span>
-            ) : null}
-          </div>
-          <div className="mt-3 flex flex-wrap items-center gap-1 border-t border-line pt-3">
-            <Button
-              variant="ghost"
-              size="sm"
-              className="text-accent hover:bg-accent-soft"
-              icon={<Sparkles className="size-3.5" />}
-              loading={filling}
-              onClick={fillCard}
-            >
-              补全这张卡
-            </Button>
-            {presentation === "float" ? (
-              <Dropdown
-                trigger={
-                  <Button variant="ghost" size="sm">
-                    交给助手
-                  </Button>
-                }
-                items={FORESHADOW_HANDOFF_TASKS.map((task) => ({
-                  label: task.label,
-                  onSelect: () => giveToAssistant(task),
-                }))}
-              />
-            ) : null}
-          </div>
-        </div>
-
-        {presentation === "float" ? (
-          <p className="text-[12px] leading-5 text-ink-3">交给助手会把这条伏笔和任务填进右侧输入框，你改完再发送。</p>
-        ) : (
-          <ol className="space-y-1.5 rounded-lg border border-line bg-surface px-3.5 py-3 text-[12px] leading-5 text-ink-2">
-            <li>1. 先写标题。已有的说明可以留下，AI 会顺着你写过的事实补。</li>
-            <li>2. 「补全这张卡」只改这一条的说明和备注，不会自动保存，也不会把别的线索写进来。看完点底部「{savedId ? "保存" : "创建伏笔"}」。</li>
-            <li>3. 这段话里如果还有别的伏笔，在写作台把这条交给右侧助手。这里只改这一条。</li>
-          </ol>
-        )}
+      <CardEditorDocument key={`${open}:${savedId??"new"}`}>
+        <CardEditorHero kind="伏笔" value={draft.title} onChange={value=>update("title",value)} subtitle={subtitle} actions={<Button variant="ghost" size="sm" className="font-semibold text-[#315b80] hover:bg-[#315b80]/[0.07] hover:text-[#20496e] dark:text-[#9dc4e7] dark:hover:bg-[#9dc4e7]/10 dark:hover:text-[#c1dbee]" icon={<Sparkles className="size-3.5"/>} onClick={openAssistant}>AI 助手</Button>}/>
         <ModelKeyHint />
 
         <EditorSection title="基本信息" hint="一句话让读者记住它，状态决定统计里算不算「未收」。">
-          <div className="grid gap-3 sm:grid-cols-2">
-            <Input
-              label="标题"
-              value={draft.title}
-              placeholder="如：灯油里的铜钱"
-              onChange={(event) => update("title", event.target.value)}
-            />
+          <div className="grid gap-3">
             <Select
               label="状态"
               value={draft.status}
@@ -364,7 +230,7 @@ export function ForeshadowEditor({
           </div>
         </EditorSection>
 
-        <EditorSection title="备注" hint="只给自己看的写作提醒，不进入 AI 上下文。">
+        <EditorSection title="备注" hint="补充线索、回收计划和写作提醒，可供助手参考。">
           <Textarea
             label=""
             rows={3}
@@ -375,7 +241,7 @@ export function ForeshadowEditor({
         </EditorSection>
 
         {detailApi.loading ? <p className="text-[11px] text-ink-3">正在获取伏笔最新详情…</p> : null}
-      </div>
+      </CardEditorDocument>
 
       <ConfirmDialog
         open={confirmDeleteOpen}
@@ -398,7 +264,7 @@ export function ForeshadowEditor({
         minimized={minimized}
         onMinimizedChange={setMinimized}
         onClose={onClose}
-        className={confirmDeleteOpen ? "z-40" : undefined}
+        className={confirmDeleteOpen ? "card-editor-window z-40" : "card-editor-window"}
         footer={footer}
       >
         {body}

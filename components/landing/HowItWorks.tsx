@@ -7,7 +7,7 @@ const STEPS = [
   {
     no: "01",
     title: "安装依赖",
-    description: "克隆仓库并安装依赖。需要 Node.js 22.5+ 与 pnpm。",
+    description: "克隆仓库并安装依赖。需要 Node.js ≥ 22.13 与 pnpm。",
     note: "没有 pnpm？先执行 npm i -g pnpm。",
   },
   {
@@ -20,7 +20,7 @@ const STEPS = [
     no: "03",
     title: "开始写作",
     description: "打开本地地址，在「设置 → 模型服务」填入你的 API Key，或先创建示例作品离线体验。",
-    note: "Key 只存在你自己的电脑里，不会上传到任何服务器。",
+    note: "Key 保存在自己的部署环境，调用时发送给所选服务商鉴权。",
   },
 ] as const;
 

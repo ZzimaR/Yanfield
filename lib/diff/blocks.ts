@@ -226,7 +226,9 @@ export function diffBlocks(beforeHtml: string, afterHtml: string): BlockDiff {
       counts.removed++;
     }
     for (let k = pairCount; k < bSpan.length; k++) {
-      items.push({ id: bSpan[k].id, type: "added", after: bSpan[k].html, afterText: bSpan[k].text, anchorId });
+      // Extra paragraphs follow paired replacements in this gap.
+      const additionAnchor = pairCount > 0 ? aSpan[pairCount - 1].id : anchorId;
+      items.push({ id: bSpan[k].id, type: "added", after: bSpan[k].html, afterText: bSpan[k].text, anchorId: additionAnchor });
       counts.added++;
     }
     if (p.i < n) anchorId = a[p.i].id;

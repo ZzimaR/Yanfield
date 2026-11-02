@@ -14,6 +14,7 @@ import { ACTION_LABEL } from "./utils";
 
 /** 各 action 的写入位置说明 */
 const TARGET_HINT: Record<PendingAction["action"]["type"], string> = {
+  "agent-run": "任务与改动",
   insert: "写入位置：编辑器当前光标处",
   append: "写入位置：当前章节末尾",
   "replace-selection": "写入位置：替换编辑器当前选中的正文",

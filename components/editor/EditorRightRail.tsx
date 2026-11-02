@@ -1,8 +1,6 @@
 "use client";
 
 import * as React from "react";
-import { PanelRightClose, Sparkles } from "lucide-react";
-import { IconButton, Tooltip } from "@/components/ui/kit";
 import { AiPanelSlot } from "./AiPanelSlot";
 import { EditorErrorBoundary } from "./EditorErrorBoundary";
 
@@ -24,17 +22,6 @@ export function EditorRightRail({
   // 不给内层面板按内容撑破容器的机会（否则 AI 面板会把关闭按钮挤出视口）
   return (
     <aside className="flex h-full min-h-0 w-full min-w-0 flex-col overflow-hidden border-l border-line bg-surface">
-      <div className="flex h-10 shrink-0 items-center gap-2 border-b border-line px-3">
-        <Sparkles className="size-3.5 shrink-0 text-accent" aria-hidden />
-        <span className="shrink-0 text-[12px] font-medium text-ink">AI 协作</span>
-        <span className="min-w-0 truncate text-[11px] text-ink-4">{chapterTitle ?? "未选择章节"}</span>
-        <Tooltip label="收起面板">
-          <IconButton label="收起 AI 面板" size="sm" className="ml-auto" onClick={onClose}>
-            <PanelRightClose className="size-4" />
-          </IconButton>
-        </Tooltip>
-      </div>
-
       <div className="min-h-0 min-w-0 flex-1 overflow-hidden">
         {/* AI 面板来自 components/ai，用错误边界隔离：面板异常不拖垮整个编辑器 */}
         <EditorErrorBoundary resetKey={`${novelId}:${chapterId ?? "none"}`} title="AI 面板">

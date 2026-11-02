@@ -361,9 +361,13 @@ export interface AiUsage {
   completionTokens: number;
   totalTokens: number;
   latencyMs: number;
+  estimatedTokens?: boolean;
+  reportedCost?: {amount:number;currency:"USD"|"CNY";complete:boolean};
 }
 
 export type AiStreamEvent =
+  | { type: "agent"; run: import("@/lib/ai/agent/types").AgentRun }
+  | { type: "agent-preview"; runId: string; text: string }
   | { type: "meta"; runId: string; feature: AiFeature; provider: string; model: string }
   | { type: "delta"; text: string }
   | { type: "reasoning"; text: string }
@@ -372,6 +376,7 @@ export type AiStreamEvent =
   | { type: "error"; message: string; code?: string };
 
 export type AiActionType =
+  | "agent-run"
   | "insert"
   | "append"
   | "replace-selection"
@@ -602,6 +607,8 @@ export interface DashboardStats {
   todayAiCalls: number;
   todayPromptTokens: number;
   todayCompletionTokens: number;
+  /** 费用单价随统计一起下发，避免客户端设置未加载时「有 token 没有费用」。 */
+  aiPricing: AiPricing;
   streakDays: number;
   recentNovels: Pick<Novel, "id" | "title" | "genre" | "coverKey" | "updatedAt" | "wordGoal">[];
   daily: { date: string; words: number; aiTokens: number }[];
@@ -769,12 +776,12 @@ export const AGENTS: AgentDef[] = [
     englishName: "Setting",
     role: "世界观与角色资料补全",
     description:
-      "把正文里出现过的设定沉淀成结构化资料卡；也能反向补全：给你一个想法，生成可用的力量体系、势力与人物关系。",
+      "把整段设定材料拆成可勾选的新建/修改卡片清单，确认后写入；也能补全现有卡片、整理正文里出现过的设定。",
     skills: ["角色卡", "力量体系", "势力关系", "设定树"],
     tint: "jade",
     modelRole: "chat",
     greeting:
-      "我是设定智能体。你可以让我把正文里的设定整理成资料卡，也可以从零设计一套力量体系或一群角色。",
+      "我是设定智能体。直接把整段设定、角色或伏笔材料贴进来，我会拆成可勾选的卡片清单；清单出来后也可以继续说「某条先别建」来改。",
     quickActions: [
       { label: "补全角色卡", prompt: "请根据正文里出现的信息，补全当前主要角色的资料卡，缺失字段请用「待确认」标注，不要编造。" },
       { label: "设计力量体系", prompt: "请为本书设计一套有代价、有上限的力量体系，包含等级、晋升条件、常见战斗形态和叙事限制。" },

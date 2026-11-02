@@ -6,10 +6,10 @@
 [![Node](https://img.shields.io/badge/Node-%E2%89%A522.13-3c873a)](https://nodejs.org)
 [![Next.js](https://img.shields.io/badge/Next.js-15-000000)](https://nextjs.org)
 [![TypeScript](https://img.shields.io/badge/TypeScript-strict-3178c6)](https://www.typescriptlang.org)
-[![Tests](https://img.shields.io/badge/tests-153%20passing-2f5d62)](tests)
+[![Tests](https://img.shields.io/badge/tests-200%20passing-2f5d62)](tests)
 [![Docker](https://img.shields.io/badge/Docker-ready-2496ed)](Dockerfile)
 
-> **状态：v0.1.0 开发中，尚未发布正式版本。** 功能已能完整跑通，但接口和界面仍可能调整，欢迎试用与反馈。
+> **状态：v0.1.0 开发中，尚未发布正式版本。** 核心流程可试用，多步 Agent 需配置实际模型；接口和界面仍可能调整，欢迎试用与反馈。
 
 ## 快速开始
 
@@ -39,7 +39,7 @@ pnpm dev
 
 接模型可以等写完再做。左下角齿轮打开设置，选 DeepSeek（或其他 OpenAI 兼容服务），粘贴 API Key 即可。也可以把 `.env.example` 复制成 `.env`，填一个 `*_API_KEY`，下次启动会自动建好服务。细节见 [docs/ai-providers.md](docs/ai-providers.md)。
 
-![写作台](docs/screenshots/03-editor-blue.png)
+![写作台：正文、资料与 Agent 改动回执](docs/screenshots/13-agent-workbench.jpg)
 
 ## 本地部署，隐私优先
 
@@ -47,7 +47,7 @@ pnpm dev
 
 - 书稿、设定、AI 对话与 API Key 都保存在本地 SQLite 中，不需要注册、登录或订阅；
 - 没有遥测、云同步或砚田自有服务器，只有你主动配置的模型服务会收到请求；
-- 支持离线演示模式，不接入任何模型也能体验完整流程；也可以连接本机 Ollama，让内容不离开自己的设备；
+- 支持离线模板演示；多步 Agent 需配置实际模型。也可以连接本机 Ollama，让内容不离开自己的设备；
 - 源码公开、部署方式透明，数据文件可以自行备份、迁移和检查。
 
 ## 为什么加入 AI
@@ -56,9 +56,9 @@ pnpm dev
 
 在本地数据掌控的前提下，砚田提供 AI 辅助：
 
-- 不绑定模型厂商，OpenAI 兼容 / Anthropic / Gemini / Ollama 都能接，对话/大纲与正文可以分开配置模型，随时可换；
+- 不绑定模型厂商，OpenAI 兼容 / Anthropic / Gemini / Ollama 都能接，助手与写作任务共用默认模型，随时可换；
 - 上下文装配是可见、可调的——哪些资料进入上下文、花多少 token，都能在设置和预览里看到；
-- AI 对正文的改动一律先出**逐块 diff**，接受哪块、拒绝哪块由你决定。
+- 助手能按需读资料、多步执行，提出正文和资料改动；正文在写作区逐处高亮审阅，资料按字段对比。确认后批量写入，也可撤回。见[正文审阅截图](docs/screenshots/18-inline-review.jpg)。
 
 ## 已实现（v0.1.0 开发版）
 
@@ -67,22 +67,27 @@ pnpm dev
 - 写作台左栏四页签：目录 · 章纲 · 设定 · 档案；章纲、设定、档案都在浮窗里就地编辑，不离开正文
 - `Ctrl / ⌘ K` 快速跳转：搜章节、角色、设定、档案，或直接切换左栏页签；`Alt + J` 聚焦右侧 AI；`Ctrl / ⌘ + Shift + 1–4` 直达左栏四个页签；旧的大纲 / 设定 / 档案页面会自动跳回写作台
 - 正文排版可调：衬线 / 黑体、字号、字重、行高、字间距、段落间距、页边距、最大行宽
-- 浅色「宣纸」与深色「夜航」双主题，强调色为浅蓝；手机 / 平板响应式布局
+- 浅色「宣纸」与深色「夜航」双主题，采用沉稳的墨蓝强调色；手机 / 平板响应式布局
 
 **AI**
-- 对话、起草、技能三种输入模式；主编 / 写作 / 设定 3 个内置智能体 + 可自定义人设的智能体；智能体的名称、职责、人设与额外要求可在「设置 · 智能体」里改
+- 右侧统一 Agent 助手：续写、改稿、建卡、修改设定和整理章纲都在同一对话中执行；保留技能预设、文风选择与可自定义的人设
 - `Enter` 发送、`Shift + Enter` 换行；点「技能」在输入框内展开技能清单，选中后自动填好提示词
-- `@` 引用章节、角色、设定；上下文预算（默认 12000 tokens，可设为不限）与逐节预览
+- `@` 引用章节、角色、设定、伏笔和档案；可配置上下文预算与逐节预览
+- 运行卡片显示执行过程、引用资料、正文候选和资料改动；可选择条目或字段应用，服务端校验版本并以事务写入
+- 写完正文会整理有原文依据的资料候选，匹配姓名和别名以减少重复；自动整理只补已有卡的空白，不覆盖作者事实
+- 用量收进输入框底部的小状态行与消息明细图标。可识别的接口费用保留原币种；未返回费用时按配置单价明确标为预估，未设单价显示未知。今日汇总是预估，不是账户账单
 - 内置提示词预设：续写、扩写、润色、去 AI 味、章节诊断、章纲、人物卡、世界观卡、故事档案提取等
 - 兼容 OpenAI（含 DeepSeek / 通义 / Kimi / GLM / OpenRouter / SiliconFlow 等 OpenAI 兼容服务）、Anthropic、Gemini、Ollama，以及任意自定义 OpenAI 兼容网关
 - 设置页内置 11 家主流服务商预设（选品牌自动填好 Base URL 与推荐模型）；可用 API Key 从服务商**拉取真实模型列表**，也可以手动添加任意模型 id
-- **双模型分工**：对话/大纲模型与正文模型分开配置，可在设置或 AI 面板里随时切换
+- **统一模型配置**：在设置或 AI 面板切换默认模型；规划、正文写作与资料整理分别调用并计入本轮用量
 - 也支持环境变量自动接入
-- 没有 API Key 也能用「离线演示模式」走完整个流程（模板输出，不联网）
+- 没有 API Key 时可使用离线模板功能；多步 Agent 需要配置实际模型，演示模型不会假装执行任务
 
 **资料与一致性**
 - 三级大纲：总纲 / 卷纲 / 章纲（目标、POV、冲突、场景、钩子）
-- 设定库：角色、世界观、伏笔；AI 能看到全部设定以保证前后一致，还没写到的人物与线索会标注「尚未揭示」，只用来埋伏笔；个别卡也可以关掉「AI 可见性」彻底不给 AI 读
+- 设定库：角色、世界观、伏笔；卡片展示身份、性格、目标和标签，资料弹窗使用档案排版与分类页签
+- 弹窗左上角只保留一个「AI 助手」入口：打开写作台助手并自动 @ 当前卡片，带上未保存草稿，不自动发送；不再为每个字段重复放 AI 按钮
+- 资料可标记「尚未揭示」提醒助手避免提前泄露，也可关闭「AI 可见性」禁止工具读取
 - 故事档案：本章摘要、人物状态、设定变动、总账、时间线、待确认冲突，改章自动标记过期
 - TXT 导入（正则拆章、预览后落库）、Markdown / TXT 导出
 
@@ -115,12 +120,12 @@ docs/         功能、架构、模型服务、部署、常见问题、路线图
 
 ```bash
 pnpm typecheck   # tsc --noEmit
-pnpm test        # vitest（153 个用例）
+pnpm test        # vitest（200 个用例）
 pnpm build       # 生产构建
 pnpm db:seed     # 重新生成示例作品（不删用户数据）
 ```
 
-重截文档截图：`node scripts/capture-screenshots.mjs`（自动探测本机 Edge / Chrome）。
+旧版页面截图脚本：`node scripts/capture-screenshots.mjs`（自动探测本机 Edge / Chrome）。新版 Agent、资料弹窗和用量截图见 `docs/screenshots/13–17` 对应文件，须在运行中的写作台验证交互后重截。
 
 ## 技术栈
 
@@ -128,32 +133,40 @@ Next.js 15 · React 19 · TypeScript strict · Tailwind CSS v4 · Tiptap 3 · no
 
 ## 截图
 
+介绍页也可在本地 `/intro` 预览。新版介绍页围绕本地保存、免费自托管、自带 API 和可审阅的 AI 修改展开；写作台演示直接渲染文字，支持切换正文与改动视图。
+
+![介绍页](docs/screenshots/19-public-intro.jpg)
+
 <table>
   <tr>
     <td align="center" width="50%">
-      <img src="docs/screenshots/01-home.png" alt="首页：开始写作、使用帮助与常见问题" width="480" /><br />
-      <sub>首页：开始写作</sub>
+      <img src="docs/screenshots/14-card-editor.jpg" alt="资料编辑弹窗：统一 AI 助手入口、档案排版与居中的保存按钮" width="480" /><br />
+      <sub>资料弹窗：统一 AI 入口</sub>
     </td>
     <td align="center" width="50%">
-      <img src="docs/screenshots/05-outline-blue.png" alt="三级大纲：总纲 / 卷纲 / 章纲" width="480" /><br />
-      <sub>三级大纲</sub>
+      <img src="docs/screenshots/15-usage-details.jpg" alt="底部用量状态行与本次接口费用明细" width="480" /><br />
+      <sub>用量与费用来源</sub>
     </td>
   </tr>
   <tr>
     <td align="center" width="50%">
-      <img src="docs/screenshots/09-editor-dark.png" alt="深色「夜航」主题下的三栏写作台，强调色为浅蓝" width="480" /><br />
-      <sub>深色「夜航」，浅蓝强调</sub>
+      <img src="docs/screenshots/16-agent-dark.jpg" alt="深色夜航主题下的正文、资料与 Agent 改动回执" width="480" /><br />
+      <sub>深色「夜航」写作台</sub>
     </td>
     <td align="center" width="50%">
-      <img src="docs/screenshots/12-settings.png" alt="设置悬浮窗：模型服务、11 家服务商预设与拉取模型列表" width="480" /><br />
-      <sub>设置悬浮窗：模型服务、11 家预设、拉取模型列表</sub>
+      <img src="docs/screenshots/17-card-reference.jpg" alt="从资料弹窗打开 AI 助手，自动引用当前角色" width="480" /><br />
+      <sub>自动 @ 当前资料</sub>
     </td>
   </tr>
 </table>
 
+写作台截图使用独立示例书稿与本地模拟模型；介绍页交互预览使用固定示例数据，演示费用不代表真实服务商价格。
+
 更多截图（书架、设定、故事档案、上下文预算抽屉等）见 [docs/screenshots](docs/screenshots/)。
 
 ## 文档
+
+- [Agent 工作流、改动审阅与用量说明](docs/agent-workflow.md)
 
 - [功能说明](docs/features.md)
 - [架构与数据模型](docs/architecture.md)

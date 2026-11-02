@@ -3,19 +3,18 @@
 /**
  * 世界观设定编辑 Sheet
  * 编辑：GET/PATCH /api/world/[id]；新建：POST /api/world；删除：DELETE /api/world/[id]
- * AI 补全：POST /api/ai/task（feature: world-card）
+ * AI 助手：引用当前资料进入写作台 Agent，弹窗不直接生成或保存。
  */
 import * as React from "react";
 import { Sparkles, Trash2 } from "lucide-react";
-import { Button, ConfirmDialog, Dropdown, Input, Select, Sheet, Switch, useToast } from "@/components/ui/kit";
+import { Button, ConfirmDialog, Select, Sheet, Switch, useToast } from "@/components/ui/kit";
+import { CardEditorDocument, CardEditorHero, CardEditorSection as EditorSection } from "./CardEditorDocument";
 import { FloatWindow } from "@/components/editor/FloatWindow";
-import { handToAssistant, WORLD_HANDOFF_TASKS } from "@/lib/editor/hand-off";
+import { referenceCardInAssistant } from "@/lib/editor/hand-off";
 import { AiTextField, TagsInput, stripChapterNumber, unwrapEntity, useErrorToast } from "@/components/outline/form-kit";
 import { ModelKeyHint } from "@/components/ai/ModelKeyHint";
-import { labeledDraft } from "@/lib/ai/assist-brief";
-import { apiDelete, apiPatch, apiPost, notifyDataChanged, streamAiTask, useApi } from "@/lib/client/api";
-import { parseCardFill } from "@/lib/ai/world-derive";
-import type { AiStreamEvent, WorldCategory, WorldSetting } from "@/lib/types";
+import { apiDelete, apiPatch, apiPost, notifyDataChanged, useApi } from "@/lib/client/api";
+import type { WorldCategory, WorldSetting } from "@/lib/types";
 import { WORLD_CATEGORY_LABEL } from "@/lib/types";
 
 interface WorldDraft {
@@ -58,27 +57,6 @@ function toDraft(setting: WorldSetting): WorldDraft {
   };
 }
 
-/** 编辑区统一的分组卡片（与角色编辑保持一致） */
-function EditorSection({
-  title,
-  hint,
-  children,
-}: {
-  title: string;
-  hint?: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <section className="rounded-lg border border-line bg-surface-2/60 p-3.5">
-      <div className="mb-3">
-        <h3 className="text-[13px] font-semibold text-ink">{title}</h3>
-        {hint ? <p className="mt-0.5 text-[11px] leading-relaxed text-ink-3">{hint}</p> : null}
-      </div>
-      <div className="space-y-3">{children}</div>
-    </section>
-  );
-}
-
 export function WorldEditor({
   open,
   novelId,
@@ -106,15 +84,17 @@ export function WorldEditor({
   const detailApi = useApi<WorldSetting>(open && setting ? `/api/world/${setting.id}` : null);
   const [draft, setDraft] = React.useState<WorldDraft>(() => (setting ? toDraft(setting) : emptyDraft(null)));
   const [saving, setSaving] = React.useState(false);
+  const dirtyRef=React.useRef(false);
+  const baseStampRef=React.useRef(setting?.updatedAt);
   const [deleting, setDeleting] = React.useState(false);
   const [confirmDeleteOpen, setConfirmDeleteOpen] = React.useState(false);
-  const [filling, setFilling] = React.useState(false);
   const [minimized, setMinimized] = React.useState(false);
   const [savedId, setSavedId] = React.useState<string | null>(setting?.id ?? null);
   const nextDraftKey = open ? (setting?.id ?? "new") : "closed";
   const [draftKey, setDraftKey] = React.useState(nextDraftKey);
   if (draftKey !== nextDraftKey) {
     setDraftKey(nextDraftKey);
+    dirtyRef.current=false;baseStampRef.current=setting?.updatedAt;
     if (open) {
       setSavedId(setting?.id ?? null);
       setDraft(setting ? toDraft(setting) : emptyDraft(null));
@@ -127,14 +107,18 @@ export function WorldEditor({
 
   React.useEffect(() => {
     if (!open || !detailStamp || !setting || !detailApi.data || detailApi.data.id !== setting.id) return;
+    if(dirtyRef.current)return;
+    baseStampRef.current=detailApi.data.updatedAt;
     setSavedId(setting.id);
     setDraft(toDraft(detailApi.data));
     // 详情回来后用服务端版本覆盖，避免列表里的摘要比正文旧
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [detailStamp]);
 
-  const update = <K extends keyof WorldDraft>(key: K, value: WorldDraft[K]) =>
-    setDraft((prev) => ({ ...prev, [key]: value }));
+  const update = <K extends keyof WorldDraft>(key: K, value: WorldDraft[K]) => {
+    dirtyRef.current=true;
+    setDraft((prev)=>({...prev,[key]:value}));
+  };
 
   const save = async () => {
     const title = draft.title.trim();
@@ -146,7 +130,7 @@ export function WorldEditor({
     try {
       const payload = { ...draft, title };
       const saved = savedId
-        ? await apiPatch<WorldSetting>(`/api/world/${savedId}`, payload)
+        ? await apiPatch<WorldSetting>(`/api/world/${savedId}`, {...payload,expectedUpdatedAt:baseStampRef.current})
         : await apiPost<WorldSetting>(`/api/world`, { novelId, ...payload });
       const entity = unwrapEntity(saved);
       setSavedId(entity.id);
@@ -178,46 +162,6 @@ export function WorldEditor({
     }
   };
 
-  const fillCard = () => {
-    setFilling(true);
-    let text = "";
-    void streamAiTask(
-      {
-        novelId,
-        feature: "world-card",
-        message: ["这是补全当前卡片。", labeledDraft([
-          { label: "标题", value: draft.title },
-          { label: "摘要", value: draft.summary },
-          { label: "正文", value: draft.content },
-        ])].filter(Boolean).join("\n\n"),
-        instruction:
-          "这是补全当前卡片。只输出 JSON：{\"summary\":\"\",\"content\":\"\"}。只写这一条自己的事实，不要提问，不要把其他地点展开成完整条目。",
-      },
-      {
-        onEvent: (event: AiStreamEvent) => {
-          if (event.type === "delta") text += event.text;
-        },
-      },
-    )
-      .then(() => {
-        const fill = parseCardFill(text);
-        if (!fill) {
-          toast({ title: "没有填进卡片", description: "生成结果不是这张卡的摘要和正文。", tone: "error" });
-          return;
-        }
-        setDraft((prev) => ({
-          ...prev,
-          summary: fill.summary || prev.summary,
-          content: fill.content || prev.content,
-        }));
-        toast({ title: "已填入当前卡片", description: "还没保存。确认后点保存才会写入。", tone: "success" });
-      })
-      .catch((err: unknown) => {
-        toast({ title: "补全失败", description: err instanceof Error ? err.message : "请稍后再试", tone: "error" });
-      })
-      .finally(() => setFilling(false));
-  };
-
   const parentOptions = [
     { value: "", label: "无（顶层设定）" },
     ...settings
@@ -234,28 +178,19 @@ export function WorldEditor({
     })),
   ];
 
-  const displayTitle = draft.title.trim() || "未命名设定";
-  const initial = displayTitle.slice(0, 1);
   const subtitle = [WORLD_CATEGORY_LABEL[draft.category], parentTitle ? `属于「${parentTitle}」` : "顶层设定"]
     .filter(Boolean)
     .join(" · ");
 
-  const giveToAssistant = (task: (typeof WORLD_HANDOFF_TASKS)[number]) => {
-    const label = draft.title.trim() || "新设定";
-    const material = [draft.summary, draft.content].map((part) => part.trim()).filter(Boolean).join("\n\n");
-    handToAssistant({
-      reference: savedId ? { type: "world", id: savedId, label } : null,
-      taskId: task.id,
-      taskLabel: `${task.label} · ${label}`,
-      prompt: material ? `${task.prompt}\n\n【当前材料】\n${material}` : task.prompt,
-    });
-    if (presentation === "float") setMinimized(true);
+  const openAssistant = () => {
+    referenceCardInAssistant("world",savedId,draft.title.trim()||"新设定",{...draft});
+    if(presentation==="float")setMinimized(true);
   };
 
   const footer = (
-        <div className="flex items-center gap-2 [&_a:focus-visible]:outline-none [&_a:focus-visible]:ring-2 [&_a:focus-visible]:ring-accent/60 [&_button:focus-visible]:outline-none [&_button:focus-visible]:ring-2 [&_button:focus-visible]:ring-accent/60">
+        <div className="card-editor-actions flex items-center gap-2 [&_a:focus-visible]:outline-none [&_a:focus-visible]:ring-2 [&_a:focus-visible]:ring-accent/60 [&_button:focus-visible]:outline-none [&_button:focus-visible]:ring-2 [&_button:focus-visible]:ring-accent/60">
           {editing ? (
-            <Button variant="danger" size="sm" icon={<Trash2 className="size-3.5" />} onClick={() => setConfirmDeleteOpen(true)}>
+            <Button variant="ghost" className="text-ink-4 hover:text-danger" size="sm" icon={<Trash2 className="size-3.5" />} onClick={() => setConfirmDeleteOpen(true)}>
               删除
             </Button>
           ) : null}
@@ -263,7 +198,7 @@ export function WorldEditor({
             <Button variant="ghost" size="sm" onClick={onClose}>
               取消
             </Button>
-            <Button variant="primary" size="sm" loading={saving} onClick={save}>
+            <Button variant="primary" className="min-w-20 bg-accent text-accent-ink hover:bg-accent-hover" size="sm" loading={saving} onClick={save}>
               {editing ? "保存" : "创建设定"}
             </Button>
           </div>
@@ -272,79 +207,20 @@ export function WorldEditor({
 
   const body = (
     <>
-      <div className="space-y-3.5 p-4 [&_a:focus-visible]:outline-none [&_a:focus-visible]:ring-2 [&_a:focus-visible]:ring-accent/60 [&_button:focus-visible]:outline-none [&_button:focus-visible]:ring-2 [&_button:focus-visible]:ring-accent/60">
-        {/* 概览条：标题 / 分类与层级 + AI 补全入口 */}
-        <div className="rounded-lg border border-line bg-surface-2 px-3.5 py-3">
-          <div className="flex items-center gap-3">
-            <span
-              className="flex size-10 shrink-0 items-center justify-center rounded-full bg-jade-soft font-serif text-[16px] font-semibold text-jade"
-              aria-hidden
-            >
-              {initial}
-            </span>
-            <div className="min-w-0 flex-1">
-              <p className="truncate text-[14px] font-medium text-ink">{displayTitle}</p>
-              <p className="mt-0.5 truncate text-[11.5px] text-ink-3">{subtitle}</p>
-            </div>
-          </div>
-          <div className="mt-3 flex flex-wrap items-center gap-1 border-t border-line pt-3">
-            <Button
-              variant="ghost"
-              size="sm"
-              className="text-accent hover:bg-accent-soft"
-              icon={<Sparkles className="size-3.5" />}
-              loading={filling}
-              onClick={fillCard}
-            >
-              补全这张卡
-            </Button>
-            {presentation === "float" ? (
-              <Dropdown
-                trigger={
-                  <Button variant="ghost" size="sm">
-                    交给助手
-                  </Button>
-                }
-                items={WORLD_HANDOFF_TASKS.map((task) => ({
-                  label: task.label,
-                  onSelect: () => giveToAssistant(task),
-                }))}
-              />
-            ) : null}
-          </div>
-        </div>
-
-        {presentation === "float" ? (
-          <p className="text-[12px] leading-5 text-ink-3">交给助手会把这张卡和任务填进右侧输入框，你改完再发送。</p>
-        ) : null}
+      <CardEditorDocument key={`${open}:${savedId??"new"}`}>
+        <CardEditorHero kind="设定" value={draft.title} onChange={value=>update("title",value)} subtitle={subtitle} actions={<Button variant="ghost" size="sm" className="font-semibold text-[#315b80] hover:bg-[#315b80]/[0.07] hover:text-[#20496e] dark:text-[#9dc4e7] dark:hover:bg-[#9dc4e7]/10 dark:hover:text-[#c1dbee]" icon={<Sparkles className="size-3.5"/>} onClick={openAssistant}>AI 助手</Button>}/>
         <ModelKeyHint />
 
         <EditorSection title="基本信息" hint="先给这条设定一个能搜到的名字与归属，AI 会按分类理解它的约束力。">
-          <div className="grid gap-3 sm:grid-cols-2">
-            <Input
-              label="标题"
-              value={draft.title}
-              placeholder="如：渡口、潮信"
-              onChange={(event) => update("title", event.target.value)}
-            />
-            <Select
-              label="分类"
-              value={draft.category}
-              onChange={(event) => update("category", event.target.value as WorldCategory)}
-              options={Object.entries(WORLD_CATEGORY_LABEL).map(([value, label]) => ({ value, label }))}
-            />
+          <div className="grid gap-4 sm:grid-cols-2">
+            <Select label="分类" value={draft.category} onChange={event=>update("category",event.target.value as WorldCategory)} options={Object.entries(WORLD_CATEGORY_LABEL).map(([value,label])=>({value,label}))}/>
+            <Select label="归属" value={draft.parentId??""} onChange={event=>update("parentId",event.target.value||null)} options={parentOptions}/>
           </div>
-          <Select
-            label="父节点"
-            value={draft.parentId ?? ""}
-            onChange={(event) => update("parentId", event.target.value || null)}
-            options={parentOptions}
-            hint="用来表达设定之间的层级关系，子设定会跟随父设定一起被 AI 理解。"
-          />
         </EditorSection>
 
         <EditorSection title="摘要" hint="一两句话说清核心，AI 在压缩上下文时会优先保留这一段。">
           <AiTextField
+            ai={false}
             label="摘要"
             field="设定摘要"
             feature="world-card"
@@ -358,6 +234,7 @@ export function WorldEditor({
 
         <EditorSection title="正文" hint="规则、限制、代价、已发生的事件——越具体，AI 写得越稳。">
           <AiTextField
+            ai={false}
             label="正文"
             field="设定正文"
             feature="world-card"
@@ -391,7 +268,7 @@ export function WorldEditor({
         </EditorSection>
 
         {detailApi.loading ? <p className="text-[11px] text-ink-3">正在获取设定最新详情…</p> : null}
-      </div>
+      </CardEditorDocument>
 
       <ConfirmDialog
         open={confirmDeleteOpen}
@@ -414,7 +291,7 @@ export function WorldEditor({
         minimized={minimized}
         onMinimizedChange={setMinimized}
         onClose={onClose}
-        className={confirmDeleteOpen ? "z-40" : undefined}
+        className={confirmDeleteOpen ? "card-editor-window z-40" : "card-editor-window"}
         footer={footer}
       >
         {body}

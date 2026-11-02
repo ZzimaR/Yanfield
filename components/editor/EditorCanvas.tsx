@@ -18,6 +18,8 @@ import { StatusMenu } from "./StatusMenu";
 import { SelectionToolbar } from "./SelectionToolbar";
 import { FindReplaceBar } from "./FindReplaceBar";
 import { FormatToolbar } from "./FormatToolbar";
+import { AgentReview } from "./AgentReview";
+import type { AgentRun } from "@/lib/ai/agent/types";
 import { EditorStatusBar } from "./EditorStatusBar";
 
 interface EditorCanvasProps {
@@ -56,6 +58,8 @@ interface EditorCanvasProps {
   onExitImmersive: () => void;
   /** 正文顶部的 AI 快捷任务条插槽（由上层注入，保持本组件与 AI 解耦） */
   aiBar?: React.ReactNode;
+  review?: {run:AgentRun;changeId:string}|null;
+  onCloseReview?:()=>void;
 }
 
 const EMPTY_SELECTION: SelectionInfo = { text: "", from: 0, to: 0, empty: true };
@@ -145,6 +149,8 @@ export function EditorCanvas(props: EditorCanvasProps) {
     onAskAi,
     onExitImmersive,
     aiBar,
+    review,
+    onCloseReview,
   } = props;
 
   // 最新 props 放 ref，供编辑器事件回调读取，避免 useEditor 闭包过期
@@ -376,6 +382,7 @@ export function EditorCanvas(props: EditorCanvasProps) {
         >
           <input
             value={title}
+            disabled={Boolean(review)}
             onChange={(event) => onTitleChange(event.target.value)}
             placeholder="未命名章节"
             aria-label="章节标题"
@@ -417,7 +424,10 @@ export function EditorCanvas(props: EditorCanvasProps) {
           ) : null}
 
           {editor ? (
-            <EditorContent editor={editor} />
+            <>
+              {review?<AgentReview key={review.changeId} initial={review.run} changeId={review.changeId} onClose={onCloseReview||(()=>{})}/>:null}
+              <div className={review?"hidden":""}><EditorContent editor={editor} /></div>
+            </>
           ) : (
             <div className="space-y-2.5 pt-2">
               <Skeleton className="h-4 w-full" />

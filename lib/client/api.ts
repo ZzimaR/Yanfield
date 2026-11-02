@@ -171,6 +171,10 @@ export function streamAiChat(req: AiChatRequest, handlers: StreamHandlers): Prom
   }).then((res) => consumeSse(res, handlers));
 }
 
+export function streamAiAgent(req: import("@/lib/ai/agent/types").AgentRequest, handlers: StreamHandlers): Promise<void> {
+  return fetch("/api/ai/agent", {method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(req),signal:handlers.signal}).then(res=>consumeSse(res,handlers));
+}
+
 export function streamAiCodex(
   req: { novelId: string; message: string; history?: CodexTurn[]; draft?: CodexItem[]; contextText?: string },
   handlers: StreamHandlers,

@@ -1,134 +1,56 @@
-import { ArrowRight, BookOpenText, Eye, FileDiff, Layers, ListTree, Users } from "lucide-react";
-import editorPreview from "../../docs/screenshots/03-editor-blue.png";
+import { ArrowDown, ArrowRight, Check, CornerDownRight, KeyRound, LockKeyhole, Monitor, MoveUpRight } from "lucide-react";
 import { InkstoneMark } from "@/components/brand/InkstoneMark";
-import { FAQ } from "./FAQ";
 import { GitHubMark } from "./GitHubMark";
-import { HowItWorks } from "./HowItWorks";
 import { ThemeToggle } from "./ThemeToggle";
 import { GITHUB_URL } from "./constants";
+import { WorkspacePreview, MaterialDocumentPreview } from "./WorkspacePreview";
+import { LandingReview } from "./LandingReview";
+import styles from "./PublicIntro.module.css";
 
-const FEATURES = [
-  {
-    icon: BookOpenText,
-    title: "三栏写作",
-    detail: "左边是目录、章纲、设定和档案，中间写正文，右边是助手。查、写、改都在同一屏。",
-  },
-  {
-    icon: FileDiff,
-    title: "改动先给你看",
-    detail: "AI 不会直接改稿。每一段差异单独列出，接受、拒绝，或只留下其中一块。",
-  },
-  {
-    icon: ListTree,
-    title: "书、卷、章三层大纲",
-    detail: "先定全书主线，再拆卷和章。写的时候能回到这一章要完成的事。",
-  },
-  {
-    icon: Eye,
-    title: "设定全知，标注揭示",
-    detail: "AI 能看到全部设定来保证前后一致；还没写到的人物与线索会被标注「尚未揭示」，只用来埋伏笔，不会提前说破。",
-  },
-  {
-    icon: Layers,
-    title: "故事档案",
-    detail: "每章记下人物状态、设定变化和时间线。长篇写久了，用来对一下有没有写崩。",
-  },
-  {
-    icon: Users,
-    title: "模型随你换",
-    detail: "DeepSeek、通义、Kimi，或本机的模型都能接。稿子存在你自己的电脑里。",
-  },
-] as const;
+const FAQS=[
+  ["免费，具体指什么？","砚田软件可免费用于非商业用途，自托管不收订阅费，也不按字数收费。接入云端 AI 的费用由你选择的服务商收取；使用自己的本地模型则无需购买砚田的 AI 积分。源码公开，使用与分发遵循 PolyForm Noncommercial 1.0.0。"],
+  ["我的稿子真的留在本地吗？","书稿、资料和对话默认保存在运行砚田的那台电脑或自有服务器上。砚田没有自有的稿件云端，也没有遥测。调用云端模型时，完成任务所需的上下文会发送给你配置的模型服务商；可以在写作台查看和调整资料范围。"],
+  ["可以用哪些 API？","支持 OpenAI 兼容接口，以及 Anthropic、Gemini。DeepSeek、通义、Kimi、智谱、OpenRouter 等可以直接配置，也可以连接 Ollama 或兼容接口的本地模型。API Key 由你自行管理，请求从你的部署环境发往所选服务商。"],
+  ["AI 会直接覆盖我写的东西吗？","生成结果先进入待确认清单。正文在写作区对比，逐处保留或还原；资料可以逐项、逐字段确认。点击应用才写入，之后可以撤回。若应用后又有编辑，撤回会先检查版本，避免覆盖后续修改。"],
+  ["这个网站可以直接写作吗？","这里是产品介绍。请从 GitHub 获取项目，在自己的电脑或服务器运行；不需要注册砚田账号。首次启动会创建示例书稿，基础写作离线可用，多步 AI 助手需要配置实际模型。"],
+];
 
-/** 给 yanfield.com 看的介绍页。本机预览在 /intro，不会代替写作台首页。 */
 export function PublicIntro() {
-  const previewSrc = typeof editorPreview === "string" ? editorPreview : editorPreview.src;
-
-  return (
-    <div className="min-h-dvh bg-paper text-ink">
-      <header className="sticky top-0 z-20 border-b border-line bg-paper/90 backdrop-blur">
-        <div className="mx-auto flex h-14 w-full max-w-5xl items-center justify-between px-4 sm:px-6">
-          <a href="#top" className="flex items-center gap-2">
-            <InkstoneMark className="size-7" />
-            <span className="font-serif text-[16px] tracking-[0.12em]">砚田</span>
-          </a>
-          <nav className="flex items-center gap-1 text-[13px] text-ink-2" aria-label="介绍页导航">
-            <a href="#features" className="rounded-sm px-2 py-1 hover:text-ink">
-              功能
-            </a>
-            <a href="#how" className="rounded-sm px-2 py-1 hover:text-ink">
-              安装
-            </a>
-            <a href="#faq" className="hidden rounded-sm px-2 py-1 hover:text-ink sm:inline">
-              常见问题
-            </a>
-            <a href={GITHUB_URL} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 rounded-sm px-2 py-1 hover:text-ink">
-              <GitHubMark className="size-3.5" />
-              源码
-            </a>
-            <ThemeToggle />
-          </nav>
+  return <div className={styles.page} id="top">
+    <header className={styles.header}><div className={styles.navInner}>
+      <a href="#top" className={styles.brand} aria-label="砚田首页"><InkstoneMark className="size-8"/><span>砚田<span className={styles.brandEnglish}>YANFIELD</span></span></a>
+      <nav aria-label="介绍页导航"><a href="#workspace">写作台</a><a href="#privacy">隐私</a><a href="#start">开始使用</a><ThemeToggle/><a href={GITHUB_URL} className={styles.sourceLink} target="_blank" rel="noreferrer"><GitHubMark className="size-4"/><span>GitHub</span><MoveUpRight className="size-3"/></a></nav>
+    </div></header>
+    <main>
+      <section className={`${styles.container} ${styles.hero}`}>
+        <div className={styles.heroCopy}><p className={styles.eyebrow}><span/>本地优先的 AI 小说工作台</p>
+          <h1>故事归你。<br/>写作，<span>也由你做主。</span></h1>
+          <p className={styles.heroDescription}>把长篇的正文、人物和伏笔放在一张写作台上。<br className={styles.desktopBreak}/>让 AI 动手改稿，让每一次取舍留在你手里。</p>
+          <div className={styles.heroActions}><a href="#start" className={styles.primary}>免费部署，开始写作<ArrowRight className="size-4"/></a><a href="#workspace" className={styles.textLink}>先看看它怎么写<ArrowDown className="size-3.5"/></a></div>
+          <p className={styles.heroNote}>无需账号 · 自带 API · 非商业用途免费</p>
         </div>
-      </header>
-
-      <main id="top">
-        <section className="mx-auto w-full max-w-5xl px-4 pb-4 pt-14 sm:px-6 sm:pt-20">
-          <h1 className="max-w-3xl font-serif text-[40px] leading-[1.15] text-ink sm:text-[56px]">
-            把 AI 请进书房，
-            <br />
-            写完<span className="text-accent">这一本长篇</span>
-          </h1>
-          <p className="mt-5 max-w-xl text-[15px] leading-8 text-ink-2">
-            砚田是装在你自己电脑上的小说工作台。目录、正文和助手在同一屏，改动要你点头才落笔。
-          </p>
-          <div className="mt-8 flex flex-col gap-3 sm:flex-row">
-            <a
-              href="#features"
-              className="inline-flex h-11 items-center justify-center gap-2 rounded-md bg-accent px-5 text-[15px] font-medium text-accent-ink hover:bg-accent-hover"
-            >
-              先看功能
-              <ArrowRight className="size-4" aria-hidden />
-            </a>
-            <a
-              href={GITHUB_URL}
-              target="_blank"
-              rel="noreferrer"
-              className="inline-flex h-11 items-center justify-center gap-2 rounded-md border border-line bg-surface px-5 text-[15px] text-ink hover:bg-surface-2"
-            >
-              <GitHubMark className="size-4" />
-              看源码
-            </a>
-          </div>
-        </section>
-
-        <section id="features" className="mx-auto w-full max-w-5xl px-4 py-12 sm:px-6 sm:py-16">
-          <h2 className="font-serif text-[28px] text-ink sm:text-[34px]">写作时实际会用到的</h2>
-          <p className="mt-2 max-w-xl text-[14px] leading-7 text-ink-3">下面这张是写作台本身，不是示意图。</p>
-          <figure className="mt-6 overflow-hidden rounded-xl border border-line bg-surface shadow-paper">
-            <img src={previewSrc} alt="砚田写作台：左侧目录，中间正文，右侧 AI 助手" className="w-full" />
-          </figure>
-          <ul className="mt-6 grid gap-3 sm:grid-cols-2">
-            {FEATURES.map(({ icon: Icon, title, detail }) => (
-              <li key={title} className="flex gap-3 rounded-lg border border-line bg-surface px-4 py-3.5">
-                <span className="mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-md bg-accent-soft text-accent">
-                  <Icon className="size-4" aria-hidden />
-                </span>
-                <span>
-                  <span className="block text-[14.5px] font-medium text-ink">{title}</span>
-                  <span className="mt-1 block text-[13px] leading-6 text-ink-3">{detail}</span>
-                </span>
-              </li>
-            ))}
-          </ul>
-        </section>
-
-        <section className="border-t border-line">
-          <div className="mx-auto w-full max-w-5xl px-4 py-12 sm:px-6 sm:py-16">
-            <HowItWorks compact />
-            <FAQ compact />
-          </div>
-        </section>
-      </main>
-    </div>
-  );
+        <div className={styles.heroDemo}><div className={styles.demoMargin}>给作者的最后一票</div><LandingReview/><span className={styles.demoCaption}><CornerDownRight className="size-3.5"/>AI 提出修改，你决定留下什么。</span></div>
+      </section>
+      <section className={`${styles.container} ${styles.principles}`} aria-label="砚田的四个特点">
+        {[["01","稿子自己保管","保存在自己的电脑或服务器。"],["02","软件免费使用","非商业自托管，无订阅费。"],["03","模型自己选择","接你的 API，也支持本地模型。"],["04","改动自己确认","逐处审阅，点头后才写入。"]].map(([no,title,detail])=><div key={no}><span className={styles.number}>{no}</span><h2>{title}</h2><p>{detail}</p></div>)}
+      </section>
+      <section id="workspace" className={`${styles.container} ${styles.workspace}`}>
+        <div className={styles.sectionTop}><div><p className={styles.eyebrow}>一张桌子，装下整本小说</p><h2>从第一句，到最后一次改稿。</h2></div><p>查资料不必离开正文。<br/>写到哪里，助手就陪你工作到哪里。</p></div>
+        <figure className={styles.productFrame}><div className={styles.frameBar}><span className={styles.frameDots}><i/><i/><i/></span><span>砚田 · 写作台</span><span><LockKeyhole className="size-3"/>本地书稿</span></div><WorkspacePreview/><figcaption>可交互的写作台预览 · 示例数据，所有操作仅在本页演示</figcaption></figure>
+        <div className={styles.workflowGrid}>
+          <article><span className={styles.smallIndex}>01 / 阅读</span><h3>先读懂这本书。</h3><p>按需读取前文、章纲、人物和设定。你可以 @ 指定材料，也可以调整上下文范围，省去反复复制粘贴。</p></article>
+          <article><span className={styles.smallIndex}>02 / 执行</span><h3>会动手的写作助手。</h3><p>续写、改稿、补章纲、整理资料卡，放在一条任务里完成。过程和引用可展开查看，生成后先列出改动。</p></article>
+          <article><span className={styles.smallIndex}>03 / 审阅</span><h3>像改代码一样改小说。</h3><p>新增、删除直接标在正文里。每一处都能保留或还原；资料按字段对比，确认后一起写入，也能撤回。</p></article>
+        </div>
+      </section>
+      <section id="privacy" className={styles.privacy}><div className={`${styles.container} ${styles.privacyInner}`}>
+        <div><p className={styles.eyebrow}>你的书房，你的规则</p><h2>写了十万字，<br/>也不用把稿子交给平台保管。</h2><p className={styles.privacyLead}>不用把作品绑在一个账号里，也不用为了换模型搬走整本书。砚田负责把工具做好，书稿和选择权留给你。</p><a href={`${GITHUB_URL}/blob/main/README.md`} target="_blank" rel="noreferrer" className={styles.privacyLink}>源码公开，欢迎检查<MoveUpRight className="size-3.5"/></a></div>
+        <div className={styles.dataFlow}><div className={styles.localNode}><Monitor className="size-5"/><span><strong>你的部署环境</strong><small>书稿 · 人物 · 设定 · 对话 · API 配置</small></span><span className={styles.localTag}>本地保存</span></div><div className={styles.flowLine}><span>仅在调用时发送选取的上下文</span><ArrowDown className="size-4"/></div><div className={styles.remoteNode}><KeyRound className="size-5"/><span><strong>你选择的模型</strong><small>自己的 API，或自己的本地模型</small></span></div><p>“本地保存”不等于云端模型不接收内容。使用云端 API 时，所选上下文会交给该服务商；连接本地模型可让内容留在自己的设备上。</p></div>
+      </div></section>
+      <section className={`${styles.container} ${styles.materials}`}><div className={styles.materialCopy}><p className={styles.eyebrow}>灵感也有地方安放</p><h2>写得越长，<br/>越需要一份好记性。</h2><p>人物的目标、世界的规矩、还没回收的伏笔，不该散落在聊天记录里。</p><ul>{["角色、世界观与伏笔，分别整理成卡","总纲、卷纲、章纲，随时回到故事主线","逐章故事档案，追踪状态和时间线","已有 TXT 导入，Markdown / TXT 导出"].map(s=><li key={s}><Check className="size-3.5"/>{s}</li>)}</ul></div><figure className={styles.cardFigure}><MaterialDocumentPreview/><figcaption>资料可直接编辑，也可以交给助手一起整理。</figcaption></figure></section>
+      <section id="start" className={styles.install}><div className={`${styles.container} ${styles.installInner}`}><div><p className={styles.eyebrow}>给故事一个自己的地方</p><h2>装好，接上模型。<br/>下一句，就从这里开始。</h2><p>需要 Node.js ≥ 22.13 和 pnpm。首次启动自动创建数据库，无需另外配置数据库服务。</p><div className={styles.heroActions}><a href={GITHUB_URL} target="_blank" rel="noreferrer" className={styles.primary}><GitHubMark className="size-4"/>获取项目<MoveUpRight className="size-3.5"/></a><a href={`${GITHUB_URL}/blob/main/docs/deploy.md`} target="_blank" rel="noreferrer" className={styles.textLink}>部署文档<ArrowRight className="size-3.5"/></a></div></div><div className={styles.terminal}><div><span>本地开始 / TERMINAL</span><span>01—04</span></div><pre><code><span>git clone</span> https://github.com/ZzimaR/Yanfield.git{"\n"}<span>cd</span> Yanfield{"\n"}<span>pnpm</span> install{"\n"}<span>pnpm</span> dev</code></pre><p>打开 http://127.0.0.1:3000，在设置中添加自己的 API。</p></div></div></section>
+      <section id="faq" className={`${styles.container} ${styles.faq}`}><div><p className={styles.eyebrow}>开始之前</p><h2>把话说清楚。</h2><p>关于免费、隐私，还有 AI。</p></div><div>{FAQS.map(([q,a])=><details key={q}><summary>{q}<span>+</span></summary><p>{a}</p></details>)}</div></section>
+    </main>
+    <footer className={`${styles.container} ${styles.footer}`}><a href="#top" className={styles.brand}><InkstoneMark className="size-7"/><span>砚田</span></a><p>写作的工具，故事的自由。<small>开发中 · 源码公开 · 非商业用途免费</small></p><a href={GITHUB_URL} target="_blank" rel="noreferrer">在 GitHub 上一起改进<MoveUpRight className="size-3"/></a></footer>
+  </div>;
 }

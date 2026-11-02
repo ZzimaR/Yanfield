@@ -85,7 +85,7 @@ export function ChatComposer({
   disabled = false,
   novelId,
   chapterId,
-  placeholder = "输入要求，/ 选技能，@ 引用资料…",
+  placeholder = "说说想写什么，或选一段文字交给我…",
   onOpenContext,
   agentName,
   onOpenAgent,
@@ -295,7 +295,7 @@ export function ChatComposer({
   const selectionLength = selectionText.trim().length;
 
   return (
-    <div className={cn("relative border-t border-line bg-surface px-2.5 pb-2.5 pt-2", className)}>
+    <div className={cn("relative border-t border-line/60 bg-surface px-4 pb-4 pt-3", className)}>
       {mention.open ? (
         <MentionPicker
           novelId={novelId}
@@ -352,7 +352,7 @@ export function ChatComposer({
         </div>
       ) : null}
 
-      <div className="rounded-md border border-line bg-surface-2/60 px-2 py-1.5 transition-colors duration-150 focus-within:border-accent/50 focus-within:ring-2 focus-within:ring-accent/10 dark:bg-surface-2">
+      <div className="rounded-2xl border border-line-strong/70 bg-paper/45 px-3 py-2.5 shadow-[0_3px_16px_-12px_rgba(32,29,24,0.15)] transition-colors duration-150 focus-within:border-jade/45 focus-within:ring-2 focus-within:ring-jade/5 dark:bg-paper/50">
         {task ? (
           <div className="mb-1.5 flex flex-wrap gap-1">
             <span className="inline-flex max-w-full items-center gap-1 rounded-md border border-line bg-paper px-2 py-0.5 text-[11px] text-ink-2">
@@ -366,12 +366,7 @@ export function ChatComposer({
           </div>
         ) : null}
         <div className="mb-1 flex items-center justify-between gap-2">
-          <Segmented
-            size="sm"
-            options={MODE_OPTIONS}
-            value={mode}
-            onChange={(next) => handleModeChange(next as PanelMode)}
-          />
+          <button type="button" className="flex items-center gap-1.5 rounded-md px-1 py-1 text-[11px] text-ink-3 transition-colors hover:text-jade" onClick={()=>handleModeChange(mode==="skill"?"chat":"skill")} aria-expanded={mode==="skill"}><Sparkles className="size-3"/>技能</button>
           {selectionLength > 0 ? (
             <span className="min-w-0 truncate text-[10.5px] text-jade" title={selectionText}>
               将引用选中正文 · {selectionLength} 字
@@ -462,7 +457,7 @@ export function ChatComposer({
           onSelect={(event) => detectMention(event.currentTarget)}
           placeholder={placeholder}
           aria-label="输入消息"
-          className="scroll-thin block max-h-[180px] w-full resize-none bg-transparent px-0.5 py-1 text-[13.5px] leading-6 text-ink outline-none placeholder:text-ink-4 dark:placeholder:text-ink-3"
+          className="scroll-thin block min-h-[72px] max-h-[180px] w-full resize-none bg-transparent px-0.5 py-1 text-[13.5px] leading-6 text-ink outline-none placeholder:text-ink-4 dark:placeholder:text-ink-3"
         />
 
         <div className="mt-1 flex min-w-0 items-center gap-1">
@@ -475,24 +470,14 @@ export function ChatComposer({
               <Gauge className="size-3.5" />
             </IconButton>
           ) : null}
-          <span
-            className="ml-auto hidden items-center gap-1 text-[10.5px] text-ink-4 sm:flex dark:text-ink-3"
-            title="Enter 发送，Shift + Enter 换行"
-          >
-            <Kbd>Enter</Kbd>
-            <span>发送</span>
-            <span className="text-ink-4/60">·</span>
-            <Kbd>⇧</Kbd>
-            <Kbd>Enter</Kbd>
-            <span>换行</span>
-          </span>
+          <span className="flex-1"/>
           {streaming ? (
             <Button
               variant="danger"
               size="sm"
               icon={<Square className="size-3" />}
               onClick={onStop}
-              className="ml-1 shrink-0 whitespace-nowrap"
+              className="ml-1 min-h-8 shrink-0 justify-center whitespace-nowrap rounded-xl px-3 shadow-none"
             >
               停止
             </Button>
@@ -503,7 +488,7 @@ export function ChatComposer({
               icon={<Send className="size-3" />}
               onClick={onSend}
               disabled={disabled || !value.trim()}
-              className="ml-1 shrink-0 whitespace-nowrap"
+              className="ml-1 min-h-8 shrink-0 justify-center whitespace-nowrap rounded-xl px-3 shadow-none"
             >
               发送
             </Button>

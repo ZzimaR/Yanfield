@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { ApiError, apiDelete, apiGet, apiPatch, apiPost } from "@/lib/client/api";
+import { ApiError, apiDelete, apiGet, apiPatch, apiPost, useDataChanged } from "@/lib/client/api";
 import type { Chapter, Volume } from "@/lib/types";
 import type { MoveTarget, NovelTree, TreeActions, TreeVolume } from "./types";
 
@@ -88,6 +88,8 @@ export function useNovelTree({ novelId, onError, onSuccess }: UseNovelTreeOption
   React.useEffect(() => {
     void load();
   }, [load]);
+
+  useDataChanged(()=>{void load(true);},["agent"]);
 
   /** 单章本地乐观更新（保存成功、重命名后同步树，避免整树刷新打断编辑） */
   const patchChapterLocal = React.useCallback((chapterId: string, patch: Partial<Chapter>): void => {

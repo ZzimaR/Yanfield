@@ -328,6 +328,7 @@ export function toRequestMentions(mentions: MentionRef[]): MentionRef[] {
 /* ---------------- AI Action ---------------- */
 
 export const ACTION_LABEL: Record<AiAction["type"], string> = {
+  "agent-run": "任务与改动",
   insert: "插入正文",
   append: "追加到末尾",
   "replace-selection": "替换选中",

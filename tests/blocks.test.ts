@@ -212,6 +212,12 @@ describe("applyBlockDiff", () => {
 });
 
 describe("diffTextLines", () => {
+  it("整段改写后多出的段落保持在替换段落之后", () => {
+    const before="<p>原开头</p><p>原结尾</p>";
+    const after="<p>新开头</p><p>新中段</p><p>新结尾</p>";
+    const diff=diffBlocks(before,after);
+    expect(applyBlockDiff(before,diff,diff.items.map(c=>c.id))).toBe(after);
+  });
   it("逐行比较并标出增删", () => {
     expect(diffTextLines("第一行\n第二行", "第一行\n第三行")).toEqual([
       { type: "same", text: "第一行" },

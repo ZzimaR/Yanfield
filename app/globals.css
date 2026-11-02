@@ -19,9 +19,9 @@
   --ink-4: #b3aa9a;
   --line: #e2d9c7;
   --line-strong: #d3c7b0;
-  --accent: #3a94e0;
-  --accent-hover: #2b82cb;
-  --accent-soft: #e5f3fc;
+  --accent: #366b9a;
+  --accent-hover: #28557e;
+  --accent-soft: #e6edf4;
   --accent-ink: #ffffff;
   --jade: #2f5d62;
   --jade-soft: #dfeae8;
@@ -56,10 +56,10 @@
   --ink-4: #756f62;
   --line: #343841;
   --line-strong: #454a55;
-  --accent: #8ecaf8;
-  --accent-hover: #a9d7fb;
-  --accent-soft: #173044;
-  --accent-ink: #082033;
+  --accent: #9dc4e7;
+  --accent-hover: #bad8f0;
+  --accent-soft: #23394c;
+  --accent-ink: #102333;
   --jade: #8cc4bc;
   --jade-soft: #1f3130;
   --gold: #e0b25a;
@@ -432,3 +432,37 @@ html[data-prose-font="sans"] .prose-paper {
     transition-duration: 0.001ms !important;
   }
 }
+
+/* Writing assistant: quiet ink-blue controls on warm paper. Scoped to the writing flow. */
+.ai-surface {
+  --accent: #315b80;
+  --accent-hover: #254866;
+  --accent-soft: #e5edf4;
+  --accent-ink: #fffdf7;
+}
+[data-theme="dark"] .ai-surface {
+  --accent: #9dc4e7;
+  --accent-hover: #bad8f0;
+  --accent-soft: #23394c;
+  --accent-ink: #102333;
+}
+.ai-surface input[type="checkbox"] { accent-color: var(--accent); }
+.ai-surface summary::marker { color: var(--ink-3); font-size: 9px; }
+
+/* Card dialogs read like editable documents, with form controls kept quiet. */
+.card-editor-window, .card-editor-actions, .card-document { --accent: #315b80; --accent-hover: #254866; --accent-soft: #e5edf4; --accent-ink: #fffdf7; }
+[data-theme="dark"] :is(.card-editor-window, .card-editor-actions, .card-document) { --accent: #9dc4e7; --accent-hover: #bad8f0; --accent-soft: #23394c; --accent-ink: #102333; }
+.card-document { color: var(--ink); }
+.card-document input:not(.card-document-title),
+.card-document textarea,
+.card-document button[aria-haspopup="listbox"] {
+  border-radius: 3px; border: 0; border-bottom: 1px solid var(--line);
+  background: transparent; box-shadow: none; padding-left: 0; padding-right: 0;
+}
+.card-document textarea { font-family: var(--font-serif); font-size: 14px; line-height: 1.95; padding-top: 6px; }
+.card-document input:not(.card-document-title):focus,
+.card-document textarea:focus,
+.card-document button[aria-haspopup="listbox"]:focus-visible { border-bottom-color: var(--accent); outline: none; box-shadow: 0 1px 0 var(--accent); }
+.card-document-title:focus { box-shadow: 0 1px 0 var(--accent); }
+.card-document-section label { font-size: 11px; color: var(--ink-3); font-weight: 400; }
+.card-document-section textarea::placeholder { color: var(--ink-4); font-size: 12px; }

@@ -57,7 +57,7 @@ export function Button({
       type="button"
       disabled={disabled || loading}
       className={cn(
-        "inline-flex select-none items-center font-medium transition-all duration-200 outline-none",
+        "inline-flex select-none items-center justify-center font-medium transition-all duration-200 outline-none",
         "disabled:cursor-not-allowed disabled:opacity-60",
         buttonVariants[variant],
         buttonSizes[size],
@@ -662,12 +662,12 @@ export function Tooltip({
                   ? "right-full top-1/2 mr-2 -translate-y-1/2"
                   : "left-full top-1/2 ml-2 -translate-y-1/2";
   return (
-    <span className="group relative inline-flex">
-      {children}
+    <span className="group/tooltip relative inline-flex">
+      {React.isValidElement<{title?:string}>(children)?React.cloneElement(children,{title:undefined}):children}
       <span
         role="tooltip"
         className={cn(
-          "pointer-events-none absolute z-[80] hidden rounded-md border border-line bg-surface px-2.5 py-1.5 text-[11px] text-ink-2 shadow-float group-hover:block",
+          "pointer-events-none absolute z-[80] hidden rounded-md border border-line bg-surface px-2.5 py-1.5 text-[11px] text-ink-2 shadow-float group-hover/tooltip:block group-focus-within/tooltip:block",
           multiline ? "w-64 max-w-[min(16rem,calc(100vw-3rem))] whitespace-normal text-left leading-relaxed" : "whitespace-nowrap",
           place,
         )}
@@ -1045,7 +1045,20 @@ export function Markdown({ text, className }: { text: string; className?: string
       code = null;
     };
 
-    for (const raw of lines) {
+    /** 管道表格的分隔行，例如 |---|---| 或 |:--:|--:|。 */
+    const isTableSeparator = (value: string) =>
+      /^\s*\|?\s*:?-{2,}:?\s*(?:\|\s*:?-{2,}:?\s*)+\|?\s*$/.test(value);
+    /** 把一行 `a | b | c` 拆成单元格；首尾管道可有可无。 */
+    const splitTableRow = (value: string) =>
+      value
+        .trim()
+        .replace(/^\|/, "")
+        .replace(/\|$/, "")
+        .split(/(?<!\\)\|/)
+        .map((cell) => cell.trim().replace(/\\\|/g, "|"));
+
+    for (let lineIndex = 0; lineIndex < lines.length; lineIndex += 1) {
+      const raw = lines[lineIndex];
       const line = raw.replace(/\s+$/, "");
       if (code) {
         if (line.trim().startsWith("```")) flushCode();
@@ -1059,6 +1072,47 @@ export function Markdown({ text, className }: { text: string; className?: string
       }
       if (!line.trim()) {
         flushList();
+        continue;
+      }
+      // 管道表格：当前行有 |，且下一行是分隔行（|---|）。
+      if (line.includes("|") && isTableSeparator(lines[lineIndex + 1] ?? "")) {
+        flushList();
+        const header = splitTableRow(line);
+        const rows: string[][] = [];
+        let rowIndex = lineIndex + 2;
+        while (rowIndex < lines.length) {
+          const rowLine = lines[rowIndex];
+          if (!rowLine.trim() || !rowLine.includes("|")) break;
+          rows.push(splitTableRow(rowLine));
+          rowIndex += 1;
+        }
+        lineIndex = rowIndex - 1;
+        out.push(
+          <div key={`table-wrap-${key++}`} className="my-2 overflow-x-auto">
+            <table className="w-full border-collapse text-left text-[12.5px] leading-relaxed">
+              <thead className="bg-surface-2 text-ink-3">
+                <tr>
+                  {header.map((cell, cellIndex) => (
+                    <th key={cellIndex} className="border border-line px-2 py-1 font-medium">
+                      {renderInline(cell, `th-${key}-${cellIndex}`)}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {rows.map((row, rowIndex2) => (
+                  <tr key={rowIndex2} className="align-top">
+                    {header.map((_, cellIndex) => (
+                      <td key={cellIndex} className="border border-line px-2 py-1 text-ink-2">
+                        {renderInline(row[cellIndex] ?? "", `td-${key}-${rowIndex2}-${cellIndex}`)}
+                      </td>
+                    ))}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>,
+        );
         continue;
       }
       const heading = /^(#{1,4})\s+(.*)$/.exec(line);

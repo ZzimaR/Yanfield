@@ -319,7 +319,7 @@ export function FloatWindow({
       {/* 最小化时只隐藏内容，保持子组件挂载，展开后未保存的草稿仍在 */}
       <div className={cn("flex min-h-0 flex-1 flex-col", minimized && "hidden")}>
         <div className="scroll-thin min-h-0 flex-1 overflow-y-auto">{children}</div>
-        {footer ? <div className="border-t border-line px-3 py-2">{footer}</div> : null}
+        {footer ? <div className="border-t border-line py-3 pl-5 pr-7">{footer}</div> : null}
       </div>
       {/* 右下角缩放把手：同时调整宽高；最小化时隐藏（内容已收起，无高度可调） */}
       {minimized ? null : (

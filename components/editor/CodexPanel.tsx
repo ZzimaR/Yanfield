@@ -1,14 +1,11 @@
 "use client";
 
 import * as React from "react";
-import { ChevronRight, MapPin, Plus, ScrollText, User } from "lucide-react";
+import { MapPin, Plus, ScrollText, User } from "lucide-react";
 import { Button, EmptyState, Input, Skeleton } from "@/components/ui/kit";
 import { useApi, useDataChanged } from "@/lib/client/api";
 import { toItems } from "@/lib/editor/normalize";
 import {
-  CHARACTER_ROLE_LABEL,
-  FORESHADOW_STATUS_LABEL,
-  WORLD_CATEGORY_LABEL,
   type Chapter,
   type Character,
   type Foreshadow,
@@ -17,6 +14,7 @@ import {
 } from "@/lib/types";
 import { cn } from "@/lib/ui/cn";
 import { reindexChaptersByVolume, sortChaptersByVolume } from "@/components/outline/form-kit";
+import { MaterialPreview } from "@/components/cards/MaterialPreview";
 import { CharacterEditor } from "@/components/cards/CharacterEditor";
 import { WorldEditor } from "@/components/cards/WorldEditor";
 import { ForeshadowEditor } from "@/components/cards/ForeshadowEditor";
@@ -54,13 +52,6 @@ type CodexEntry =
   | { kind: "world"; data: WorldSetting }
   | { kind: "foreshadow"; data: Foreshadow };
 
-/** 列表行左侧的色点：角色、世界观、伏笔各用一种颜色 */
-const KIND_DOT_CLASS: Record<CodexEntry["kind"], string> = {
-  character: "bg-accent",
-  world: "bg-jade",
-  foreshadow: "bg-gold",
-};
-
 function worldRows(settings: WorldSetting[]): { setting: WorldSetting; depth: number }[] {
   const byParent = new Map<string | null, WorldSetting[]>();
   for (const setting of settings) {
@@ -84,25 +75,6 @@ function worldRows(settings: WorldSetting[]): { setting: WorldSetting; depth: nu
     if (!seen.has(setting.id)) rows.push({ setting, depth: 0 });
   }
   return rows;
-}
-
-function entryPreview(entry: CodexEntry): { name: string; hint: string } {
-  if (entry.kind === "character") {
-    const c = entry.data;
-    return {
-      name: c.name,
-      hint: c.identity || c.currentState || CHARACTER_ROLE_LABEL[c.role],
-    };
-  }
-  if (entry.kind === "world") {
-    const w = entry.data;
-    return { name: w.title, hint: w.summary || WORLD_CATEGORY_LABEL[w.category] };
-  }
-  const f = entry.data;
-  return {
-    name: f.title,
-    hint: f.description || FORESHADOW_STATUS_LABEL[f.status],
-  };
 }
 
 function entryMatches(entry: CodexEntry, keyword: string): boolean {
@@ -366,7 +338,7 @@ export function CodexPanel({ novelId }: CodexPanelProps) {
                     <span>{group.title}</span>
                     <span className="tabular-nums">{group.entries.length}</span>
                   </div>
-                  <div className="space-y-1">
+                  <div className="space-y-2">
                     {(group.key === "world" && !keyword
                       ? worldRows(group.entries.map((entry) => entry.data as WorldSetting)).map(({ setting, depth }) => ({
                           entry: { kind: "world" as const, data: setting },
@@ -374,26 +346,15 @@ export function CodexPanel({ novelId }: CodexPanelProps) {
                         }))
                       : group.entries.map((entry) => ({ entry, depth: 0 }))
                     ).map(({ entry, depth }) => {
-                      const preview = entryPreview(entry);
                       return (
                         <button
                           key={`${entry.kind}:${entry.data.id}`}
                           type="button"
                           onClick={() => setEditing(entry)}
-                          className="group flex w-full min-w-0 items-start gap-2 rounded-md px-2 py-2 text-left transition-colors duration-150 hover:bg-surface-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40 motion-reduce:transition-none"
-                          style={{ paddingLeft: 8 + depth * 14 }}
+                          className="group block w-full min-w-0 rounded-xl border border-line/65 bg-surface/60 px-3 py-3.5 text-left transition-colors duration-150 hover:border-jade/30 hover:bg-surface focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40 motion-reduce:transition-none"
+                          style={{ marginLeft: depth * 10, width: `calc(100% - ${depth * 10}px)` }}
                         >
-                          <span className={cn("mt-1.5 size-2 shrink-0 rounded-full", KIND_DOT_CLASS[entry.kind])} aria-hidden />
-                          <span className="min-w-0 flex-1">
-                            <span className="block truncate text-[12.5px] font-medium leading-[1.4] text-ink-2 group-hover:text-ink">
-                              {preview.name}
-                            </span>
-                            <span className="mt-0.5 block truncate text-[11px] leading-[1.45] text-ink-3">{preview.hint}</span>
-                          </span>
-                          <ChevronRight
-                            className="mt-[7px] size-3.5 shrink-0 text-ink-4 opacity-0 transition-opacity duration-150 group-hover:opacity-100 motion-reduce:transition-none"
-                            aria-hidden
-                          />
+                          <MaterialPreview kind={entry.kind} fields={entry.data as unknown as Record<string, unknown>}/>
                         </button>
                       );
                     })}

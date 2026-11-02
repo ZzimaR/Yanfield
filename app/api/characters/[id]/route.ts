@@ -41,8 +41,10 @@ export const GET = handle<{ id: string }>(async (_request, { params }) => {
 });
 
 export const PATCH = handle<{ id: string }>(async (request, { params }) => {
-  if (!repo.getCharacter(params.id)) return notFound("角色不存在");
+  const current=repo.getCharacter(params.id);
+  if (!current) return notFound("角色不存在");
   const body = await readBody(request);
+  if (body.expectedUpdatedAt !== undefined && body.expectedUpdatedAt !== current.updatedAt) return bad("资料已有新修改，请重新打开并核对后保存", 409);
   const patch = pickFields<Character>(body, CHARACTER_FIELDS);
   const role = pickEnum(body, "role", CHARACTER_ROLES, "角色定位");
   if (role) patch.role = role;

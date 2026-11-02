@@ -41,6 +41,7 @@ export interface ChapterDraftApi {
   flush: () => Promise<void>;
   /** 取消待执行的自动保存（卸载时用） */
   cancel: () => void;
+  adoptSaved: (chapter: Chapter) => void;
 }
 
 /**
@@ -64,6 +65,7 @@ export function useChapterDraft({
   const draftRef = React.useRef<ChapterDraft | null>(null);
   const pendingRef = React.useRef(false);
   const savingRef = React.useRef(false);
+  const inFlightRef = React.useRef<Promise<void> | null>(null);
   const timerRef = React.useRef<number | null>(null);
   const scheduleRef = React.useRef<() => void>(() => {});
   const chapterRef = React.useRef<Chapter | null>(chapter);
@@ -86,38 +88,34 @@ export function useChapterDraft({
   /** 真正执行保存：调用方保证同一时间只有一次 in-flight 请求 */
   const flush = React.useCallback(async (): Promise<void> => {
     clearTimer();
-    if (!pendingRef.current || savingRef.current) return;
-    const current = draftRef.current;
-    if (!current) return;
-
-    pendingRef.current = false;
-    savingRef.current = true;
-    setSaveState("saving");
-    try {
-      await onPersistRef.current(current.chapterId, {
-        title: current.title,
-        content: current.content,
-        summary: current.summary,
-        status: current.status,
-        wordCount: current.wordCount,
+    if (inFlightRef.current) await inFlightRef.current;
+    while (pendingRef.current) {
+      const current = draftRef.current;
+      if (!current) return;
+      pendingRef.current = false;
+      savingRef.current = true;
+      setSaveState("saving");
+      const operation = onPersistRef.current(current.chapterId, {
+        title: current.title, content: current.content, summary: current.summary,
+        status: current.status, wordCount: current.wordCount,
       });
-      savingRef.current = false;
-      // 切章竞态：保存完成时已经不在这一章，就不要污染新章的保存状态
-      if (draftRef.current?.chapterId === current.chapterId) {
-        setLastSavedAt(new Date().toISOString());
-        setSaveState(pendingRef.current ? "dirty" : "saved");
-        setHasUnsaved(pendingRef.current);
+      inFlightRef.current = operation;
+      try {
+        await operation;
+        if (draftRef.current?.chapterId === current.chapterId) {
+          setLastSavedAt(new Date().toISOString());
+          setSaveState(pendingRef.current ? "dirty" : "saved");
+          setHasUnsaved(pendingRef.current);
+        }
+      } catch (err) {
+        pendingRef.current = true;
+        setSaveState("error"); setHasUnsaved(true);
+        onErrorRef.current?.(err instanceof Error ? err.message : "保存失败");
+        throw err;
+      } finally {
+        savingRef.current = false;
+        if (inFlightRef.current === operation) inFlightRef.current = null;
       }
-      // 保存期间又有输入 → 再排一次
-      if (pendingRef.current) scheduleRef.current();
-    } catch (err) {
-      savingRef.current = false;
-      pendingRef.current = true;
-      if (draftRef.current?.chapterId === current.chapterId) {
-        setSaveState("error");
-        setHasUnsaved(true);
-      }
-      onErrorRef.current?.(err instanceof Error ? err.message : "保存失败");
     }
   }, [clearTimer]);
 
@@ -127,7 +125,7 @@ export function useChapterDraft({
     if (!autoSave) return;
     timerRef.current = window.setTimeout(() => {
       timerRef.current = null;
-      void flush();
+      void flush().catch(() => {});
     }, delayMs);
   }, [autoSave, delayMs, clearTimer, flush]);
 
@@ -196,6 +194,14 @@ export function useChapterDraft({
 
   React.useEffect(() => () => clearTimer(), [clearTimer]);
 
+  const adoptSaved = React.useCallback((saved: Chapter) => {
+    if (draftRef.current?.chapterId !== saved.id) return;
+    clearTimer();
+    const next: ChapterDraft = {chapterId:saved.id,title:saved.title,content:saved.content,summary:saved.summary,status:saved.status,wordCount:saved.wordCount};
+    draftRef.current=next; pendingRef.current=false;
+    setDraft(next); setHasUnsaved(false); setSaveState("saved"); setLastSavedAt(saved.updatedAt);
+  },[clearTimer]);
+
   return {
     draft,
     saveState,
@@ -207,5 +213,6 @@ export function useChapterDraft({
     setStatus,
     flush,
     cancel: clearTimer,
+    adoptSaved,
   };
 }

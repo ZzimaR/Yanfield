@@ -342,3 +342,10 @@ sudo systemctl start yantian
 - [ ] 服务器只给可信用户；API Key 与书稿都在这台机器上
 - [ ] 有定期备份（`data/` 或 `sqlite3 .backup`），并验证过能恢复
 - [ ] 用 HTTPS 访问（避免书稿与 Key 在明文 HTTP 上传输）
+
+
+## 公开介绍页（GitHub Pages）
+
+`/intro` 用于本地预览；GitHub Pages 构建把 `NEXT_PUBLIC_PUBLIC_SITE=1`，因此公开域名的首页显示介绍页，本地首页继续进入写作台。公开站点只有介绍内容与本地交互示例，不提供书稿数据库或模型调用接口。
+
+`.github/workflows/pages.yml` 在推送 `main` 后导出静态站点，并由 GitHub Pages 发布。仅修改本地文件不会更新线上；须先把对应代码提交并推送，或在已更新的分支版本上运行工作流。配置需包含 `YANFIELD_PAGES=1`、`NEXT_PUBLIC_PUBLIC_SITE=1` 和 `YANFIELD_STANDALONE=0`，只构建公开页面。不要把本机的 `data/`、`.env` 或 API Key 放进静态产物。

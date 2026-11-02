@@ -29,6 +29,7 @@ export const PATCH = handle<{ id: string }>(async (request, { params }) => {
   const current = repo.getWorld(params.id);
   if (!current) return notFound("设定不存在");
   const body = await readBody(request);
+  if (body.expectedUpdatedAt !== undefined && body.expectedUpdatedAt !== current.updatedAt) return bad("资料已有新修改，请重新打开并核对后保存", 409);
   const patch = pickFields<WorldSetting>(body, WORLD_FIELDS);
   const category = pickEnum(body, "category", WORLD_CATEGORIES, "设定分类");
   if (category) patch.category = category;

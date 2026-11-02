@@ -9,6 +9,7 @@ import { Button, EmptyState, Sheet, useToast } from "@/components/ui/kit";
 import { AiTaskBar } from "@/components/ai/AiTaskBar";
 import { apiPatch, useApi } from "@/lib/client/api";
 import { EditorBridgeProvider } from "@/lib/editor/bridge";
+import { HAND_OFF_EVENT } from "@/lib/editor/hand-off";
 import { emitFocusAi } from "@/lib/editor/events";
 import { migrateLegacyEditorStorage } from "@/lib/editor/legacyStorage";
 import { toOne } from "@/lib/editor/normalize";
@@ -24,6 +25,7 @@ import { applyTheme } from "@/lib/ui/theme";
 import type { AppSettings, Chapter } from "@/lib/types";
 import { AiPanelSlot } from "./AiPanelSlot";
 import { CommandPalette } from "./CommandPalette";
+import type { AgentRun } from "@/lib/ai/agent/types";
 import { EditorCanvas } from "./EditorCanvas";
 import { EditorHeader, type EditorTheme } from "./EditorHeader";
 import { EditorRightRail } from "./EditorRightRail";
@@ -224,6 +226,7 @@ export function EditorWorkbench({ novelId }: EditorWorkbenchProps) {
     setContent,
     setStatus,
     flush,
+    adoptSaved,
   } = useChapterDraft({
     chapter,
     delayMs: autoSaveDelayMs,
@@ -242,7 +245,7 @@ export function EditorWorkbench({ novelId }: EditorWorkbenchProps) {
       void flush().then(() => {
         setChapterId(nextId);
         setDrawerLeftOpen(false);
-      });
+      }).catch(()=>{});
     },
     [chapterId, flush, setChapterId],
   );
@@ -252,7 +255,36 @@ export function EditorWorkbench({ novelId }: EditorWorkbenchProps) {
   const handleEditorReady = React.useCallback((instance: Editor | null) => {
     setEditor(instance);
   }, []);
-  const bridge = useEditorBridgeValue(editor);
+  const rawBridge = useEditorBridgeValue(editor);
+  const currentChapterRef = React.useRef(chapterId);
+  currentChapterRef.current=chapterId;
+  const bridge = React.useMemo(() => rawBridge ? {
+    ...rawBridge, getChapterId:()=>currentChapterRef.current, flush,
+    setReadOnly:(locked:boolean)=>editor?.setEditable(!locked,false),
+    syncSaved:(saved:Chapter)=>{
+      if(currentChapterRef.current!==saved.id)return;
+      adoptSaved(saved); actions.patchChapterLocal(saved.id,saved);
+      editor?.commands.setContent(saved.content||"<p></p>",{emitUpdate:false});
+    },
+  } : null,[rawBridge,flush,adoptSaved,actions,editor]);
+  const [review,setReview]=React.useState<{run:AgentRun;changeId:string}|null>(null);
+  React.useEffect(()=>{
+    const open=(event:Event)=>{
+      const value=(event as CustomEvent<{run:AgentRun;changeId:string}>).detail;
+      if(value.run.novelId!==novelId)return;
+      const change=value.run.changes.find(c=>c.id===value.changeId);
+      if(!change)return;
+      void flush().then(()=>{if(change.appliedId||change.targetId)setChapterId((change.appliedId||change.targetId)!);setReview(value);}).catch(()=>{});
+    };
+    const navigate=(event:Event)=>{
+      const value=(event as CustomEvent<{kind:string;id:string}>).detail;
+      if(value.kind==="chapter"||value.kind==="blueprint")selectChapter(value.id);
+      if(value.kind==="outline"||value.kind==="volume-outline"||value.kind==="blueprint") {setTab("outline");setLeftOpen(true);}
+    };
+    window.addEventListener("yantian:agent-review",open);window.addEventListener("yantian:agent-navigate",navigate);
+    return()=>{window.removeEventListener("yantian:agent-review",open);window.removeEventListener("yantian:agent-navigate",navigate);};
+  },[novelId,flush,setChapterId,selectChapter,setTab,setLeftOpen]);
+  React.useEffect(()=>{if(review){const c=review.run.changes.find(c=>c.id===review.changeId);if((c?.appliedId||c?.targetId)&&(c?.appliedId||c?.targetId)!==chapterId)setReview(null);}},[chapterId,review]);
 
   /* ---------------- 主题 ---------------- */
 
@@ -323,11 +355,16 @@ export function EditorWorkbench({ novelId }: EditorWorkbenchProps) {
     return () => window.clearTimeout(timer);
   }, [aiPanelVisible]);
 
+  React.useEffect(()=>{
+    window.addEventListener(HAND_OFF_EVENT,requestAiFocus);
+    return()=>window.removeEventListener(HAND_OFF_EVENT,requestAiFocus);
+  },[requestAiFocus]);
+
   const pathname = usePathname();
   const back = novelBackTarget(pathname, novelId);
   /** 返回上一级：先保存，避免丢字 */
   const goBack = React.useCallback(() => {
-    void flush().then(() => router.push(back.href));
+    void flush().then(() => router.push(back.href)).catch(()=>{});
   }, [flush, router, back.href]);
 
   /* ---------------- 快捷键 ---------------- */
@@ -347,7 +384,7 @@ export function EditorWorkbench({ novelId }: EditorWorkbenchProps) {
       // 立即保存
       "mod+s": (event) => {
         event.preventDefault();
-        void flush();
+        void flush().catch(()=>{});
       },
       // 聚焦 AI 输入框（Ctrl/Cmd+J 被浏览器占用为下载页，改用 Alt+J）
       "alt+j": (event) => {
@@ -551,6 +588,8 @@ export function EditorWorkbench({ novelId }: EditorWorkbenchProps) {
                 onSelectionChange={setSelection}
                 onAskAi={requestAiFocus}
                 onExitImmersive={exitImmersive}
+                review={review}
+                onCloseReview={()=>setReview(null)}
                 aiBar={
                   <EditorErrorBoundary
                     resetKey={`tasks:${chapter.id}`}

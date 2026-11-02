@@ -1,0 +1,122 @@
+import { afterAll,beforeAll,describe,expect,it,vi } from "vitest";
+import {mkdtempSync,rmSync} from "node:fs";
+import {tmpdir} from "node:os";
+import {join} from "node:path";
+import type {AiStreamEvent} from "@/lib/types";
+const fake=vi.hoisted(()=>({queue:[] as string[],inputs:[] as unknown[],costs:[] as ({amount:number;currency:"USD"|"CNY"}|undefined)[]}));
+vi.mock("@/lib/ai/provider",()=>({streamCompletion:async function*(input:unknown){
+  fake.inputs.push(input);
+  const value=fake.queue.shift();if(value===undefined)throw new Error("unexpected call");
+  const sourceId=value.includes("__SOURCE_ID__")?JSON.parse((input as {messages:{content:string}[]}).messages[1].content).sources[0].id:"";
+  yield {type:"delta",text:value.replaceAll("__SOURCE_ID__",sourceId)};yield {type:"usage",promptTokens:10,completionTokens:5,cost:fake.costs.shift()};
+}}));
+vi.mock("@/lib/ai/engine",()=>({resolveTarget:()=>({provider:{id:"test",name:"test",kind:"openai"},model:"test"}),mergeContextConfig:(c:unknown)=>({contextBudget:24000,includeCharacters:true,includeWorld:true,includeForeshadows:true,includeArchives:true,includeNovelOutline:true,includeVolumeOutline:true,includeChapterBlueprint:true,includeStyleGuide:true,...(c as object)})}));
+const folder=mkdtempSync(join(tmpdir(),"yanfield-run-"));
+let repo:typeof import("@/lib/repo"),runtime:typeof import("@/lib/ai/agent/run"),store:typeof import("@/lib/ai/agent/store");
+beforeAll(async()=>{process.env.YANFIELD_DB_PATH=join(folder,"test.db");repo=await import("@/lib/repo");runtime=await import("@/lib/ai/agent/run");store=await import("@/lib/ai/agent/store");});
+afterAll(async()=>{(await import("@/lib/db")).getDb().close();delete process.env.YANFIELD_DB_PATH;rmSync(folder,{recursive:true,force:true});});
+async function collect(request:Parameters<typeof runtime.runAgent>[0],signal?:AbortSignal){const events:AiStreamEvent[]=[];for await(const e of runtime.runAgent(request,signal))events.push(structuredClone(e));return events;}
+const plan=(calls:unknown[],message="处理任务")=>JSON.stringify({message,calls,done:!calls.length});
+
+describe("Agent连续工具执行",()=>{
+  it("完整接口费用按调用求和，缺失任一调用费用时只算部分返回",async()=>{
+    const novel=repo.createNovel({title:"费用来源"});
+    fake.queue=[plan([{name:"workspace",args:{}}]),plan([],"完成")];fake.costs=[{amount:0.01,currency:"USD"},{amount:0.02,currency:"USD"}];
+    let events=await collect({novelId:novel.id,message:"查看进度"});
+    let final=events.filter(e=>e.type==="agent").at(-1)!;if(final.type!=="agent")throw new Error("missing");
+    expect(final.run.usage.reportedCost).toEqual({amount:0.03,currency:"USD",complete:true});
+    fake.queue=[plan([{name:"workspace",args:{}}]),plan([],"完成")];fake.costs=[{amount:0.01,currency:"USD"},undefined];
+    events=await collect({novelId:novel.id,message:"查看进度"});final=events.filter(e=>e.type==="agent").at(-1)!;if(final.type!=="agent")throw new Error("missing");
+    expect(final.run.usage.reportedCost).toEqual({amount:0.01,currency:"USD",complete:false});
+  });
+  it("追问待确认设定会修订原候选，旧清单失效，正文保持不动",async()=>{
+    const novel=repo.createNovel({title:"连续修改"}),world=repo.createWorld(novel.id,{title:"晚记",summary:"旧摘要"});
+    const previous={id:crypto.randomUUID(),novelId:novel.id,chapterId:null,request:"完善设定",status:"ready" as const,summary:"已准备",error:"",steps:[],changes:[],references:[],usage:{promptTokens:0,completionTokens:0,totalTokens:0,latencyMs:0},model:"test",provider:"test",preview:"",createdAt:new Date().toISOString(),updatedAt:new Date().toISOString()};
+    const draft=store.propose(previous,"world",world.id,{summary:"首版摘要"},"首次修改");
+    fake.queue=[plan([{name:"read",args:{kind:"world",id:draft.id}}]),plan([{name:"propose",args:{kind:"world",id:draft.id,fields:{summary:"修订后的摘要"},reason:"按追问修订"}}]),plan([],"新版等待确认")];
+    const events=await collect({novelId:novel.id,message:"这版摘要再简洁一点",previousRunId:previous.id});
+    const final=events.filter(e=>e.type==="agent").at(-1)!;if(final.type!=="agent")throw new Error("missing");
+    expect(final.run.changes).toHaveLength(1);expect(final.run.changes[0].after.summary).toBe("修订后的摘要");
+    expect(store.getRun(previous.id).changes[0].state).toBe("rejected");expect(repo.getWorld(world.id)?.summary).toBe("旧摘要");
+    store.applyChanges(final.run.id,[{id:final.run.changes[0].id}]);expect(repo.getWorld(world.id)?.summary).toBe("修订后的摘要");
+  });
+  it("关闭某类上下文后，工具无法绕过开关读取",async()=>{
+    const novel=repo.createNovel({title:"上下文权限"}),world=repo.createWorld(novel.id,{title:"不应读取",content:"secret"});
+    fake.queue=[plan([{name:"read",args:{kind:"world",id:world.id}}]),plan([],"该类资料已关闭")];
+    const events=await collect({novelId:novel.id,message:"读设定",context:{includeWorld:false}});
+    const final=events.filter(e=>e.type==="agent").at(-1)!;if(final.type!=="agent")throw new Error("missing");
+    expect(final.run.steps[0].status).toBe("error");expect(final.run.references).toHaveLength(0);
+  });
+  it("读取卡片后提出具体字段修改，保存会话回执但不改业务数据",async()=>{
+    const novel=repo.createNovel({title:"修改设定"}),card=repo.createWorld(novel.id,{title:"晚记",content:"不拆信"}),session=repo.createChatSession(novel.id,{});
+    fake.queue=[plan([{name:"read",args:{kind:"world",id:card.id}}]),plan([{name:"propose",args:{kind:"world",id:card.id,fields:{summary:"渡口的收信铺"},reason:"补摘要"}}]),plan([],"准备好一项摘要修改，等待确认。")];
+    const events=await collect({novelId:novel.id,sessionId:session.id,message:"补一下晚记的摘要"});
+    const final=events.filter(e=>e.type==="agent").at(-1)!;
+    expect(final.type).toBe("agent");if(final.type!=="agent")return;
+    expect(final.run.status).toBe("ready");expect(final.run.changes).toHaveLength(1);
+    expect(repo.getWorld(card.id)?.summary).toBe("");
+    expect(repo.listMessages(session.id).at(-1)?.actions[0].type).toBe("agent-run");
+    expect(repo.listMessages(session.id).at(-1)?.status).toBe("complete");
+    expect(final.run.usage.totalTokens).toBe(45);
+  });
+  it("写手候选可以被下一步读取并自检，修订不会重复建章",async()=>{
+    const novel=repo.createNovel({title:"新章"});
+    // The mock can inspect prior tool results to refer to a generated candidate ID.
+    fake.queue=[plan([{name:"workspace",args:{}}]),plan([{name:"write_chapter",args:{title:"第1章",instruction:"河边收信",words:2000}}]),"河水退了。\n周晚收起信。",plan([],"候选已完成，等待确认。"),JSON.stringify({cards:[]})];
+    const events=await collect({novelId:novel.id,message:"写第一章"});
+    const final=events.filter(e=>e.type==="agent").at(-1)!;
+    if(final.type!=="agent")throw new Error("missing");
+    expect(final.run.changes).toHaveLength(1);expect(repo.listChapters(novel.id)).toHaveLength(0);
+    expect(events.some(e=>e.type==="agent-preview")).toBe(true);
+    expect(final.run.changes[0].after.content).toBe("<p>河水退了。</p><p>周晚收起信。</p>");
+    expect(final.run.steps.at(-1)?.label).toBe("整理正文资料");
+  });
+  it("写完自动整理角色，别名去重、拒绝伪引用，确认后才能入库",async()=>{
+    const novel=repo.createNovel({title:"自动建卡"});
+    const existing=repo.createCharacter(novel.id,{name:"林小满",aliases:["小满"],identity:"作者设定的送信人"});
+    fake.queue=[plan([{name:"write_chapter",args:{title:"第一章",instruction:"收信"}}]),"小满每天替周晚送信，从不拆信。",plan([],"等待确认"),JSON.stringify({cards:[
+      {kind:"character",fields:{name:"小满",identity:"新的身份",personality:"从不拆信"},evidence:[{sourceId:"__SOURCE_ID__",quote:"小满每天替周晚送信，从不拆信。"}]},
+      {kind:"character",fields:{name:"周晚",identity:"收信人"},evidence:[{sourceId:"__SOURCE_ID__",quote:"替周晚送信"}]},
+      {kind:"world",fields:{title:"不存在的地点",summary:"模型编造"},evidence:[{sourceId:"__SOURCE_ID__",quote:"不存在的地点"}]}
+    ]})];
+    const events=await collect({novelId:novel.id,message:"写一章"});
+    const final=events.filter(e=>e.type==="agent").at(-1)!;if(final.type!=="agent")throw new Error("missing");
+    expect(final.run.status).toBe("ready");expect(final.run.changes).toHaveLength(3);
+    const update=final.run.changes.find(c=>c.targetId===existing.id)!;
+    expect(update.after).toEqual({personality:"从不拆信"});
+    expect(repo.listCharacters(novel.id)).toHaveLength(1);expect(repo.listChapters(novel.id)).toHaveLength(0);
+    expect(final.run.steps.at(-1)?.detail).toContain("1 项未通过");
+    store.applyChanges(final.run.id,final.run.changes.map(c=>({id:c.id})));
+    expect(repo.listCharacters(novel.id)).toHaveLength(2);expect(repo.getCharacter(existing.id)?.identity).toBe("作者设定的送信人");
+    expect(repo.getCharacter(existing.id)?.personality).toBe("从不拆信");
+    store.undoChanges(final.run.id);expect(repo.listCharacters(novel.id)).toHaveLength(1);expect(repo.listChapters(novel.id)).toHaveLength(0);
+    expect(repo.getCharacter(existing.id)?.personality).toBe("");
+  });
+  it("资料整理失败保留正文，且明确报告未完成",async()=>{
+    const novel=repo.createNovel({title:"提取失败"});
+    fake.queue=[plan([{name:"write_chapter",args:{title:"第一章",instruction:"收信"}}]),"周晚收起信。",plan([],"等待确认"),"invalid","invalid"];
+    const events=await collect({novelId:novel.id,message:"写一章"});
+    const final=events.filter(e=>e.type==="agent").at(-1)!;if(final.type!=="agent")throw new Error("missing");
+    expect(final.run.status).toBe("ready");expect(final.run.changes).toHaveLength(1);
+    expect(final.run.summary).toContain("资料整理未完成");expect(final.run.steps.at(-1)?.status).toBe("error");
+  });
+  it("作者只写正文时不额外调用资料整理",async()=>{
+    const novel=repo.createNovel({title:"只写正文"});
+    fake.queue=[plan([{name:"write_chapter",args:{title:"第一章",instruction:"收信"}}]),"周晚收起信。",plan([],"等待确认")];
+    const events=await collect({novelId:novel.id,message:"只写正文，不要建卡"});
+    const final=events.filter(e=>e.type==="agent").at(-1)!;if(final.type!=="agent")throw new Error("missing");
+    expect(final.run.status).toBe("ready");expect(final.run.steps).toHaveLength(1);
+  });
+  it("结构输出失败重试一次后明确失败，不悄悄改成另一个任务",async()=>{
+    const novel=repo.createNovel({title:"错误"});fake.queue=["not json","not json"];
+    const events=await collect({novelId:novel.id,message:"补设定"});const final=events.filter(e=>e.type==="agent").at(-1)!;
+    if(final.type!=="agent")throw new Error("missing");
+    expect(final.run.status).toBe("error");expect(final.run.error).toContain("两次");expect(final.run.changes).toHaveLength(0);
+  });
+  it("取消会保存运行状态，后续能读取，不产生正文空壳",async()=>{
+    const novel=repo.createNovel({title:"停止"}),controller=new AbortController();controller.abort();fake.queue=[];
+    const events=await collect({novelId:novel.id,message:"续写"},controller.signal);const final=events.filter(e=>e.type==="agent").at(-1)!;
+    if(final.type!=="agent")throw new Error("missing");
+    expect(store.getRun(final.run.id).status).toBe("aborted");expect(repo.listChapters(novel.id)).toHaveLength(0);
+  });
+});

@@ -4,9 +4,9 @@ import { PublicIntro } from "@/components/landing/PublicIntro";
 import { isPublicSite } from "@/lib/public-site";
 
 export const metadata: Metadata = {
-  title: { absolute: isPublicSite ? "砚田 — 写在自己电脑上的小说工作台" : "砚田" },
+  title: { absolute: isPublicSite ? "砚田 — 故事归你，写作也由你做主" : "砚田" },
   description: isPublicSite
-    ? "砚田是装在你自己电脑上的小说工作台。这个网站只做介绍，稿子不会经过这里。"
+    ? "免费自托管的 AI 小说工作台。书稿本地保存，自带 API，正文与资料的每次修改由你确认。非商业用途免费，模型服务费用另计。"
     : "打开书架，继续写。稿子留在这台电脑上。",
 };
 

@@ -19,9 +19,8 @@ import { Check, CircleAlert, Cpu, MessagesSquare, Plus, Settings2, X } from "luc
 import { DiffReview } from "@/components/diff/DiffReview";
 import { Button, IconButton, Sheet, Tooltip, useToast } from "@/components/ui/kit";
 import { openSettingsDialog } from "@/components/settings/open";
-import { apiGet, apiPatch, notifyDataChanged, streamAiCodex, useApi } from "@/lib/client/api";
+import { apiGet, apiPatch, notifyDataChanged, streamAiAgent, useApi } from "@/lib/client/api";
 import { ApiError } from "@/lib/client/api";
-import { parseCodexReply, prepareCodexItems, type CodexCatalogCard, type CodexTurn } from "@/lib/ai/codex";
 import { textToInsertHtml, useEditorBridge, type EditorBridge } from "@/lib/editor/bridge";
 import { HAND_OFF_EVENT, takeHandOff, type HandOffDetail } from "@/lib/editor/hand-off";
 import type {
@@ -41,11 +40,12 @@ import { ActionReview } from "./ActionReview";
 import { AgentPicker } from "./AgentPicker";
 import { ChatComposer } from "./ChatComposer";
 import { CodexProposal } from "./CodexProposal";
-import { AiSpendLine } from "./AiSpendLine";
+import { UsageIndicator, ContextStatus } from "./UsageIndicator";
 import { ChatHistorySheet } from "./ChatHistorySheet";
 import { ChatMessageView } from "./ChatMessageView";
 import { ContextDrawer } from "./ContextDrawer";
-import { ContextMeter, useContextPreview } from "./ContextMeter";
+import { useContextPreview } from "./ContextMeter";
+import type { AgentRun } from "@/lib/ai/agent/types";
 import { ModelPicker } from "./ModelPicker";
 import { WelcomePanel } from "./WelcomePanel";
 import { MAX_SESSION_TABS, useAiChat } from "./use-ai-chat";
@@ -81,62 +81,6 @@ interface DiffState {
   beforeHtml: string;
   afterHtml: string;
   action: AiAction;
-}
-
-/** 当前会话里最近一条还没写入、也没被替换的清单；有它时这句话就是对清单的追问。 */
-function findPendingCodex(messages: UIMessage[]): UIMessage | null {
-  for (let index = messages.length - 1; index >= 0; index -= 1) {
-    const message = messages[index];
-    if (message.codexItems && message.codexItems.length > 0 && !message.codexApplied && !message.codexSuperseded) {
-      return message;
-    }
-  }
-  return null;
-}
-
-/** 资料助手的 history 只保留作者提问和助手文字回复；空消息与正在流式的消息跳过。 */
-function codexHistory(messages: UIMessage[]): CodexTurn[] {
-  const turns: CodexTurn[] = [];
-  for (const message of messages) {
-    if (message.status === "streaming") continue;
-    const content = message.content.trim();
-    if (!content) continue;
-    turns.push({ role: message.role, content });
-  }
-  return turns;
-}
-
-/** codex 提示词里正文节选的上限（字符），与服务端 CODEX_CONTEXT_LIMIT 保持一致。 */
-const CODEX_CONTEXT_EXCERPT_MAX = 2000;
-
-/**
- * 取当前章节正文节选：优先编辑器桥里的实时正文（作者刚改、还没保存也能带上），
- * 没有编辑器时退化为接口读取已保存正文；都拿不到返回空串（提示词里就不加正文段）。
- */
-async function readChapterExcerpt(
-  bridge: EditorBridge | null,
-  chapterId: string | null | undefined,
-): Promise<string> {
-  let plain = "";
-  try {
-    const liveHtml = bridge?.getHtml()?.trim() ?? "";
-    if (liveHtml) plain = stripHtml(liveHtml);
-  } catch {
-    // 编辑器正在销毁/切换章节时 getHtml 可能抛错：降级到接口取正文
-    plain = "";
-  }
-  if (!plain && chapterId) {
-    try {
-      const chapter = await apiGet<Chapter>(`/api/chapters/${encodeURIComponent(chapterId)}`);
-      plain = stripHtml(chapter.content ?? "");
-    } catch {
-      return "";
-    }
-  }
-  const normalized = plain.replace(/\n{3,}/g, "\n\n").trim();
-  if (!normalized) return "";
-  if (normalized.length <= CODEX_CONTEXT_EXCERPT_MAX) return normalized;
-  return `${normalized.slice(0, CODEX_CONTEXT_EXCERPT_MAX)}…`;
 }
 
 export function AiPanel({
@@ -246,11 +190,16 @@ export function AiPanel({
 
   // 每个会话 Tab 独立的草稿与引用
   const [drafts, setDrafts] = React.useState<Record<string, string>>({});
+  const [referenceSnapshots,setReferenceSnapshots]=React.useState<Record<string,HandOffDetail["snapshot"]>>({});
   const [mentionMap, setMentionMap] = React.useState<Record<string, MentionRef[]>>({});
   const [mode, setMode] = React.useState<PanelMode>("chat");
   const [focusSignal, setFocusSignal] = React.useState(0);
-  const [task, setTask] = React.useState<{ id: string; label: string } | null>(null);
+  const [task, setTask] = React.useState<{ id: string; label: string; snapshot?:HandOffDetail["snapshot"];selection?:string;targetChapterId?:string } | null>(null);
+  const pendingAutoSendRef=React.useRef<string|null>(null);
+  const sendingRef=React.useRef(false);
+  const activeTabKeyRef=React.useRef(chat.activeKey);activeTabKeyRef.current=chat.activeKey;
   const codexAbortRef = React.useRef<AbortController | null>(null);
+  const editAbortRef = React.useRef<AbortController | null>(null);
   const [historyOpen, setHistoryOpen] = React.useState(false);
   const [contextOpen, setContextOpen] = React.useState(false);
   const [agentSheetOpen, setAgentSheetOpen] = React.useState(false);
@@ -291,12 +240,17 @@ export function AiPanel({
     const apply = () => {
       const detail: HandOffDetail | null = takeHandOff();
       if (!detail) return;
-      setDrafts((prev) => ({ ...prev, [activeKey]: detail.prompt }));
-      setMentionMap((prev) => ({
-        ...prev,
-        [activeKey]: detail.reference ? [detail.reference] : [],
-      }));
-      setTask({ id: detail.taskId, label: detail.taskLabel });
+      if(detail.referenceOnly) {
+        setReferenceSnapshots(prev=>({...prev,[activeKey]:detail.snapshot}));
+        setMentionMap(prev=>({...prev,[activeKey]:detail.reference?[...(prev[activeKey]??[]).filter(m=>m.type!==detail.reference!.type||m.id!==detail.reference!.id),detail.reference]:prev[activeKey]??[]}));
+        setTask(detail.reference?null:{id:detail.taskId,label:detail.taskLabel,snapshot:detail.snapshot});
+      } else {
+        setDrafts(prev=>({...prev,[activeKey]:detail.prompt}));
+        setMentionMap(prev=>({...prev,[activeKey]:detail.reference?[detail.reference]:[]}));
+        setReferenceSnapshots(prev=>({...prev,[activeKey]:undefined}));
+        setTask({id:detail.taskId,label:detail.taskLabel,snapshot:detail.snapshot,selection:detail.selection,targetChapterId:detail.reference?.type==="chapter"?detail.reference.id:undefined});
+      }
+      if(detail.autoSend)pendingAutoSendRef.current=detail.prompt;
       setFocusSignal((value) => value + 1);
     };
     apply();
@@ -337,126 +291,66 @@ export function AiPanel({
 
   /* ---------------- 发送 / 快捷提问 / 重试 ---------------- */
 
-  const handleSend = React.useCallback(async () => {
-    const text = draft.trim();
-    if (!text || chat.streaming) return;
-    const currentTask = task;
-    // 触发判定要在清空状态之前算：显式衍生命令（derive-/fill-），或对上一份待写入清单的一句话追问
-    const pending = findPendingCodex(chat.activeTab.messages);
-    const isCodexTask = Boolean(
-      currentTask && (currentTask.id.startsWith("derive-") || currentTask.id.startsWith("fill-")),
-    );
-    setDraft("");
-    setMentions([]);
-    setTask(null);
-    if (isCodexTask || pending) {
-      // history 必须在本轮问答 append 之前取，否则会把刚发出去的这句话也算进历史
-      const history = codexHistory(chat.activeTab.messages);
-      const draftItems = pending?.codexItems ?? [];
-      // 带上当前章节正文节选：作者刚改的实时正文优先，其次已保存正文；拿不到就不带
-      const contextText = await readChapterExcerpt(bridge, chapterId);
-      const assistantId = chat.beginExchange(text);
-      const controller = new AbortController();
-      codexAbortRef.current = controller;
-      let raw = "";
-      let failed = false;
-      // 注意：lib/client/api 的 streamAiCodex 类型尚未声明 contextText，先落到变量再传，避免多余属性检查
-      const codexRequest = {
-        novelId,
-        message: text,
-        history,
-        draft: draftItems,
-        contextText: contextText || undefined,
-      };
-      try {
-        await streamAiCodex(codexRequest, {
-          signal: controller.signal,
-          onEvent: (event) => {
-            if (event.type === "delta") raw += event.text;
-            if (event.type === "error") {
-              failed = true;
-              chat.patchExchange(assistantId, { status: "error", error: event.message, content: "" });
-            }
-            if (event.type === "done") {
-              const parsed = parseCodexReply(raw);
-              chat.patchExchange(assistantId, {
-                status: "complete",
-                content: parsed?.message || "清单在下面，勾选后才会写入。",
-                usage: event.usage,
-                error: parsed ? "" : "没有拆成卡片。可以改一下说明再发。",
-              });
-            }
-          },
-        });
-        const parsed = parseCodexReply(raw);
-        if (parsed) {
-          // 已有卡片目录只用于幂等匹配：拉取失败必须降级为空目录 + 提示，不能把成功的回复覆盖成 error
-          let catalog: CodexCatalogCard[] = [];
-          try {
-            const [world, characters, foreshadows] = await Promise.all([
-              apiGet<{ items: { id: string; title: string }[] }>(`/api/world?novelId=${encodeURIComponent(novelId)}`),
-              apiGet<{ items: { id: string; name: string }[] }>(`/api/characters?novelId=${encodeURIComponent(novelId)}`),
-              apiGet<{ items: { id: string; title: string }[] }>(`/api/foreshadows?novelId=${encodeURIComponent(novelId)}`),
-            ]);
-            catalog = [
-              ...world.items.map((item) => ({ id: item.id, kind: "world" as const, title: item.title })),
-              ...characters.items.map((item) => ({ id: item.id, kind: "character" as const, title: item.name })),
-              ...foreshadows.items.map((item) => ({ id: item.id, kind: "foreshadow" as const, title: item.title })),
-            ];
-          } catch {
-            catalog = [];
-            toast({
-              title: "已有卡片目录加载失败",
-              description: "清单照常显示；同名卡片可能被当作新建，写入前请留意。",
-              tone: "error",
-            });
+  const sendAgent = React.useCallback(async (text: string) => {
+    if (!text.trim() || chat.streaming || sendingRef.current) return;
+    sendingRef.current=true;
+    const originalKey=chat.activeKey;
+    // Persist unsaved writing before the agent reads the chapter; a failed save leaves the input intact.
+    try { await bridge?.flush?.(); } catch { sendingRef.current=false;return; }
+    const history = chat.activeTab.messages.filter(m=>m.status!=="streaming").slice(-10).map(m=>({role:m.role,content:m.content}));
+    const previous = [...chat.activeTab.messages].reverse().flatMap(m=>m.actions).find(a=>a.type==="agent-run");
+    const previousRunId = previous && typeof previous.payload==="object" && previous.payload ? (previous.payload as {runId?:string}).runId : undefined;
+    const selection=task?.selection||bridge?.getSelectionText().trim()||undefined;
+    const references=[...mentions];
+    const attached=referenceSnapshots[originalKey];
+    const snapshot=task?.snapshot??(attached&&(!attached.id||references.some(m=>m.type===attached.kind&&m.id===attached.id))?attached:undefined);
+    const sessionId=await chat.prepareSession();
+    if(activeTabKeyRef.current!==originalKey){sendingRef.current=false;return;}
+    const assistantId=chat.beginExchange(text);
+    const controller=new AbortController();
+    editAbortRef.current=controller;
+    setDraft("");setMentions([]);setTask(null);setReferenceSnapshots(prev=>({...prev,[originalKey]:undefined}));
+    let currentRun:AgentRun|undefined;
+    let action:AiAction|undefined;
+    try {
+      await streamAiAgent({novelId,chapterId:task?.targetChapterId||chapterId,sessionId:sessionId||undefined,agentId:chat.activeTab.agentId,message:text,snapshot,history,previousRunId,selection,mentions:references,context:contextConfig}, {
+        signal:controller.signal,
+        onEvent:event=>{
+          if(event.type==="meta") chat.patchExchange(assistantId,{provider:event.provider,model:event.model});
+          if(event.type==="action") {action=event.action;chat.patchExchange(assistantId,{actions:[action]});}
+          if(event.type==="agent") {
+            currentRun=event.run;
+            chat.patchExchange(assistantId,{agentRun:event.run,content:event.run.summary||"正在处理任务",status:event.run.status==="running"?"streaming":event.run.status==="error"?"error":event.run.status==="aborted"?"aborted":"complete",error:event.run.error,usage:event.run.usage});
           }
-          const items = prepareCodexItems(parsed.items, catalog);
-          // 追问确实产出了新清单才替换旧清单；模型只是反问（items 为空）时旧清单仍可直接勾选写入
-          if (pending && items.length > 0) {
-            chat.patchExchange(pending.id, { codexSuperseded: true });
+          if(event.type==="agent-preview" && currentRun) {
+            currentRun={...currentRun,preview:currentRun.preview+event.text};
+            chat.patchExchange(assistantId,{agentRun:currentRun});
           }
-          chat.patchExchange(assistantId, {
-            status: "complete",
-            content: parsed.message || "清单在下面，勾选后才会写入。",
-            codexItems: items,
-            codexApplied: false,
-          });
-        }
-      } catch (err) {
-        failed = true;
-        if (controller.signal.aborted) {
-          chat.patchExchange(assistantId, { status: "aborted", content: "已停止", error: "" });
-        } else {
-          chat.patchExchange(assistantId, {
-            status: "error",
-            error: err instanceof Error ? err.message : "生成失败",
-          });
-        }
-      } finally {
-        codexAbortRef.current = null;
-        // 以前 codex 轮次只写在内存里，刷新/切会话就丢：结束后把整轮落库（成功才写）
-        await chat.endExchange({ persist: !failed });
+          if(event.type==="error") chat.patchExchange(assistantId,{status:"error",error:event.message,content:currentRun?.summary||"任务未完成"});
+          if(event.type==="done") chat.patchExchange(assistantId,{usage:event.usage});
+        },
+      });
+    } catch(e) {
+      chat.patchExchange(assistantId,{status:controller.signal.aborted?"aborted":"error",content:currentRun?.summary||"任务未完成",error:controller.signal.aborted?"已停止，完成的候选已保留":e instanceof Error?e.message:"任务失败"});
+      if(action) {
+        const runId=(action.payload as {runId:string}).runId;
+        try {const saved=await apiGet<AgentRun>(`/api/ai/agent/${runId}`);chat.patchExchange(assistantId,{agentRun:saved});}catch{}
       }
-      return;
-    }
-    await chat.send({ text, ...buildExtras() });
-  }, [bridge, buildExtras, chapterId, chat, draft, novelId, setDraft, setMentions, task, toast]);
-
-  const handleQuickAsk = React.useCallback(
-    (prompt: string) => {
-      if (chat.streaming) return;
-      void chat.send({ text: prompt, ...buildExtras() });
-    },
-    [buildExtras, chat],
-  );
-
-  const handleRetry = React.useCallback(
-    (message: UIMessage) => {
-      void chat.retry(message.id, buildExtras());
-    },
-    [buildExtras, chat],
-  );
+    } finally {sendingRef.current=false;editAbortRef.current=null;await chat.endExchange({persist:!sessionId});}
+  },[bridge,chat,novelId,chapterId,mentions,contextConfig,task,referenceSnapshots,setDraft,setMentions]);
+  React.useEffect(()=>{
+    const text=pendingAutoSendRef.current;
+    if(!text||chat.streaming)return;
+    pendingAutoSendRef.current=null;
+    void sendAgent(text);
+  },[task,sendAgent,chat.streaming]);
+  const handleSend=React.useCallback(()=>sendAgent(draft.trim()),[sendAgent,draft]);
+  const handleQuickAsk=React.useCallback((prompt:string)=>{void sendAgent(prompt);},[sendAgent]);
+  const handleRetry=React.useCallback((message:UIMessage)=>{
+    const index=chat.activeTab.messages.findIndex(m=>m.id===message.id);
+    const original=chat.activeTab.messages.slice(0,index).reverse().find(m=>m.role==="user");
+    if(original)void sendAgent(original.content);
+  },[chat.activeTab.messages,sendAgent]);
 
   const handleCopy = React.useCallback(
     async (message: UIMessage) => {
@@ -587,15 +481,15 @@ export function AiPanel({
   );
 
   return (
-    <section className={rootClass} aria-label="AI 助手面板">
+    <section className={cn(rootClass,"ai-surface")} aria-label="AI 助手面板">
       <header className="shrink-0 border-b border-line">
-        <div className="flex items-center gap-2 px-3 py-2">
+        <div className="flex items-center gap-2 px-4 py-3">
           <div className="flex min-w-0 flex-1 items-center gap-1.5">
-            <span className="flex size-6 shrink-0 items-center justify-center rounded-sm bg-accent-soft text-accent">
+            <span className="flex size-6 shrink-0 items-center justify-center rounded-lg border border-accent/15 bg-accent/6 text-accent">
               <Cpu className="size-3.5" />
             </span>
             {/* 标题保持完整，仅章节名按剩余空间截断，避免 384px 窄面板下被徽标挤断 */}
-            <span className="shrink-0 whitespace-nowrap font-serif text-[14px] text-ink">AI 助手</span>
+            <span className="shrink-0 whitespace-nowrap font-serif text-[14px] text-ink">写作助手</span>
             {chapterTitle ? (
               <span className="min-w-0 flex-1 truncate text-[11px] text-ink-4 dark:text-ink-3">
                 · {chapterTitle}
@@ -616,22 +510,13 @@ export function AiPanel({
                 <CircleAlert className="size-3" />
                 未配置模型
               </Link>
-            ) : target ? (
-              <ModelPicker
-                variant="header"
-                settings={settings ?? null}
-                providers={providers?.items}
-                target={target}
-                onChanged={setSettingsData}
-                disabled={chat.streaming}
-              />
             ) : null}
-            <Tooltip label="历史会话">
+            <Tooltip label="历史会话" side="bottom" align="end">
               <IconButton label="历史会话" onClick={() => setHistoryOpen(true)}>
                 <MessagesSquare className="size-4" />
               </IconButton>
             </Tooltip>
-            <Tooltip label="模型与 API Key 设置">
+            <Tooltip label="模型与 API Key 设置" side="bottom" align="end">
               <IconButton
                 label="模型与 API Key 设置"
                 onClick={() => openSettingsDialog("providers")}
@@ -723,7 +608,7 @@ export function AiPanel({
       </header>
 
       {/* 智能体选择：只有一个智能体时不显示，避免出现空下拉 */}
-      {hasAgentChoice ? (
+      {hasAgentChoice && chat.activeTab.messages.length === 0 ? (
         <div className="shrink-0 border-b border-line px-2.5 py-1.5">
           <AgentPicker
             value={chat.activeTab.agentId}
@@ -735,7 +620,7 @@ export function AiPanel({
       ) : null}
 
       {/* 对话区 */}
-      <div ref={scrollRef} className="scroll-thin min-h-0 flex-1 overflow-y-auto px-3 py-3">
+      <div ref={scrollRef} className="scroll-thin min-h-0 flex-1 overflow-y-auto px-5 py-5">
         {chat.activeTab.messages.length === 0 ? (
           <WelcomePanel
             agent={activeAgent}
@@ -746,7 +631,7 @@ export function AiPanel({
             disabled={chat.streaming}
           />
         ) : (
-          <div className="flex flex-col gap-4">
+          <div className="mx-auto flex w-full max-w-[520px] flex-col gap-7">
             {chat.activeTab.messages.map((message, index) => (
               <div key={message.id} className="flex flex-col">
                 <ChatMessageView
@@ -758,7 +643,9 @@ export function AiPanel({
                   onRetry={handleRetry}
                   onDelete={(target) => chat.removeMessage(target.id)}
                   onApplyAction={handleAction}
-                  pricing={settings?.aiPricing}
+                  disableActions={chat.streaming}
+                  onContinue={(text)=>{setDraft(text);setFocusSignal(v=>v+1);}}
+                  pricing={settings?.aiPricing ?? statsApi.data?.aiPricing}
                 />
                 {message.codexItems && message.codexItems.length > 0 ? (
                   <CodexProposal
@@ -778,25 +665,6 @@ export function AiPanel({
 
       {/* 上下文用量 + 输入区 */}
       <div className="shrink-0">
-        <ContextMeter
-          data={preview.data}
-          loading={preview.loading}
-          error={preview.error}
-          budget={budget}
-          onOpen={() => setContextOpen(true)}
-          className="border-t border-line"
-        />
-        {statsApi.data ? (
-          <div className="border-t border-line px-3 py-1.5">
-            <AiSpendLine
-              prefix="今日 "
-              promptTokens={statsApi.data.todayPromptTokens}
-              completionTokens={statsApi.data.todayCompletionTokens}
-              calls={statsApi.data.todayAiCalls}
-              price={settings?.aiPricing ?? { inputPerMillion: 0, outputPerMillion: 0 }}
-            />
-          </div>
-        ) : null}
         <ChatComposer
           value={draft}
           onChange={setDraft}
@@ -807,12 +675,17 @@ export function AiPanel({
           onSend={() => void handleSend()}
           onStop={() => {
             codexAbortRef.current?.abort();
+            editAbortRef.current?.abort();
             chat.stop();
           }}
           streaming={chat.streaming}
           novelId={novelId}
           chapterId={chapterId}
-          placeholder="输入要求，/ 选技能，@ 引用资料…"
+          placeholder={
+            activeAgentId === "setting"
+              ? "新建设定、修改角色或整理资料，生成后审阅改动…"
+              : "输入要求，/ 选技能，@ 引用资料…"
+          }
           onOpenContext={() => setContextOpen(true)}
           agentName={activeAgent.name}
           onOpenAgent={hasAgentChoice ? () => setAgentSheetOpen(true) : undefined}
@@ -832,6 +705,10 @@ export function AiPanel({
           }
           focusSignal={focusSignal}
         />
+        <div className="flex h-7 items-center gap-2 border-t border-line/60 px-3">
+          {statsApi.data?<UsageIndicator label="今日" promptTokens={statsApi.data.todayPromptTokens} completionTokens={statsApi.data.todayCompletionTokens} calls={statsApi.data.todayAiCalls} price={statsApi.data.aiPricing??settings?.aiPricing??{inputPerMillion:0,outputPerMillion:0}}/>:<span className="text-[10px] text-ink-4">用量加载中</span>}
+          <ContextStatus tokens={preview.data?.totalTokens??0} budget={budget} loading={preview.loading} error={preview.error} onClick={()=>setContextOpen(true)}/>
+        </div>
       </div>
 
       {/* 智能体选择 Sheet（输入区「+ 智能体」chip 打开） */}

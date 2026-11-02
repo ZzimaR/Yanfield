@@ -40,6 +40,7 @@ export const PATCH = handle<{ id: string }>(async (request, { params }) => {
   const current = findForeshadow(params.id);
   if (!current) return notFound("伏笔不存在");
   const body = await readBody(request);
+  if (body.expectedUpdatedAt !== undefined && body.expectedUpdatedAt !== current.updatedAt) return bad("资料已有新修改，请重新打开并核对后保存", 409);
   const patch = pickFields<Foreshadow>(body, FORESHADOW_FIELDS);
   const status = pickEnum(body, "status", FORESHADOW_STATUSES, "伏笔状态");
   if (status) patch.status = status;

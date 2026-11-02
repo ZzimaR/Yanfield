@@ -268,6 +268,13 @@ CREATE TABLE IF NOT EXISTS word_snapshots (
   words INTEGER NOT NULL DEFAULT 0,
   ai_tokens INTEGER NOT NULL DEFAULT 0
 );
+CREATE TABLE IF NOT EXISTS agent_runs (
+  id TEXT PRIMARY KEY,
+  novel_id TEXT NOT NULL REFERENCES novels(id) ON DELETE CASCADE,
+  data TEXT NOT NULL,
+  created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_agent_runs_novel ON agent_runs(novel_id, created_at DESC);
 `;
 
 export type DB = DatabaseSync;
