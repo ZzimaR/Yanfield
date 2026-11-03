@@ -1,6 +1,8 @@
 "use client";
 import * as React from "react";
-import { BookOpen, FolderOpen, Layers3, Check, ChevronDown, CircleAlert, FilePenLine, Loader2, RotateCcw } from "lucide-react";
+import { BookOpen, User, MapPin, Bookmark, FolderOpen, Layers3, Check, ChevronDown, CircleAlert, FilePenLine, Loader2, RotateCcw } from "lucide-react";
+import { copyText } from "@/lib/ui/clipboard";
+import { entityTone } from "@/lib/ui/entity-tone";
 import { MaterialPreview } from "@/components/cards/MaterialPreview";
 import { Button, useToast } from "@/components/ui/kit";
 import { apiGet, apiPatch, useDataChanged } from "@/lib/client/api";
@@ -8,7 +10,7 @@ import { useEditorBridge } from "@/lib/editor/bridge";
 import { countWords, stripHtml } from "@/lib/ui/cn";
 import { diffInline } from "@/lib/diff/blocks";
 import { AGENT_UPDATED,broadcastRun,commitAgent,openAgentReview } from "@/lib/ai/agent/client";
-import { ENTITY_LABEL, FIELD_LABEL, type AgentChange, type AgentRun } from "@/lib/ai/agent/types";
+import { ENTITY_LABEL, FIELD_LABEL, type AgentChange, type AgentRun, type AgentReference } from "@/lib/ai/agent/types";
 
 function display(value:unknown):string {
   if(value===null||value===undefined||value==="") return "未填写";
@@ -66,6 +68,20 @@ export function AgentRunCard({runId,initial,disabled=false,onContinue}:{runId:st
   const chapterCount=live.filter(c=>c.kind==="chapter").length;
   const apply=(changes:AgentChange[])=>mutate(()=>commitAgent(run.id,{selections:changes.map(c=>({id:c.id,fields:fields[c.id]}))},bridge));
   const selected=pending.filter(c=>picked[c.id]!==false);
+  const openTarget=(target:AgentReference & {changeId?:string})=>{
+    const candidate=run.changes.find(c=>c.id===(target.changeId||target.id));
+    if(candidate && !candidate.appliedId){
+      if(candidate.kind==="chapter"){openAgentReview(run,candidate.id);return;}
+      setMaterialsOpen(true);setFocusedMaterial(candidate.id);setExpanded(candidate.id);return;
+    }
+    const id=candidate?.appliedId||target.id;
+    if(["world","character","foreshadow"].includes(target.kind))window.dispatchEvent(new CustomEvent("yantian:open-card",{detail:{kind:target.kind,id,novelId:run.novelId}}));
+    else window.dispatchEvent(new CustomEvent("yantian:agent-navigate",{detail:{kind:target.kind,id}}));
+  };
+  const chip=(target:AgentReference & {changeId?:string})=><button key={target.kind+target.id} type="button" title={`${ENTITY_LABEL[target.kind]} · ${target.title}`} onClick={()=>openTarget(target)} className={`inline-flex max-w-full items-center gap-1.5 rounded-md border px-2 py-1 text-[11px] transition-colors hover:brightness-95 focus-visible:outline-accent ${entityTone(target.kind)}`}>
+    {target.kind==="character"?<User className="size-3 shrink-0"/>:target.kind==="world"?<MapPin className="size-3 shrink-0"/>:target.kind==="foreshadow"?<Bookmark className="size-3 shrink-0"/>:<BookOpen className="size-3 shrink-0"/>}
+    <span className="truncate">{target.title}</span><span className="shrink-0 text-[9px] opacity-70">{ENTITY_LABEL[target.kind]}</span>
+  </button>;
   return <div className="my-4 min-w-0 overflow-hidden rounded-lg border border-line/80 bg-surface" data-testid="agent-run-card">
     <div className="flex items-center gap-2 border-b border-line/70 px-4 py-3.5 text-[12px]">
       {running?<Loader2 className="size-3.5 animate-spin text-accent"/>:applied.length?<Check className="size-3.5 text-jade"/>:<FilePenLine className="size-3.5 text-accent"/>}
@@ -75,16 +91,20 @@ export function AgentRunCard({runId,initial,disabled=false,onContinue}:{runId:st
     <div className="px-4 py-2.5">
       <details open={running||undefined} className="text-[11px] text-ink-3">
         <summary className="cursor-pointer py-1">执行过程 · {run.steps.length} 步</summary>
-        <ol className="my-2 space-y-2 border-l border-line pl-3">{run.steps.map(s=><li key={s.id}><div className={s.status==="error"?"text-danger":"text-ink-2"}>{s.status==="running"?"◌":s.status==="error"?"!":"✓"} {s.label}</div><p className="mt-0.5 leading-relaxed text-ink-4">{s.detail}</p></li>)}</ol>
+        <ol className="my-2 space-y-3 border-l border-line pl-3">{run.steps.map((step,index)=><li key={step.id}>
+          <div className={`flex items-center gap-1.5 ${step.status==="error"?"text-danger":"text-ink-3"}`}>
+            {step.status==="running"?<Loader2 className="size-3 animate-spin"/>:step.status==="error"?<CircleAlert className="size-3"/>:<Check className="size-3"/>}
+            <span>{step.label}</span>
+          </div>
+          {step.targets?.length?<div className="mt-1.5 flex flex-wrap gap-1.5">{step.targets.map(chip)}</div>:null}
+          {step.detail && (step.status==="error" || step.detail!==run.steps[index-1]?.detail)?<p className="mt-1 leading-relaxed text-ink-4">{step.detail}</p>:null}
+        </li>)}</ol>
       </details>
-      {run.references.length?<details className="text-[11px] text-ink-3"><summary className="cursor-pointer py-1">参考资料 · {run.references.length}</summary><div className="my-2 flex flex-wrap gap-1">{run.references.map(r=><button type="button" key={r.kind+r.id} className="rounded bg-surface-2 px-2 py-1 hover:text-accent" onClick={()=>{
-        if(["world","character","foreshadow"].includes(r.kind))window.dispatchEvent(new CustomEvent("yantian:open-card",{detail:{kind:r.kind,id:r.id}}));
-        else window.dispatchEvent(new CustomEvent("yantian:agent-navigate",{detail:{kind:r.kind,id:r.id}}));
-      }}>{ENTITY_LABEL[r.kind]} · {r.title}</button>)}</div></details>:null}
+      {run.references.length?<details className="text-[11px] text-ink-3"><summary className="cursor-pointer py-1">已读取资料 · {run.references.length}</summary><div className="my-2 flex flex-wrap gap-1.5">{run.references.map(chip)}</div></details>:null}
     </div>
     {materials.length?<div className="border-t border-line/60 bg-paper/25 px-4 py-3.5">
       <button type="button" className="mb-2.5 flex w-full items-center gap-2 text-left text-[11px] text-ink-3" aria-expanded={materialsOpen} onClick={()=>setMaterialsOpen(!materialsOpen)}><Layers3 className="size-3.5 text-jade"/><span>{materials.some(c=>c.state==="pending")?"资料待确认":"资料改动"} · {materials.length} 项</span><ChevronDown className={`ml-auto size-3 transition-transform ${materialsOpen?"rotate-180":""}`}/></button>
-      <div className="flex flex-wrap gap-1.5">{materials.map(c=><button key={c.id} type="button" onClick={()=>{setMaterialsOpen(true);setFocusedMaterial(c.id);setExpanded(null);}} className={`max-w-full truncate rounded-lg border px-2 py-1.5 text-[11px] transition-colors hover:border-jade/40 ${c.kind==="character"?"border-[#9a83a0]/15 bg-[#9a83a0]/10 text-[#88718f] dark:text-[#baa7c1]":"border-jade/15 bg-jade/[0.065] text-jade"}`}><span className="mr-1.5 opacity-70">{ENTITY_LABEL[c.kind]}</span>{c.title}</button>)}</div>
+      <div className="flex flex-wrap gap-1.5">{materials.map(c=><button key={c.id} type="button" onClick={()=>openTarget({kind:c.kind,id:c.targetId||c.id,title:c.title,changeId:c.id})} className={`max-w-full truncate rounded-lg border px-2 py-1.5 text-[11px] transition-colors hover:border-jade/40 ${entityTone(c.kind)}`}><span className="mr-1.5 opacity-70">{ENTITY_LABEL[c.kind]}</span>{c.title}</button>)}</div>
       <p className="mt-2 text-[10px] leading-relaxed text-ink-4">新建 {materials.filter(c=>!c.before).length} · 更新 {materials.filter(c=>c.before).length}　{materials.some(c=>c.state==="pending")?"点击资料查看内容与依据，确认后加入资料库。":"已应用的资料可打开继续编辑。"}</p>
     </div>:null}
     {run.preview?<div className="max-h-48 overflow-y-auto border-t border-line/60 px-4 py-4"><p className="mb-2 text-[10px] text-jade">写手正在起草</p><p className="whitespace-pre-wrap font-serif text-[13px] leading-loose text-ink-2">{run.preview}</p></div>:null}
@@ -116,6 +136,19 @@ export function AgentRunCard({runId,initial,disabled=false,onContinue}:{runId:st
       </div>;
     })}
     {error||run.error?<p role="alert" className="mx-3 mb-3 rounded bg-danger/5 p-2 text-[11px] leading-relaxed text-danger"><CircleAlert className="mr-1 inline size-3"/>{error||run.error}</p>:null}
+    {run.error || run.errorCode || run.diagnostics?.length?<details className="mx-3 mb-3 rounded-md border border-line p-2 text-[11px] text-ink-3">
+      <summary className="cursor-pointer">调试详情 · {run.errorCode||(run.diagnostics?.length?"已自动修复的协议错误":"旧任务未记录错误码")}</summary>
+      <p className="mt-2 break-all">任务 ID：{run.id}</p>
+      <p className="mt-1">模型：{run.provider} / {run.model}</p>
+      {run.error && !run.errorCode && !run.diagnostics?.length?<p className="mt-2">此任务由旧版执行器生成，没有保存原始返回或具体校验错误，无法补回历史调试详情。更新后的新任务会记录这些信息。</p>:null}
+      <p className="mt-1">以下仅包含模型返回的脱敏片段和校验结果，不包含请求密钥。预览可能含作品内容。</p>
+      {run.diagnostics?.map((diagnostic,index)=><details key={index} className="mt-2 border-t border-line pt-2">
+        <summary className="cursor-pointer">第 {diagnostic.round} 轮 · 第 {diagnostic.attempt} 次 · {diagnostic.code} · {diagnostic.responseChars} 字符</summary>
+        <ul className="my-2 space-y-1">{diagnostic.issues.map((issue,i)=><li key={i} className="break-words">{issue.path} · {issue.code}：{issue.message}</li>)}</ul>
+        <pre className="max-h-64 overflow-auto whitespace-pre-wrap break-all rounded bg-surface-2 p-2">{diagnostic.responsePreview}{diagnostic.responseTail?"\n…[中间省略]…\n"+diagnostic.responseTail:""}</pre>
+      </details>)}
+      <button type="button" className="mt-2 text-accent underline" onClick={async()=>{try{await copyText(JSON.stringify({runId:run.id,errorCode:run.errorCode,model:run.model,provider:run.provider,diagnostics:run.diagnostics},null,2));toast({title:"已复制调试信息",tone:"success"});}catch{toast({title:"复制失败，请手动选中调试详情",tone:"error"});}}}>复制调试信息</button>
+    </details>:null}
     {!running?<div className="flex flex-wrap items-center gap-2 border-t border-line/70 bg-paper/35 px-4 py-3">
       {pending.length?<Button variant="primary" size="sm" className="min-h-9 flex-1 justify-center shadow-none" loading={busy} disabled={disabled||!selected.length||selected.some(c=>fields[c.id]?.length===0)} onClick={()=>void apply(selected)}>应用选中的 {selected.length} 项</Button>:null}
       {applied.length?<Button size="sm" variant="ghost" disabled={disabled||busy} icon={<RotateCcw className="size-3"/>} onClick={()=>void mutate(()=>commitAgent(run.id,{op:"undo"},bridge))}>撤回本轮</Button>:null}

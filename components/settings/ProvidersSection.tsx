@@ -17,6 +17,7 @@ import {
 import { apiDelete, apiPatch, apiPost, notifyDataChanged, useApi } from "@/lib/client/api";
 import type { ProviderPreset } from "@/lib/defaults";
 import type { AppSettings, ProviderConfig } from "@/lib/types";
+import type {ProviderBalance} from "@/lib/ai/balance";
 import { cn } from "@/lib/ui/cn";
 import { ProviderDialog } from "./ProviderDialog";
 import { ProviderPresetGrid } from "./ProviderPresetGrid";
@@ -53,6 +54,15 @@ export function ProvidersSection({ settings, update }: ProvidersSectionProps) {
   const [testResults, setTestResults] = React.useState<Record<string, TestResult>>({});
   const [togglingId, setTogglingId] = React.useState<string | null>(null);
 
+  const [balances,setBalances]=React.useState<Record<string,ProviderBalance>>({});
+  const [balanceLoading,setBalanceLoading]=React.useState<Record<string,boolean>>({});
+  const [balanceErrors,setBalanceErrors]=React.useState<Record<string,string>>({});
+  const queryBalance=async(provider:ProviderConfig)=>{
+    setBalanceLoading(prev=>({...prev,[provider.id]:true}));setBalanceErrors(prev=>({...prev,[provider.id]:""}));
+    try{const value=await apiPost<ProviderBalance>(`/api/providers/${encodeURIComponent(provider.id)}/balance`);setBalances(prev=>({...prev,[provider.id]:value}));}
+    catch(error){setBalanceErrors(prev=>({...prev,[provider.id]:error instanceof Error?error.message:"余额查询失败"}));}
+    finally{setBalanceLoading(prev=>({...prev,[provider.id]:false}));}
+  };
   const items = providersApi.data?.items ?? [];
 
   const openCreate = (nextPreset: ProviderPreset | null = null) => {
@@ -241,6 +251,16 @@ export function ProvidersSection({ settings, update }: ProvidersSectionProps) {
                         ) : null}
                       </div>
                     ) : null}
+                    {(()=>{let supported=false;try{supported=new URL(provider.baseUrl).hostname==="api.deepseek.com";}catch{}
+                      const value=balances[provider.id];return supported?<div className="mt-2 space-y-1 text-[11px]">
+                        <Button size="sm" variant="ghost" loading={balanceLoading[provider.id]} onClick={()=>void queryBalance(provider)}>{value?"刷新余额":"查询余额"}</Button>
+                        {value?<>
+                          <p className="text-ink-2">{value.isAvailable?"账户可用":"余额不足"} · {value.balances.map(b=>`${b.currency} ${b.total}`).join(" / ")}</p>
+                          <p className="text-ink-3">{value.balances.map(b=>`${b.currency} 充值 ${b.toppedUp} · 赠送 ${b.granted}`).join("；")}</p>
+                          <p className="text-ink-4">查询于 {new Date(value.fetchedAt).toLocaleString()} · 账户余额，不是本次调用费用{balanceErrors[provider.id]?"（刷新失败，显示上次结果）":""}</p>
+                        </>:null}
+                        {balanceErrors[provider.id]?<p role="alert" className="text-danger">{balanceErrors[provider.id]}</p>:null}
+                      </div>:null;})()}
                     {result && !result.ok ? (
                       <p className="mt-1.5 flex items-center gap-1 text-[10.5px] text-danger">
                         <TriangleAlert className="size-3" aria-hidden />

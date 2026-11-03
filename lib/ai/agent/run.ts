@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { protocolDiagnostic } from "./diagnostics";
 import * as repo from "@/lib/repo";
 import { resolveTarget, mergeContextConfig } from "@/lib/ai/engine";
 import { streamCompletion, type AiMessage } from "@/lib/ai/provider";
@@ -8,12 +9,12 @@ import { countWords, estimateTokens, stripHtml, uid } from "@/lib/ui/cn";
 import { ApiError } from "@/lib/api-utils";
 import { getRun, propose, readEntity, saveRun, visibleEntity } from "./store";
 import { patchSchemas, proseHtml, sameFields } from "./schema";
-import { ENTITY_LABEL, type AgentRequest, type AgentRun, type EntityKind, type Fields } from "./types";
+import { ENTITY_LABEL, type AgentRequest, type AgentRun, type AgentStep, type EntityKind, type Fields } from "./types";
 import type { AiStreamEvent } from "@/lib/types";
 import { MATERIAL_PROMPT, materialResultSchema, prepareMaterial, type ExistingMaterial, type MaterialSource } from "./materials";
 
 const kinds=z.enum(["chapter","blueprint","character","world","foreshadow","outline","volume-outline"]);
-const decisionSchema=z.object({message:z.string().max(1500),calls:z.array(z.object({name:z.enum(["workspace","list","read","propose","write_chapter","reject_change","read_archive"]),args:z.record(z.string(),z.unknown())})).max(5).default([]),done:z.boolean().default(false)});
+const decisionSchema=z.object({message:z.string(),calls:z.array(z.object({name:z.enum(["workspace","list","read","propose","write_chapter","reject_change","read_archive"]),args:z.record(z.string(),z.unknown())})).max(5).default([]),done:z.boolean().default(false)});
 const SYSTEM=`你是砚田写作台的执行助手。理解作者的目标，按需读取材料、调用写手和提出可审阅修改。普通讨论直接回答，明确修改请求必须产出实际候选，不能只说“可以”。
 每轮只输出JSON：{"message":"简短执行说明或最终答复","calls":[{"name":"工具名","args":{}}],"done":false}。完成时calls为空、done=true。
 工具：
@@ -126,11 +127,20 @@ export async function* runAgent(request: AgentRequest, signal?: AbortSignal): As
       for(let attempt=0;attempt<2;attempt++) {
         raw="";
         for await(const delta of complete(messages)) raw+=delta;
-        const parsed=decisionSchema.safeParse(extractJson(raw));
+        const json=extractJson(raw);
+        const parsed=decisionSchema.safeParse(json);
         if(parsed.success) {decision=parsed.data;break;}
+        const diagnostic=protocolDiagnostic(raw,json,parsed.error.issues,round+1,attempt+1);
+        (run.diagnostics??=[]).push(diagnostic);checkpoint();
+        // Include the rejected reply so the repair request has concrete evidence.
+        messages.push({role:"assistant",content:raw.length<=8000?raw:raw.slice(0,6000)+"\n[返回过长，此处截取了开头；请重新生成完整结构]"});
         messages.push({role:"user",content:"上次输出无法解析或未通过校验："+(parsed.success?"":parsed.error.issues.map(i=>`${i.path.join(".")}: ${i.message}`).join("; ").slice(0,800))+"。请仅返回message、calls数组、done布尔值的完整JSON；长篇建卡每轮最多提交两张，剩余卡片分轮完成。"});
       }
-      if(!decision) throw new Error("模型两次未返回有效工具指令，已保留完成的候选");
+      if(!decision) {
+        run.errorCode="AGENT_PROTOCOL_INVALID";
+        const detail=run.diagnostics?.at(-1)?.issues[0];
+        throw new Error(`模型两次返回均未通过工具指令校验${detail?`（${detail.path}: ${detail.message}）`:""}。${run.changes.length?"本轮已完成的候选已保留":"本轮尚未生成新候选，上一轮候选不受影响"}。可展开调试详情查看原因。`);
+      }
       messages.push({role:"assistant",content:raw});
       run.summary=decision.message;
       // A nonempty reply with no tools is terminal even if the model omits done.
@@ -138,7 +148,7 @@ export async function* runAgent(request: AgentRequest, signal?: AbortSignal): As
       if(!decision.calls.length) throw new Error("模型没有给出下一步操作");
       for(const call of decision.calls) {
         if(++toolCount>36) throw new Error("已达到工具调用上限，完成的候选已保留");
-        const step={id:uid("step"),label:({workspace:"查看作品进度",list:"查找相关资料",read:"读取材料",propose:"准备资料改动",write_chapter:"写作与修订",reject_change:"丢弃候选",read_archive:"读取故事档案"})[call.name],detail:decision.message,status:"running" as "running"|"complete"|"error"};
+        const step:AgentStep={id:uid("step"),tool:call.name,label:({workspace:"查看作品进度",list:"查找相关资料",read:"读取材料",propose:"准备资料改动",write_chapter:"写作与修订",reject_change:"丢弃候选",read_archive:"读取故事档案"})[call.name],detail:"",status:"running" as "running"|"complete"|"error"};
         run.steps.push(step);checkpoint();yield {type:"agent",run};
         let result:unknown;
         try {
@@ -241,6 +251,29 @@ export async function* runAgent(request: AgentRequest, signal?: AbortSignal): As
             result={changeId:change.id,title,words:actual,targetWords:words,ratio:Math.round(actual/words*100),state:"pending",hint:"可以read候选并复核；修订请传changeId，不要再次新建章节"};
           }
           step.status="complete";
+          const resultRow=result as Fields;
+          if(call.name==="workspace")step.detail="已查看作品信息与资料目录，尚未读取各卡片正文。";
+          if(call.name==="list") {
+            const rows=result as Fields[];
+            step.detail=`${ENTITY_LABEL[call.args.kind as EntityKind]} · ${call.args.query?`搜索「${String(call.args.query)}」 · `:""}${rows.length} 项目录结果${rows.length>6?"（下方显示前 6 项，未读取正文）":"，未读取正文"}`;
+            step.targets=rows.slice(0,6).map(row=>({kind:call.args.kind as EntityKind,id:String(row.id),title:String(row.title)}));
+          }
+          if(call.name==="read") {
+            if(resultRow.missing)step.detail="未找到此资料";
+            else {
+              step.targets=[{kind:call.args.kind as EntityKind,id:String(call.args.id),title:String(resultRow.title||resultRow.name||ENTITY_LABEL[call.args.kind as EntityKind])}];
+              step.detail=resultRow.contentTotal?`正文 ${Number(resultRow.contentOffset)+1}–${Math.min(Number(resultRow.contentOffset)+String(resultRow.content).length,Number(resultRow.contentTotal))} / ${resultRow.contentTotal} 字符${resultRow.truncated?"，后续尚未读取":""}`:"";
+            }
+          }
+          if(call.name==="read_archive") {
+            step.targets=[{kind:"chapter",id:String(call.args.chapterId),title:repo.getChapter(String(call.args.chapterId))?.title||"章节档案"}];
+            step.detail=resultRow.missing?"尚无故事档案":"已读取该章故事档案";
+          }
+          if(call.name==="propose"||call.name==="write_chapter") {
+            const change=run.changes.find(c=>c.id===resultRow.changeId);
+            if(change){step.label=change.before?"准备修改":"准备新建";step.targets=[{kind:change.kind,id:change.targetId||change.id,title:change.title,changeId:change.id}];step.detail="候选已准备，等待确认";}
+          }
+          if(call.name==="reject_change")step.detail="已丢弃指定候选";
         } catch(error) {
           if(signal?.aborted) throw error;
           step.status="error";step.detail=error instanceof Error?error.message:"工具执行失败";
@@ -255,7 +288,7 @@ export async function* runAgent(request: AgentRequest, signal?: AbortSignal): As
     const drafts=run.changes.filter(c=>c.kind==="chapter"&&c.state==="pending"&&typeof c.after.content==="string");
     const optedOut=/(?:不要|不用|不必|无需|别).{0,6}(?:资料|建卡|卡片|整理)|只(?:写|改|修改|生成)正文/.test(request.message);
     if(drafts.length&&!optedOut&&!request.selection&&(config.includeCharacters||config.includeWorld||config.includeForeshadows)) {
-      const step={id:uid("step"),label:"整理正文资料",detail:"核对人物、设定和伏笔，已有资料只补空白；所有卡片仍待确认。",status:"running" as "running"|"complete"|"error"};
+      const step:AgentStep={id:uid("step"),tool:"organize_materials",label:"整理正文资料",detail:"核对人物、设定和伏笔，已有资料只补空白；所有卡片仍待确认。",status:"running" as "running"|"complete"|"error"};
       run.steps.push(step);checkpoint();yield {type:"agent",run};
       try {
         const sources:MaterialSource[]=drafts.map(c=>({id:c.id,title:c.title,text:stripHtml(String(c.after.content)),candidate:true}));
@@ -296,6 +329,7 @@ export async function* runAgent(request: AgentRequest, signal?: AbortSignal): As
             preparedIds.add(change.id);
           } catch {skipped++;}
         }
+        step.targets=run.changes.filter(c=>preparedIds.has(c.id)).map(c=>({kind:c.kind,id:c.targetId||c.id,title:c.title,changeId:c.id}));
         step.status="complete";step.detail=`已准备 ${preparedIds.size} 项资料补充，等待确认。${skipped?`另有 ${skipped} 项未通过引用、权限或重名校验，未加入清单。`:preparedIds.size?"可逐项查看原文依据。":"没有需要补充的可靠资料。"}`;
         run.summary+=`\n\n${step.detail}`;
       } catch(error) {
@@ -308,6 +342,7 @@ export async function* runAgent(request: AgentRequest, signal?: AbortSignal): As
     run.status=run.changes.some(c=>c.state==="pending")?"ready":"complete";
   } catch(error) {
     run.status=signal?.aborted?"aborted":"error";
+    run.errorCode??=signal?.aborted?"AGENT_ABORTED":"AGENT_EXECUTION_FAILED";
     run.error=signal?.aborted?"已停止，完成的候选已保留":error instanceof Error?error.message:"任务失败";
     run.steps.filter(s=>s.status==="running").forEach(s=>{s.status="error";s.detail=run.error;});
   } finally {

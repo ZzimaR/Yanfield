@@ -3,7 +3,8 @@
 import * as React from "react";
 import { RotateCcw, SlidersHorizontal } from "lucide-react";
 import { Button, Card, Input, Segmented, Slider, Switch, Textarea, useToast } from "@/components/ui/kit";
-import { useApi } from "@/lib/client/api";
+import type {OfficialPricing} from "@/lib/ai/official-pricing";
+import { apiGet, useApi } from "@/lib/client/api";
 import { DEFAULT_CONTEXT_CONFIG, type AppSettings, type ContextConfig, type DashboardStats } from "@/lib/types";
 import { cn } from "@/lib/ui/cn";
 import { AiSpendLine } from "@/components/ai/AiSpendLine";
@@ -56,6 +57,9 @@ function budgetLabel(value: number): string {
 export function ContextSection({ settings, update }: ContextSectionProps) {
   const { toast } = useToast();
   const statsApi = useApi<DashboardStats>("/api/stats");
+  const [official,setOfficial]=React.useState<OfficialPricing|null>(null);
+  const [fetchingPrice,setFetchingPrice]=React.useState(false);
+  const [priceError,setPriceError]=React.useState("");
   if (!settings) return null;
   const context = settings.defaultContext;
   const pricing = settings.aiPricing;
@@ -216,6 +220,22 @@ export function ContextSection({ settings, update }: ContextSectionProps) {
             每次请求优先采用服务商返回的 token。填上你的单价后，这里按人民币估算，实际账单以服务商为准。两项都留 0 则只统计 token。
           </p>
         </div>
+        <Button size="sm" variant="secondary" loading={fetchingPrice} onClick={async()=>{
+          setFetchingPrice(true);setPriceError("");setOfficial(null);
+          try{setOfficial(await apiGet<OfficialPricing>("/api/ai/pricing"));}
+          catch(error){setPriceError(error instanceof Error?error.message:"官方单价获取失败");}
+          finally{setFetchingPrice(false);}
+        }}>获取默认模型官方单价</Button>
+        {priceError?<p role="alert" className="text-[12px] text-danger">{priceError}</p>:null}
+        {official && official.model===settings.models.chat.model && official.providerId===settings.models.chat.providerId?<div className="space-y-2 rounded-md border border-line p-3 text-[12px]">
+          <p>{official.model} · 元 / 百万 tokens</p>
+          <p className="text-[11px] text-ink-3">获取时间：{new Date(official.fetchedAt).toLocaleString()} · <a href={official.source} target="_blank" rel="noreferrer" className="text-accent underline">官方来源与时段规则</a></p>
+          {official.rates.map(rate=><div key={rate.period} className="flex flex-wrap items-center justify-between gap-2 border-t border-line pt-2">
+            <span>{rate.period}：输入 {rate.inputPerMillion} · 缓存命中 {rate.cachedInputPerMillion} · 输出 {rate.outputPerMillion}</span>
+            <Button size="sm" onClick={()=>{update({aiPricing:{inputPerMillion:rate.inputPerMillion,outputPerMillion:rate.outputPerMillion}});toast({title:"已采用官方单价",description:`${official.model} · ${rate.period} · 输入按缓存未命中估算`,tone:"success"});}}>采用此单价</Button>
+          </div>)}
+          <p className="text-[11px] text-ink-3">当前费用估算共用一组单价。选择后用于后续显示估算，不是逐次实际账单；缓存、峰谷时段和切换模型都会影响准确度。第三方中转价不适用。</p>
+        </div>:null}
         {stats ? (
           <div className="space-y-1">
             <AiSpendLine

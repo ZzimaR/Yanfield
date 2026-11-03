@@ -19,6 +19,24 @@ async function collect(request:Parameters<typeof runtime.runAgent>[0],signal?:Ab
 const plan=(calls:unknown[],message="处理任务")=>JSON.stringify({message,calls,done:!calls.length});
 
 describe("Agent连续工具执行",()=>{
+  it("长说明不使有效工具指令被拒绝",async()=>{
+    const novel=repo.createNovel({title:"长说明"});
+    fake.queue=[plan([{name:"workspace",args:{}}],"长篇资料说明。".repeat(400)),plan([],"完成")];
+    const event=(await collect({novelId:novel.id,message:"查看作品"})).filter(e=>e.type==="agent").at(-1)!;
+    if(event.type!=="agent")throw new Error("missing");expect(event.run.status).toBe("complete");expect(event.run.diagnostics).toBeUndefined();
+  });
+  it("两次失败持久化错误码、轮次、结构错误及脱敏片段",async()=>{
+    const novel=repo.createNovel({title:"诊断"});
+    fake.queue=["不是JSON sk-fakeDiagnosticToken12345",JSON.stringify({message:123,calls:[]})];
+    const event=(await collect({novelId:novel.id,message:"查看作品"})).filter(e=>e.type==="agent").at(-1)!;
+    if(event.type!=="agent")throw new Error("missing");
+    expect(event.run.errorCode).toBe("AGENT_PROTOCOL_INVALID");expect(event.run.error).toContain("本轮尚未生成新候选");
+    const saved=store.getRun(event.run.id);expect(saved.diagnostics).toHaveLength(2);
+    expect(saved.diagnostics?.[0]).toMatchObject({code:"AGENT_JSON_INVALID",round:1,attempt:1});
+    expect(saved.diagnostics?.[1]).toMatchObject({code:"AGENT_SCHEMA_INVALID",round:1,attempt:2,issues:[{path:"message",code:"invalid_type"}]});
+    expect(JSON.stringify(saved.diagnostics)).not.toContain("sk-fakeDiagnosticToken12345");
+  });
+
   it("生成候选后遗漏 done 标记的总结正常结束",async()=>{
     const novel=repo.createNovel({title:"完成判定"});
     fake.queue=[plan([{name:"propose",args:{kind:"world",fields:{title:"澜国",content:"西面临海。"},reason:"按材料建卡"}}]),JSON.stringify({message:"已准备澜国设定，请确认应用。",calls:[]})];
@@ -116,6 +134,10 @@ describe("Agent连续工具执行",()=>{
     expect(repo.listMessages(session.id).at(-1)?.actions[0].type).toBe("agent-run");
     expect(repo.listMessages(session.id).at(-1)?.status).toBe("complete");
     expect(final.run.usage.totalTokens).toBe(45);
+    expect(final.run.steps[0].targets).toEqual([{kind:"world",id:card.id,title:"晚记"}]);
+    expect(final.run.steps[1].targets?.[0]).toMatchObject({kind:"world",title:"晚记",changeId:final.run.changes[0].id});
+    expect(final.run.steps[0].detail).not.toBe("处理任务");
+
   });
   it("写手候选可以被下一步读取并自检，修订不会重复建章",async()=>{
     const novel=repo.createNovel({title:"新章"});

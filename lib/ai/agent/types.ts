@@ -16,12 +16,19 @@ export interface AgentChange {
   appliedId?: string;
   state: "pending" | "applied" | "rejected" | "reverted";
 }
-export interface AgentStep { id: string; label: string; detail: string; status: "running" | "complete" | "error" }
+export interface AgentStep { id: string; label: string; detail: string; status: "running" | "complete" | "error"; tool?:string; targets?: (AgentReference & {changeId?:string})[] }
 export interface AgentReference { kind: EntityKind; id: string; title: string }
+export interface AgentDiagnostic {
+  code:"AGENT_JSON_INVALID"|"AGENT_SCHEMA_INVALID";
+  stage:"decision";round:number;attempt:number;responseChars:number;
+  issues:{path:string;code:string;message:string}[];
+  responsePreview:string;responseTail?:string;createdAt:string;
+}
 export interface AgentRun {
   id: string; novelId: string; chapterId: string | null; request: string;
   sessionId?:string; messageId?:string;
   status: "running" | "ready" | "complete" | "aborted" | "error";
+  errorCode?:string; diagnostics?:AgentDiagnostic[];
   summary: string; error: string; steps: AgentStep[]; changes: AgentChange[];
   references: AgentReference[]; usage: AiUsage; model: string; provider: string;
   preview: string; createdAt: string; updatedAt: string;

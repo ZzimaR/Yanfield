@@ -25,6 +25,7 @@ export interface CompletionRequest {
   messages: AiMessage[];
   temperature?: number;
   maxTokens?: number;
+  purpose?: "connection-test";
   signal?: AbortSignal;
 }
 
@@ -34,7 +35,7 @@ export type ProviderChunk =
   | { type: "usage"; promptTokens: number; completionTokens: number; cost?:{amount:number;currency:"USD"|"CNY"} }
   | { type: "done" };
 
-const OUTPUT_LIMIT_MESSAGE="模型输出因长度限制被截断，内容尚未完成。请在聊天上下文或设置中提高「单次输出上限」，并检查模型的输出与上下文容量；长篇也可分章生成。已接收的内容仍保留在预览中。";
+const OUTPUT_LIMIT_MESSAGE="模型输出因长度限制被截断，内容尚未完成。输出设为 0 时使用服务商默认额度，仍可能达到限制；无需为测试连接修改此设置。长篇写作可在聊天上下文或设置中提高「单次输出上限」，并检查模型的输出与上下文容量；长篇也可分章生成。已接收的内容仍保留在预览中。";
 
 const DEFAULT_BASE: Record<ProviderConfig["kind"], string> = {
   openai: "https://api.openai.com/v1",
@@ -253,7 +254,7 @@ async function* streamOpenAiCompatible(request: CompletionRequest): AsyncGenerat
       };
     }
   }
-  if(outputLimited) throw new ProviderError(OUTPUT_LIMIT_MESSAGE);
+  if(outputLimited && request.purpose!=="connection-test") throw new ProviderError(OUTPUT_LIMIT_MESSAGE);
 }
 
 /* ------------------------------ Anthropic ------------------------------ */
@@ -308,7 +309,7 @@ async function* streamAnthropic(request: CompletionRequest): AsyncGenerator<Prov
       throw new ProviderError(pickString(get(json, "error", "message")) || "Anthropic 返回错误");
     }
   }
-  if(outputLimited) throw new ProviderError(OUTPUT_LIMIT_MESSAGE);
+  if(outputLimited && request.purpose!=="connection-test") throw new ProviderError(OUTPUT_LIMIT_MESSAGE);
 }
 
 /* ------------------------------ Gemini ------------------------------ */
@@ -366,7 +367,7 @@ async function* streamGemini(request: CompletionRequest): AsyncGenerator<Provide
       };
     }
   }
-  if(outputLimited) throw new ProviderError(OUTPUT_LIMIT_MESSAGE);
+  if(outputLimited && request.purpose!=="connection-test") throw new ProviderError(OUTPUT_LIMIT_MESSAGE);
 }
 
 /* ------------------------------ 离线演示 Provider ------------------------------ */
@@ -558,18 +559,21 @@ export async function testProvider(provider: ProviderConfig, model?: string): Pr
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 20000);
   try {
-    let received = "";
+    let received = "", responded=false;
     for await (const chunk of streamCompletion({
       provider,
       model: targetModel,
       messages: [{ role: "user", content: "ping" }],
       maxTokens: 8,
+      purpose: "connection-test",
       signal: controller.signal,
     })) {
       if (chunk.type === "delta") received += chunk.text;
+      if((chunk.type==="delta"||chunk.type==="reasoning")&&chunk.text.trim() || chunk.type==="usage"&&(chunk.promptTokens>0||chunk.completionTokens>0))responded=true;
       if (received.length > 40) break;
     }
     const latencyMs = Date.now() - started;
+    if(!responded)return {ok:false,latencyMs,message:"接口未返回可识别的模型响应，请检查模型和兼容协议"};
     return { ok: true, latencyMs, message: `${targetModel} 连接成功（${latencyMs}ms${received.trim() ? "，已收到返回" : ""}）` };
   } catch (error) {
     const latencyMs = Date.now() - started;
