@@ -74,6 +74,35 @@ describe("Provider 适配层", () => {
     expect(chunks.find(c=>c.type==="usage")).toMatchObject({promptTokens:15,completionTokens:6,cachedInputTokens:10});
   });
 
+  it("原生规划函数参数跨SSE分片组装，普通文字与工具协议分开",async()=>{
+    const chunks:ProviderChunk[]=[];
+    for await(const chunk of streamCompletion({provider:provider("openai",{baseUrl:base}),model:"deepseek-flash",messages:[{role:"user",content:"规划"}],decisionTools:[{name:"respond",description:"答复",parameters:{type:"object"}}]}))chunks.push(chunk);
+    const input=JSON.parse(captured.at(-1)!.body);
+    expect(input.tool_choice).toBe("required");expect(input.thinking).toEqual({type:"disabled"});expect(input.response_format).toBeUndefined();
+    expect(chunks.filter(c=>c.type==="delta").map(c=>c.type==="delta"?c.text:"").join("")).toBe('{"message":"完成","calls":[],"done":true}');
+    expect(chunks.find(c=>c.type==="usage")).toMatchObject({promptTokens:20,completionTokens:10});
+  });
+  it("原生批量调用按index恢复顺序，参数只作为待校验数据",async()=>{
+    const chunks:ProviderChunk[]=[];
+    for await(const chunk of streamCompletion({provider:provider("openai",{baseUrl:base}),model:"batch-functions",messages:[{role:"user",content:"读资料"}],decisionTools:[{name:"read",description:"读",parameters:{type:"object"}}]}))chunks.push(chunk);
+    const text=chunks.filter(c=>c.type==="delta").map(c=>c.type==="delta"?c.text:"").join("");
+    expect(JSON.parse(text)).toEqual({message:"",calls:[{name:"read",args:{kind:"character",id:"a"}},{name:"read",args:{kind:"world",id:"b"}}],done:false});
+  });
+
+  it.each(["wrong-function","limited-function"])("不执行错误名称或截断的原生函数：%s",async(model)=>{
+    const results:ProviderChunk[]=[];
+    await expect(async()=>{for await(const chunk of streamCompletion({provider:provider("openai",{baseUrl:base}),model,messages:[{role:"user",content:"规划"}],decisionTools:[{name:"respond",description:"答复",parameters:{type:"object"}}]}))results.push(chunk);}).rejects.toBeInstanceOf(ProviderError);
+    expect(results.some(c=>c.type==="delta")).toBe(false);
+  });
+
+  it("规划请求显式使用JSON模式，普通写作请求不附带格式约束",async()=>{
+    const chunks:ProviderChunk[]=[];
+    for await(const chunk of streamCompletion({provider:provider("openai",{baseUrl:base}),model:"test-model",messages:[{role:"user",content:"JSON"}],outputFormat:"json"}))chunks.push(chunk);
+    expect(JSON.parse(captured.at(-1)!.body).response_format).toEqual({type:"json_object"});
+    await collect(provider("openai",{baseUrl:base}));
+    expect(JSON.parse(captured.at(-1)!.body).response_format).toBeUndefined();
+  });
+
   beforeAll(async () => {
     once((req, res) => {
       captured.push({ path: req.url ?? "", headers: req.headers, body: (req as IncomingMessage & { body: string }).body });
@@ -92,6 +121,21 @@ describe("Provider 适配层", () => {
           JSON.stringify({ usageMetadata: { promptTokenCount: 9, candidatesTokenCount: 4 } }),
         ]);
         return;
+      }
+      const input=JSON.parse((req as IncomingMessage & {body:string}).body);
+      if(input.model==="batch-functions"){
+        sse(res,[JSON.stringify({choices:[{delta:{tool_calls:[
+          {index:1,function:{name:"read",arguments:'{"kind":"world","id":"b"}'}},
+          {index:0,function:{name:"read",arguments:'{"kind":"character","id":"a"}'}}
+        ]}}]}),"[DONE]"]);return;
+      }
+      if(input.tools){
+        const name=input.model==="wrong-function"?"unauthorized":input.tools[0].function.name;
+        sse(res,[
+          JSON.stringify({choices:[{delta:{tool_calls:[{index:0,id:"native-test",type:"function",function:{name,arguments:'{"message":"完成",'}}]}}]}),
+          JSON.stringify({choices:[{delta:{tool_calls:[{index:0,function:{arguments:'"calls":[],"done":true}'}}]}}]}),
+          JSON.stringify({choices:[{delta:{},finish_reason:input.model==="limited-function"?"length":"tool_calls"}],usage:{prompt_tokens:20,completion_tokens:10}}),"[DONE]"
+        ]);return;
       }
       sse(res, [
         JSON.stringify({ choices: [{ delta: { reasoning_content: "想一想。", content: "你" } }] }),

@@ -6,7 +6,7 @@
 [![Node](https://img.shields.io/badge/Node-%E2%89%A522.13-3c873a)](https://nodejs.org)
 [![Next.js](https://img.shields.io/badge/Next.js-15-000000)](https://nextjs.org)
 [![TypeScript](https://img.shields.io/badge/TypeScript-strict-3178c6)](https://www.typescriptlang.org)
-[![Tests](https://img.shields.io/badge/tests-272%20passing-2f5d62)](tests)
+[![Tests](https://img.shields.io/badge/tests-282%20passing-2f5d62)](tests)
 [![Docker](https://img.shields.io/badge/Docker-ready-2496ed)](Dockerfile)
 
 > **状态：v0.1.0 开发中，尚未发布正式版本。** 核心流程可试用，多步 Agent 需配置实际模型；接口和界面仍可能调整，欢迎试用与反馈。
@@ -128,7 +128,7 @@ docs/         功能、架构、模型服务、部署、常见问题、路线图
 
 ```bash
 pnpm typecheck   # tsc --noEmit
-pnpm test        # vitest（272 个用例）
+pnpm test        # vitest（282 个用例）
 pnpm build       # 生产构建
 pnpm db:seed     # 重新生成示例作品（不删用户数据）
 ```
@@ -166,6 +166,7 @@ Next.js 15 · React 19 · TypeScript strict · Tailwind CSS v4 · Tiptap 3 · no
 ## 文档
 
 - [Agent 工作流、改动审阅与用量说明](docs/agent-workflow.md)
+- [真实模型连续任务回归记录](docs/agent-protocol-validation.md)
 
 - [功能说明](docs/features.md)
 - [架构与数据模型](docs/architecture.md)

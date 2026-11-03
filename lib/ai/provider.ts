@@ -27,6 +27,9 @@ export interface CompletionRequest {
   temperature?: number;
   maxTokens?: number;
   purpose?: "connection-test";
+  /** Structured planner output only; prose generation must remain plain text. */
+  outputFormat?: "json";
+  decisionTools?: {name:string;description:string;parameters:Record<string,unknown>}[];
   signal?: AbortSignal;
 }
 
@@ -218,6 +221,11 @@ async function* streamOpenAiCompatible(request: CompletionRequest): AsyncGenerat
       messages,
       stream: true,
       stream_options: { include_usage: true },
+      ...(request.decisionTools?{
+        tools:request.decisionTools.map(tool=>({type:"function",function:tool})),
+        tool_choice:"required",
+        ...(/^deepseek-/i.test(model)||resolveBaseUrl(provider).includes("api.deepseek.com")?{thinking:{type:"disabled"}}:{})
+      }:request.outputFormat === "json" ? {response_format:{type:"json_object"}} : {}),
       ...(reasoning
         ? {}
         : {
@@ -230,6 +238,8 @@ async function* streamOpenAiCompatible(request: CompletionRequest): AsyncGenerat
   if (!response.ok) throw await httpError(response, provider);
 
   let outputLimited = false;
+  const functionCalls=new Map<number,{name:string;arguments:string}>();
+  let fallbackText="";
   for await (const payload of readSse(response)) {
     if (payload === "[DONE]") break;
     const json = safeJson(payload);
@@ -243,7 +253,16 @@ async function* streamOpenAiCompatible(request: CompletionRequest): AsyncGenerat
       const reasoning = pickString(delta.reasoning_content) || pickString(delta.reasoning);
       if (reasoning) yield { type: "reasoning", text: reasoning };
       const text = pickString(delta.content);
-      if (text) yield { type: "delta", text };
+      if(request.decisionTools){
+        fallbackText+=text;
+        if(Array.isArray(delta.tool_calls))for(const item of delta.tool_calls){
+          const entry=asRecord(item),fn=asRecord(entry?.function);
+          if(!entry||!fn)continue;
+          const index=typeof entry.index==="number"?entry.index:0;
+          const call=functionCalls.get(index)||{name:"",arguments:""};
+          call.name+=pickString(fn.name);call.arguments+=pickString(fn.arguments);functionCalls.set(index,call);
+        }
+      }else if (text) yield { type: "delta", text };
     }
     const usage = asRecord(get(json, "usage"));
     if (usage) {
@@ -257,6 +276,17 @@ async function* streamOpenAiCompatible(request: CompletionRequest): AsyncGenerat
     }
   }
   if(outputLimited && request.purpose!=="connection-test") throw new ProviderError(OUTPUT_LIMIT_MESSAGE);
+  if(request.decisionTools){
+    if(functionCalls.size){
+      const calls=[...functionCalls.entries()].sort((a,b)=>a[0]-b[0]).map(([,call])=>call);
+      if(calls.some(call=>!request.decisionTools!.some(tool=>tool.name===call.name)))throw new ProviderError("模型返回了非预期的规划函数，未执行任何工具");
+      const parse=(value:string):unknown=>{try{return JSON.parse(value);}catch{return value;}};
+      const reply=calls.find(call=>call.name==="respond");
+      const response=reply?parse(reply.arguments):null;
+      const planned=calls.filter(call=>call.name!=="respond").map(call=>({name:call.name,args:parse(call.arguments)}));
+      yield {type:"delta",text:JSON.stringify({message:reply?(response&&typeof response==="object"&&"message" in response?response.message:null):fallbackText,calls:planned,done:!!reply&&!planned.length})};
+    }else if(fallbackText)yield {type:"delta",text:fallbackText};
+  }
 }
 
 /* ------------------------------ Anthropic ------------------------------ */

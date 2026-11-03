@@ -1,6 +1,6 @@
 import { chapterDirectoryWindow, writerMessages } from "./context";
 import { z } from "zod";
-import { parseAgentDecision } from "./decision";
+import { parseAgentDecision, supportsDecisionJson, usesDecisionTool, DECISION_TOOLS, nativeDecisionSystem } from "./decision";
 import { protocolDiagnostic } from "./diagnostics";
 import * as repo from "@/lib/repo";
 import { resolveTarget, mergeContextConfig } from "@/lib/ai/engine";
@@ -16,9 +16,9 @@ import type { AiStreamEvent } from "@/lib/types";
 import { MATERIAL_PROMPT, materialResultSchema, prepareMaterial, type ExistingMaterial, type MaterialSource } from "./materials";
 
 const kinds=z.enum(["chapter","blueprint","character","world","foreshadow","outline","volume-outline"]);
-const decisionSchema=z.object({message:z.string(),calls:z.array(z.object({name:z.enum(["workspace","list","read","propose","write_chapter","reject_change","read_archive"]),args:z.record(z.string(),z.unknown())})).max(5).default([]),done:z.boolean().default(false)});
+const decisionSchema=z.object({message:z.string(),calls:z.array(z.object({name:z.enum(["workspace","list","read","propose","write_chapter","reject_change","read_archive"]),args:z.record(z.string(),z.unknown())})).max(12).default([]),done:z.boolean().default(false)});
 const SYSTEM=`你是砚田写作台的执行助手。理解作者的目标，按需读取材料、调用写手和提出可审阅修改。普通讨论直接回答，明确修改请求必须产出实际候选，不能只说“可以”。
-每轮只输出JSON：{"message":"简短执行说明或最终答复","calls":[{"name":"工具名","args":{}}],"done":false}。完成时calls为空、done=true。
+每轮最多12个工具调用，批量读取可分轮执行。只输出标准JSON，不输出DSML、XML、工具标签或Markdown围栏：{"message":"简短执行说明或最终答复","calls":[{"name":"工具名","args":{}}],"done":false}。完成时calls为空、done=true。
 工具：
 workspace {}：作品基本资料、文风、卷章目录和资料目录。建议先读一次。长篇仅列最近12章、当前章邻近章和明确引用章节；chapterCount是总章数，资料目录仅前40项，更多用list分页或搜索。目录章号index为全书号，orderIndex只在卷内排序。
 list {kind,query?,offset?,limit?}：offset默认0，limit默认30、最多60；返回数量达到limit时可增加offset继续读取。搜索角色/设定/伏笔/正文/章纲目录，kind为chapter|blueprint|character|world|foreshadow。
@@ -41,12 +41,13 @@ export async function* runAgent(request: AgentRequest, signal?: AbortSignal): As
   if(request.chapterId && repo.getChapter(request.chapterId)?.novelId!==novel.id) throw new ApiError("章节不属于该作品",400);
   const target=resolveTarget("chat");
   const config=mergeContextConfig(request.context);
+  const decisionOverhead=usesDecisionTool(target.provider,target.model)?estimateTokens(JSON.stringify(DECISION_TOOLS)):0;
   const started=Date.now();
   const run:AgentRun={id:uid("agent"),novelId:novel.id,chapterId:request.chapterId||null,request:request.message,status:"running",summary:"正在理解任务",error:"",steps:[],changes:[],references:[],usage:{promptTokens:0,completionTokens:0,totalTokens:0,latencyMs:0},model:target.model,provider:target.provider.name,preview:"",createdAt:new Date().toISOString(),updatedAt:new Date().toISOString()};
   const observed=new Map<string,Fields|null>();
   const material=new Map<string,unknown>();
   const history=trimChatHistory(request.history??[],{maxChars:12000,maxMessages:10});
-  const messages:AiMessage[]=[{role:"system",content:SYSTEM+"\n"+agentPreamble(request.agentId,repo.getSettings())+`\n作品id=${novel.id}。作者文风与约束：${config.includeStyleGuide?novel.styleGuide:""}\n${config.customInstruction||""}\n禁用词：${novel.forbiddenWords.join("、")}`} ,...history.kept,{role:"user",content:JSON.stringify({request:request.message,currentChapterId:request.chapterId||null,mentions:request.mentions,selection:request.selection,snapshot:request.snapshot,historyOmitted:history.trimmed})}];
+  const messages:AiMessage[]=[{role:"system",content:(usesDecisionTool(target.provider,target.model)?nativeDecisionSystem(SYSTEM):SYSTEM)+"\n"+agentPreamble(request.agentId,repo.getSettings())+`\n作品id=${novel.id}。作者文风与约束：${config.includeStyleGuide?novel.styleGuide:""}\n${config.customInstruction||""}\n禁用词：${novel.forbiddenWords.join("、")}`} ,...history.kept.map(m=>m.role==="assistant"?{...m,content:JSON.stringify({message:m.content,calls:[],done:true})}:m),{role:"user",content:JSON.stringify({request:request.message,currentChapterId:request.chapterId||null,mentions:request.mentions,selection:request.selection,snapshot:request.snapshot,historyOmitted:history.trimmed})}];
   let previous:AgentRun|undefined;
   if(request.previousRunId) {
     previous=getRun(request.previousRunId);
@@ -71,12 +72,12 @@ export async function* runAgent(request: AgentRequest, signal?: AbortSignal): As
     if(run.messageId)repo.updateMessage(run.messageId,{actions:[{id:run.id,type:"agent-run",label:"任务与改动",payload:{runId:run.id},applied:false}],content:run.summary||"正在处理任务",status:run.status==="running"?"streaming":run.status==="error"?"error":run.status==="aborted"?"aborted":"complete",usage:run.usage,error:run.error});
   };
   let completionCalls=0,pricedCalls=0;
-  async function* complete(input:AiMessage[]):AsyncGenerator<string> {
+  async function* complete(input:AiMessage[],decisionOutput=false):AsyncGenerator<string> {
     let raw="",prompt=0,output=0;
     let cachedInputTokens:number|undefined;
     let reported=false,cost:{amount:number;currency:"USD"|"CNY"}|undefined;
     try {
-      for await(const chunk of streamCompletion({provider:target.provider,model:target.model,messages:input,maxTokens:config.maxTokens>0?config.maxTokens:undefined,temperature:0.4,signal})) {
+      for await(const chunk of streamCompletion({provider:target.provider,model:target.model,messages:input,maxTokens:config.maxTokens>0?config.maxTokens:undefined,temperature:0.4,signal,...(decisionOutput ? usesDecisionTool(target.provider,target.model)?{decisionTools:DECISION_TOOLS}:supportsDecisionJson(target.provider,target.model)?{outputFormat:"json" as const}:{} : {})})) {
         if(signal?.aborted) throw new DOMException("已停止","AbortError");
         if(chunk.type==="delta") {raw+=chunk.text;yield chunk.text;}
         if(chunk.type==="usage") {prompt=chunk.promptTokens;output=chunk.completionTokens;reported=true;cachedInputTokens=chunk.cachedInputTokens;if(chunk.cost)cost=chunk.cost;}
@@ -88,12 +89,12 @@ export async function* runAgent(request: AgentRequest, signal?: AbortSignal): As
       }
       if(run.usage.reportedCost)run.usage.reportedCost.complete=pricedCalls===completionCalls;
       run.usage.estimatedTokens=Boolean(run.usage.estimatedTokens||!reported);
-      run.usage.promptTokens+=reported?prompt:input.reduce((n,m)=>n+estimateTokens(m.content),0);
+      run.usage.promptTokens+=reported?prompt:input.reduce((n,m)=>n+estimateTokens(m.content),0)+(decisionOutput?decisionOverhead:0);
       run.usage.completionTokens+=reported?output:estimateTokens(raw);
       if(reported&&cachedInputTokens!==undefined){run.usage.cachedInputTokens=(run.usage.cachedInputTokens??0)+cachedInputTokens;run.usage.cacheReportedInputTokens=(run.usage.cacheReportedInputTokens??0)+prompt;}
       checkpoint();
     }
-    if(!raw.trim()) throw new Error("模型未返回内容");
+    if(!raw.trim() && !decisionOutput) throw new Error("模型未返回内容");
   }
   const reference=(kind:EntityKind,id:string,row:Fields)=>{
     if(!run.references.some(r=>r.kind===kind&&r.id===id)) run.references.push({kind,id,title:String(row.title||row.name||ENTITY_LABEL[kind])});
@@ -126,27 +127,27 @@ export async function* runAgent(request: AgentRequest, signal?: AbortSignal): As
       if(signal?.aborted) throw new DOMException("已停止","AbortError");
       // Pin the instruction and latest task state; evict old observations, never tool-result pairs from native protocols.
       const budget=config.contextBudget>0 ? config.contextBudget : 24000;
-      while(messages.length>baseMessages+2 && messages.reduce((n,m)=>n+estimateTokens(m.content),0)>budget) messages.splice(baseMessages,1);
-      if(messages.reduce((n,m)=>n+estimateTokens(m.content),0)>budget) throw new Error("任务材料超过上下文预算，请提高预算或缩小任务范围");
+      while(messages.length>baseMessages+2 && messages.reduce((n,m)=>n+estimateTokens(m.content),0)+decisionOverhead>budget) messages.splice(baseMessages,1);
+      if(messages.reduce((n,m)=>n+estimateTokens(m.content),0)+decisionOverhead>budget) throw new Error("任务材料超过上下文预算，请提高预算或缩小任务范围");
       let raw="",decision: z.infer<typeof decisionSchema>|undefined;
       for(let attempt=0;attempt<2;attempt++) {
         raw="";
-        for await(const delta of complete(messages)) raw+=delta;
+        for await(const delta of complete(messages,true)) raw+=delta;
         const json=parseAgentDecision(raw);
         const parsed=decisionSchema.safeParse(json);
         if(parsed.success) {decision=parsed.data;break;}
         const diagnostic=protocolDiagnostic(raw,json,parsed.error.issues,round+1,attempt+1);
         (run.diagnostics??=[]).push(diagnostic);checkpoint();
-        // Include the rejected reply so the repair request has concrete evidence.
-        messages.push({role:"assistant",content:raw.length<=8000?raw:raw.slice(0,6000)+"\n[返回过长，此处截取了开头；请重新生成完整结构]"});
-        messages.push({role:"user",content:"上次输出无法解析或未通过校验："+(parsed.success?"":parsed.error.issues.map(i=>`${i.path.join(".")}: ${i.message}`).join("; ").slice(0,800))+"。请仅返回message、calls数组、done布尔值的完整JSON；长篇建卡每轮最多提交两张，剩余卡片分轮完成。"});
+        // Keep malformed examples in diagnostics only: repeating DSML teaches the next
+        // attempt to imitate it. Repair with validator feedback and a valid JSON example.
+        messages.push({role:"user",content:"上次返回未通过结构校验："+parsed.error.issues.map(i=>`${i.path.join(".")}: ${i.message}`).join("; ").slice(0,800)+"。仅输出标准JSON对象，例如{\"message\":\"先读资料\",\"calls\":[{\"name\":\"workspace\",\"args\":{}}],\"done\":false}。每轮最多12个调用、最多两张完整资料卡，不使用DSML/XML标签。"});
       }
       if(!decision) {
         run.errorCode="AGENT_PROTOCOL_INVALID";
         const detail=run.diagnostics?.at(-1)?.issues[0];
         throw new Error(`模型两次返回均未通过工具指令校验${detail?`（${detail.path}: ${detail.message}）`:""}。${run.changes.length?"本轮已完成的候选已保留":"本轮尚未生成新候选，上一轮候选不受影响"}。可展开调试详情查看原因。`);
       }
-      messages.push({role:"assistant",content:raw});
+      messages.push({role:"assistant",content:JSON.stringify(decision)});
       run.summary=decision.message;
       const progressText=decision.message.trim();
       run.progress??=[];

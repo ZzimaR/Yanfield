@@ -37,6 +37,34 @@ describe("Agent连续工具执行",()=>{
     expect(event.run.status).toBe("complete");expect(event.run.steps[0].tool).toBe("workspace");expect(event.run.diagnostics).toBeUndefined();
   });
 
+  it("合法的8项批量读取不再因旧的5项上限被拒绝",async()=>{
+    const novel=repo.createNovel({title:"批量资料"});
+    const cards=Array.from({length:8},(_,i)=>repo.createCharacter(novel.id,{name:`人物${i}`}));
+    fake.queue=[plan(cards.map(c=>({name:"read",args:{kind:"character",id:c.id}}))),plan([],"已读取八张资料卡")];
+    const events=await collect({novelId:novel.id,message:"读这些角色"});
+    const event=events.filter(e=>e.type==="agent").at(-1)!;
+    if(event.type!=="agent")throw new Error("missing");
+    expect(event.run.status).toBe("complete");expect(event.run.references).toHaveLength(8);expect(event.run.diagnostics).toBeUndefined();
+  });
+  it("修复时不回灌损坏DSML，成功调用归一成JSON后继续",async()=>{
+    const novel=repo.createNovel({title:"协议污染"});fake.inputs=[];
+    const bad='<｜｜DSML｜｜ calls><｜｜DSML｜｜ invoke name="workspace">broken';
+    const valid='<｜｜DSML｜｜ calls><｜｜DSML｜｜ invoke name="workspace"><｜｜DSML｜｜ parameter name="args" string="false">{}</｜｜DSML｜｜ parameter></｜｜DSML｜｜ invoke></｜｜DSML｜｜ calls>';
+    fake.queue=[bad,valid,plan([],"完成")];
+    const events=await collect({novelId:novel.id,message:"按建议读取",history:[{role:"assistant",content:"建议先核对设定。"}]});
+    const event=events.filter(e=>e.type==="agent").at(-1)!;
+    if(event.type!=="agent")throw new Error("missing");
+    expect(event.run.status).toBe("complete");expect(event.run.diagnostics).toHaveLength(1);
+    const messages=(fake.inputs.at(-1) as {messages:{role:string;content:string}[]}).messages;
+    expect(messages.some(m=>m.content===bad||m.content===valid)).toBe(false);
+    for(const message of messages.filter(m=>m.role==="assistant"))expect(()=>JSON.parse(message.content)).not.toThrow();
+  });
+  it("JSON模式空白返回进入修复而非跳过修复直接报错",async()=>{
+    const novel=repo.createNovel({title:"空白修复"});fake.queue=["   ",plan([],"已恢复")];
+    const events=await collect({novelId:novel.id,message:"分析"});const event=events.filter(e=>e.type==="agent").at(-1)!;
+    if(event.type!=="agent")throw new Error("missing");expect(event.run.status).toBe("complete");expect(event.run.diagnostics).toHaveLength(1);
+  });
+
   it("进展顺序追加、连续重复去重，并随任务持久化",async()=>{
     const novel=repo.createNovel({title:"进展记录"});
     fake.queue=[plan([{name:"workspace",args:{}}],"先查看作品进度。"),plan([{name:"workspace",args:{}}],"先查看作品进度。"),plan([],"已核对作品进度。")];
