@@ -19,6 +19,29 @@ async function collect(request:Parameters<typeof runtime.runAgent>[0],signal?:Ab
 const plan=(calls:unknown[],message="处理任务")=>JSON.stringify({message,calls,done:!calls.length});
 
 describe("Agent连续工具执行",()=>{
+  it("生成候选后遗漏 done 标记的总结正常结束",async()=>{
+    const novel=repo.createNovel({title:"完成判定"});
+    fake.queue=[plan([{name:"propose",args:{kind:"world",fields:{title:"澜国",content:"西面临海。"},reason:"按材料建卡"}}]),JSON.stringify({message:"已准备澜国设定，请确认应用。",calls:[]})];
+    const event=(await collect({novelId:novel.id,message:"新建澜国卡片"})).filter(e=>e.type==="agent").at(-1)!;
+    if(event.type!=="agent")throw new Error("missing");
+    expect(event.run.status).toBe("ready");expect(event.run.error).toBe("");expect(event.run.changes).toHaveLength(1);
+    expect(repo.listWorld(novel.id)).toHaveLength(0);
+  });
+  it("无工具的普通讨论无需 done 标记",async()=>{
+    const novel=repo.createNovel({title:"普通讨论"});
+    fake.queue=[JSON.stringify({message:"可以从沿海气候展开。",calls:[],done:false})];
+    const event=(await collect({novelId:novel.id,message:"讨论气候"})).filter(e=>e.type==="agent").at(-1)!;
+    if(event.type!=="agent")throw new Error("missing");
+    expect(event.run.status).toBe("complete");expect(event.run.error).toBe("");
+  });
+  it("空白回复且没有工具仍报错",async()=>{
+    const novel=repo.createNovel({title:"空白返回"});
+    fake.queue=[JSON.stringify({message:" ",calls:[],done:false})];
+    const event=(await collect({novelId:novel.id,message:"新建设定"})).filter(e=>e.type==="agent").at(-1)!;
+    if(event.type!=="agent")throw new Error("missing");
+    expect(event.run.status).toBe("error");expect(event.run.error).toBe("模型没有给出下一步操作");
+  });
+
   it.each([0,32000,64000])("主编遵循用户输出上限 %i，不再写死内部额度",async(maxTokens)=>{
     const novel=repo.createNovel({title:"用户输出上限"});
     fake.inputs=[];

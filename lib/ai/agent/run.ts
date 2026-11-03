@@ -133,7 +133,8 @@ export async function* runAgent(request: AgentRequest, signal?: AbortSignal): As
       if(!decision) throw new Error("模型两次未返回有效工具指令，已保留完成的候选");
       messages.push({role:"assistant",content:raw});
       run.summary=decision.message;
-      if(decision.done && !decision.calls.length) {finished=true;break;}
+      // A nonempty reply with no tools is terminal even if the model omits done.
+      if(!decision.calls.length && (decision.done || decision.message.trim())) {finished=true;break;}
       if(!decision.calls.length) throw new Error("模型没有给出下一步操作");
       for(const call of decision.calls) {
         if(++toolCount>36) throw new Error("已达到工具调用上限，完成的候选已保留");

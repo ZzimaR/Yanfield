@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { MapPin, Plus, ScrollText, User } from "lucide-react";
+import { ChevronRight, Folder, FolderOpen, MapPin, Plus, ScrollText, User } from "lucide-react";
 import { Button, EmptyState, Input, Skeleton } from "@/components/ui/kit";
 import { useApi, useDataChanged } from "@/lib/client/api";
 import { toItems } from "@/lib/editor/normalize";
@@ -12,9 +12,9 @@ import {
   type Volume,
   type WorldSetting,
 } from "@/lib/types";
+import { worldRows } from "@/lib/editor/world-tree";
 import { cn } from "@/lib/ui/cn";
 import { reindexChaptersByVolume, sortChaptersByVolume } from "@/components/outline/form-kit";
-import { MaterialPreview } from "@/components/cards/MaterialPreview";
 import { CharacterEditor } from "@/components/cards/CharacterEditor";
 import { WorldEditor } from "@/components/cards/WorldEditor";
 import { ForeshadowEditor } from "@/components/cards/ForeshadowEditor";
@@ -51,31 +51,6 @@ type CodexEntry =
   | { kind: "character"; data: Character }
   | { kind: "world"; data: WorldSetting }
   | { kind: "foreshadow"; data: Foreshadow };
-
-function worldRows(settings: WorldSetting[]): { setting: WorldSetting; depth: number }[] {
-  const byParent = new Map<string | null, WorldSetting[]>();
-  for (const setting of settings) {
-    const key = setting.parentId;
-    const list = byParent.get(key) ?? [];
-    list.push(setting);
-    byParent.set(key, list);
-  }
-  const rows: { setting: WorldSetting; depth: number }[] = [];
-  const seen = new Set<string>();
-  const walk = (parentId: string | null, depth: number) => {
-    for (const setting of byParent.get(parentId) ?? []) {
-      if (seen.has(setting.id)) continue;
-      seen.add(setting.id);
-      rows.push({ setting, depth });
-      walk(setting.id, depth + 1);
-    }
-  };
-  walk(null, 0);
-  for (const setting of settings) {
-    if (!seen.has(setting.id)) rows.push({ setting, depth: 0 });
-  }
-  return rows;
-}
 
 function entryMatches(entry: CodexEntry, keyword: string): boolean {
   if (!keyword) return true;
@@ -116,6 +91,9 @@ export function CodexPanel({ novelId }: CodexPanelProps) {
   }, [chaptersApi.data, volumesApi.data]);
 
   const [query, setQuery] = React.useState("");
+  const [activeGroup, setActiveGroup] = React.useState("all");
+  const [collapsed, setCollapsed] = React.useState<Set<string>>(()=>new Set());
+  const parentIds = React.useMemo(()=>new Set(world.map(s=>s.parentId).filter((id):id is string=>!!id)),[world]);
   const [editing, setEditing] = React.useState<CodexEntry | null>(null);
   const [creatingWorld, setCreatingWorld] = React.useState(false);
   const [creatingCharacter, setCreatingCharacter] = React.useState(false);
@@ -151,7 +129,7 @@ export function CodexPanel({ novelId }: CodexPanelProps) {
   const settledRef = React.useRef(false);
   settledRef.current = !loading;
   const total = characters.length + world.length + foreshadows.length;
-  const matched = filtered.characters.length + filtered.world.length + filtered.foreshadows.length;
+  const matched = (activeGroup === "all" || activeGroup === "characters" ? filtered.characters.length : 0) + (activeGroup === "all" || activeGroup === "world" ? filtered.world.length : 0) + (activeGroup === "all" || activeGroup === "foreshadows" ? filtered.foreshadows.length : 0);
 
   const groups: { key: string; title: string; icon: React.ReactNode; entries: CodexEntry[]; total: number }[] = [
     { key: "characters", title: "角色", icon: <User className="size-3.5" />, entries: filtered.characters, total: characters.length },
@@ -309,9 +287,18 @@ export function CodexPanel({ novelId }: CodexPanelProps) {
           aria-label="搜索设定"
           className="h-8 text-[12px]"
         />
+        <div className="flex gap-1 rounded-md bg-surface-2 p-1" role="group" aria-label="资料分类">
+          {[{key:"all",title:"全部",total},...groups].map(group=>(
+            <button key={group.key} type="button" aria-pressed={activeGroup===group.key}
+              onClick={()=>setActiveGroup(group.key)}
+              className={cn("flex min-w-0 flex-1 items-center justify-center gap-1 whitespace-nowrap rounded px-1 py-1.5 text-[11px] transition-colors",activeGroup===group.key?"bg-surface text-ink shadow-sm":"text-ink-3 hover:text-ink")}>
+              {group.title}<span className="text-[10px] tabular-nums text-ink-4">{group.total}</span>
+            </button>
+          ))}
+        </div>
       </div>
 
-      <div className="scroll-thin min-h-0 flex-1 overflow-y-auto px-1.5 py-2">
+      <div key={activeGroup} className="scroll-thin min-h-0 flex-1 overflow-y-auto px-1.5 py-2">
         {loading && total === 0 ? (
           <div className="space-y-1.5 px-1 py-1">
             {Array.from({ length: 8 }).map((_, index) => (
@@ -327,35 +314,54 @@ export function CodexPanel({ novelId }: CodexPanelProps) {
             />
           </div>
         ) : matched === 0 ? (
-          <p className="px-2 py-6 text-center text-[12px] text-ink-3">没有匹配「{query.trim()}」的设定</p>
+          <p className="px-2 py-6 text-center text-[12px] text-ink-3">{query.trim() ? `没有匹配「${query.trim()}」的资料` : "此分类还没有资料"}</p>
         ) : (
           <div className="space-y-3">
-            {groups.map((group) =>
+            {groups.filter(group=>activeGroup==="all" || group.key===activeGroup).map((group) =>
               group.entries.length === 0 ? null : (
                 <section key={group.key} aria-label={group.title}>
                   <div className="mb-1.5 flex items-center gap-1.5 px-2 text-[11px] font-semibold tracking-wide text-ink-3">
                     {group.icon}
                     <span>{group.title}</span>
                     <span className="tabular-nums">{group.entries.length}</span>
+                    {group.key==="world" && !keyword && parentIds.size>0 ? <span className="ml-auto flex gap-2 font-normal tracking-normal">
+                      <button type="button" onClick={()=>setCollapsed(new Set())} className="hover:text-accent">全部展开</button>
+                      <button type="button" onClick={()=>setCollapsed(new Set(parentIds))} className="hover:text-accent">全部收起</button>
+                    </span> : null}
                   </div>
-                  <div className="space-y-2">
+                  <div className="space-y-1">
                     {(group.key === "world" && !keyword
-                      ? worldRows(group.entries.map((entry) => entry.data as WorldSetting)).map(({ setting, depth }) => ({
+                      ? worldRows(group.entries.map((entry) => entry.data as WorldSetting), collapsed).map(({ setting, depth }) => ({
                           entry: { kind: "world" as const, data: setting },
                           depth,
                         }))
                       : group.entries.map((entry) => ({ entry, depth: 0 }))
                     ).map(({ entry, depth }) => {
+                      const branch=entry.kind==="world" && parentIds.has(entry.data.id) && !keyword;
+                      const folded=collapsed.has(entry.data.id);
+                      const title=entry.kind==="character"?entry.data.name:entry.data.title;
                       return (
+                        <div key={`${entry.kind}:${entry.data.id}`} className="flex min-w-0 items-start"
+                          style={{ marginLeft: Math.min(depth, 6) * 10, width: `calc(100% - ${Math.min(depth, 6) * 10}px)` }}>
+                          {branch?<button type="button" aria-label={`${folded?"展开":"收起"}${title}`} aria-expanded={!folded}
+                            className="mt-2 flex size-5 shrink-0 items-center justify-center rounded text-ink-3 hover:bg-surface-2 hover:text-ink focus-visible:outline-accent"
+                            onClick={()=>setCollapsed(prev=>{const next=new Set(prev);if(next.has(entry.data.id))next.delete(entry.data.id);else next.add(entry.data.id);return next;})}>
+                            <ChevronRight className={cn("size-3.5 transition-transform",!folded&&"rotate-90")}/>
+                          </button>:<span className="w-5 shrink-0"/>}
                         <button
-                          key={`${entry.kind}:${entry.data.id}`}
                           type="button"
                           onClick={() => setEditing(entry)}
-                          className="group block w-full min-w-0 rounded-xl border border-line/65 bg-surface/60 px-3 py-3.5 text-left transition-colors duration-150 hover:border-jade/30 hover:bg-surface focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40 motion-reduce:transition-none"
-                          style={{ marginLeft: depth * 10, width: `calc(100% - ${depth * 10}px)` }}
+                          className="group block w-full min-w-0 rounded-md border border-transparent bg-surface/40 px-2.5 py-2 text-left transition-colors duration-150 hover:border-jade/30 hover:bg-surface focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40 motion-reduce:transition-none"
                         >
-                          <MaterialPreview kind={entry.kind} fields={entry.data as unknown as Record<string, unknown>}/>
+                          <span className="flex min-w-0 items-center gap-2">
+                            <span className="shrink-0 text-ink-3">{branch?(folded?<Folder className="size-3.5"/>:<FolderOpen className="size-3.5"/>):group.icon}</span>
+                            <span className="min-w-0 flex-1 truncate text-[13px] font-medium text-ink">{entry.kind==="character"?entry.data.name:entry.data.title}</span>
+                          </span>
+                          <span className="mt-0.5 block truncate pl-[22px] text-[11px] leading-5 text-ink-3">
+                            {entry.kind==="character"?entry.data.identity:entry.kind==="world"?entry.data.summary:entry.data.description}
+                          </span>
                         </button>
+                        </div>
                       );
                     })}
                   </div>

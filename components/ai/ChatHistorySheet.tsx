@@ -10,7 +10,6 @@ import { CircleAlert, MessagesSquare, Plus, RefreshCw, Trash } from "lucide-reac
 import type { AgentId, ChatSession } from "@/lib/types";
 import { apiDelete, apiGet, apiPost, notifyDataChanged } from "@/lib/client/api";
 import {
-  Badge,
   Button,
   ConfirmDialog,
   EmptyState,
@@ -199,7 +198,7 @@ export function ChatHistorySheet({
                   <div
                     key={session.id}
                     className={cn(
-                      "group flex items-start gap-1 rounded-md border px-2.5 py-2 transition-colors duration-150",
+                      "group flex items-center gap-2 rounded-lg border px-3 py-3 transition-colors duration-150",
                       active
                         ? "border-accent/30 bg-accent-soft"
                         : "border-line bg-surface hover:bg-surface-2",
@@ -213,22 +212,23 @@ export function ChatHistorySheet({
                       }}
                       className="min-w-0 flex-1 text-left focus-visible:outline-none"
                     >
-                      <span className="flex items-center gap-1.5">
-                        <span className="min-w-0 truncate text-[13px] text-ink">
+                      <span className="block">
+                        <span className="line-clamp-2 break-words text-[13px] font-medium leading-5 text-ink">
                           {session.title || "未命名会话"}
                         </span>
-                        {active ? <Badge tone="accent">当前</Badge> : null}
+
                       </span>
-                      <span className="mt-0.5 flex items-center gap-1.5 text-[11px] text-ink-4">
+                      <span className="mt-2 flex min-w-0 items-center gap-1.5 text-[11px] text-ink-3">
                         <span className="truncate">{agent.name}</span>
                         <span>·</span>
-                        <span className="shrink-0">{formatRelativeTime(session.updatedAt)}</span>
+                        <span className="shrink-0 whitespace-nowrap">{formatRelativeTime(session.updatedAt)}</span>
+                        {active ? <span className="ml-auto shrink-0 whitespace-nowrap rounded bg-accent/10 px-1.5 py-0.5 text-[10px] text-accent">当前</span> : null}
                       </span>
                     </button>
                     <IconButton
                       label="删除会话"
                       size="sm"
-                      className="shrink-0 opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100"
+                      className="shrink-0 text-ink-4 opacity-50 transition-opacity hover:text-danger group-hover:opacity-100 focus-visible:opacity-100"
                       onClick={() => setDeleting(session)}
                     >
                       <Trash className="size-3.5" />
