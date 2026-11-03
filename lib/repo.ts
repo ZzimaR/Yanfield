@@ -1125,6 +1125,8 @@ export function addAiLog(input: {
   feature: AiFeature;
   provider: string;
   model: string;
+  cachedInputTokens?:number;
+  cacheReportedInputTokens?:number;
   promptTokens?: number;
   completionTokens?: number;
   latencyMs?: number;
@@ -1134,9 +1136,9 @@ export function addAiLog(input: {
   responsePreview?: string;
 }): void {
   run(
-    `INSERT INTO ai_logs (id,novel_id,chapter_id,feature,provider,model,prompt_tokens,completion_tokens,latency_ms,status,error,prompt_preview,response_preview,created_at)
-     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-    [uid("log"), input.novelId ?? null, input.chapterId ?? null, input.feature, input.provider, input.model, input.promptTokens ?? 0, input.completionTokens ?? 0, input.latencyMs ?? 0, input.status ?? "ok", input.error ?? "", (input.promptPreview ?? "").slice(0, 800), (input.responsePreview ?? "").slice(0, 800), nowIso()],
+    `INSERT INTO ai_logs (id,novel_id,chapter_id,feature,provider,model,prompt_tokens,completion_tokens,latency_ms,status,error,prompt_preview,response_preview,created_at,cached_input_tokens,cache_reported_input_tokens)
+     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+    [uid("log"), input.novelId ?? null, input.chapterId ?? null, input.feature, input.provider, input.model, input.promptTokens ?? 0, input.completionTokens ?? 0, input.latencyMs ?? 0, input.status ?? "ok", input.error ?? "", (input.promptPreview ?? "").slice(0, 800), (input.responsePreview ?? "").slice(0, 800), nowIso(),input.cachedInputTokens??0,input.cacheReportedInputTokens??0],
   );
 }
 
@@ -1149,6 +1151,7 @@ export function listAiLogs(limit = 50): AiLog[] {
     provider: s(r.provider),
     model: s(r.model),
     promptTokens: n(r.prompt_tokens),
+    cachedInputTokens:n(r.cached_input_tokens),cacheReportedInputTokens:n(r.cache_reported_input_tokens),
     completionTokens: n(r.completion_tokens),
     latencyMs: n(r.latency_ms),
     status: s(r.status, "ok") as AiLogStatus,
@@ -1177,15 +1180,16 @@ function localDayRange(now = new Date()): { start: string; end: string } {
   return { start: start.toISOString(), end: end.toISOString() };
 }
 
-function tokenBucket(where: string, params: unknown[] = []): { calls: number; promptTokens: number; completionTokens: number } {
+function tokenBucket(where: string, params: unknown[] = []): { calls: number; promptTokens: number; completionTokens: number;cachedInputTokens:number;cacheReportedInputTokens:number } {
   const row = get<Row>(
-    `SELECT COUNT(*) AS calls, COALESCE(SUM(prompt_tokens),0) AS prompt, COALESCE(SUM(completion_tokens),0) AS completion FROM ai_logs ${where}`,
+    `SELECT COUNT(*) AS calls, COALESCE(SUM(prompt_tokens),0) AS prompt, COALESCE(SUM(completion_tokens),0) AS completion, COALESCE(SUM(cached_input_tokens),0) AS cached, COALESCE(SUM(cache_reported_input_tokens),0) AS cache_reported FROM ai_logs ${where}`,
     params,
   );
   return {
     calls: n(row?.calls),
     promptTokens: n(row?.prompt),
     completionTokens: n(row?.completion),
+    cachedInputTokens:n(row?.cached),cacheReportedInputTokens:n(row?.cache_reported),
   };
 }
 
@@ -1236,9 +1240,11 @@ export function getStats(): DashboardStats {
     aiCalls,
     aiTokens,
     aiPromptTokens: totals.promptTokens,
+    aiCachedInputTokens:totals.cachedInputTokens,aiCacheReportedInputTokens:totals.cacheReportedInputTokens,
     aiCompletionTokens: totals.completionTokens,
     todayAiCalls: todayAi.calls,
     todayPromptTokens: todayAi.promptTokens,
+    todayCachedInputTokens:todayAi.cachedInputTokens,todayCacheReportedInputTokens:todayAi.cacheReportedInputTokens,
     todayCompletionTokens: todayAi.completionTokens,
     aiPricing: getSettings().aiPricing,
     streakDays,

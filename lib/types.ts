@@ -362,6 +362,8 @@ export interface AiUsage {
   totalTokens: number;
   latencyMs: number;
   estimatedTokens?: boolean;
+  cachedInputTokens?: number;
+  cacheReportedInputTokens?: number;
   reportedCost?: {amount:number;currency:"USD"|"CNY";complete:boolean};
 }
 
@@ -527,6 +529,7 @@ export interface AiTaskRequest {
 }
 
 export interface AiLog {
+  cachedInputTokens?:number;cacheReportedInputTokens?:number;
   id: ID;
   novelId: ID | null;
   chapterId: ID | null;
@@ -584,11 +587,13 @@ export interface AppSettings {
    * 缺省 / 空字符串字段沿用内置默认；自定义智能体只有 instructions 存这里。
    */
   agentOverrides: Partial<Record<AgentId, AgentPersonaOverride>>;
-  /** 费用估算单价，人民币 / 百万 tokens。两项都为 0 时只统计 token。 */
+  /** 费用估算单价，人民币 / 百万 tokens。缓存单价缺失代表未知，不假设免费。 */
   aiPricing: AiPricing;
 }
 
 export interface AiPricing {
+  /** Undefined means not configured; zero explicitly permits free cached input. */
+  cachedInputPerMillion?: number | null;
   inputPerMillion: number;
   outputPerMillion: number;
 }
@@ -604,6 +609,10 @@ export interface DashboardStats {
   aiTokens: number;
   aiPromptTokens: number;
   aiCompletionTokens: number;
+  aiCachedInputTokens?:number;
+  aiCacheReportedInputTokens?:number;
+  todayCachedInputTokens?:number;
+  todayCacheReportedInputTokens?:number;
   todayAiCalls: number;
   todayPromptTokens: number;
   todayCompletionTokens: number;

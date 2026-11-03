@@ -735,7 +735,7 @@ export function AiPanel({
           focusSignal={focusSignal}
         />
         <div className="flex h-7 items-center gap-2 border-t border-line/60 px-3">
-          {statsApi.data?<UsageIndicator label="今日" promptTokens={statsApi.data.todayPromptTokens} completionTokens={statsApi.data.todayCompletionTokens} calls={statsApi.data.todayAiCalls} price={statsApi.data.aiPricing??settings?.aiPricing??{inputPerMillion:0,outputPerMillion:0}}/>:<span className="text-[10px] text-ink-4">用量加载中</span>}
+          {statsApi.data?<UsageIndicator label="今日" cachedInputTokens={statsApi.data.todayCachedInputTokens} cacheReportedInputTokens={statsApi.data.todayCacheReportedInputTokens} promptTokens={statsApi.data.todayPromptTokens} completionTokens={statsApi.data.todayCompletionTokens} calls={statsApi.data.todayAiCalls} price={statsApi.data.aiPricing??settings?.aiPricing??{inputPerMillion:0,outputPerMillion:0}}/>:<span className="text-[10px] text-ink-4">用量加载中</span>}
           <ContextStatus tokens={preview.data?.totalTokens??0} budget={budget} loading={preview.loading} error={preview.error} onClick={()=>setContextOpen(true)}/>
         </div>
       </div>

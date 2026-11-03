@@ -159,8 +159,9 @@ function mergeAgentOverrides(current: AgentOverrides, raw: unknown): AgentOverri
 function mergePricing(current: AiPricing, raw: unknown): AiPricing {
   if (!isObject(raw)) throw new ApiError("aiPricing 必须是对象", 400);
   const next: AiPricing = { ...current };
-  for (const key of ["inputPerMillion", "outputPerMillion"] as const) {
+  for (const key of ["inputPerMillion", "outputPerMillion", "cachedInputPerMillion"] as const) {
     if (raw[key] === undefined) continue;
+    if(key==="cachedInputPerMillion" && raw[key]===null){delete next.cachedInputPerMillion;continue;}
     const num = Number(raw[key]);
     if (!Number.isFinite(num) || num < 0 || num > 100000) {
       throw new ApiError(`aiPricing.${key} 必须是 0 到 100000 之间的数字`, 400);

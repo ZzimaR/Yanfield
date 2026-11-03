@@ -1,3 +1,4 @@
+import { openAiCachedTokens } from "./cache-usage";
 /**
  * Provider 适配层（服务端专用）
  * 支持：OpenAI 兼容协议 / Anthropic Messages / Gemini generateContent / Ollama / 离线演示（demo）
@@ -32,7 +33,7 @@ export interface CompletionRequest {
 export type ProviderChunk =
   | { type: "delta"; text: string }
   | { type: "reasoning"; text: string }
-  | { type: "usage"; promptTokens: number; completionTokens: number; cost?:{amount:number;currency:"USD"|"CNY"} }
+  | { type: "usage"; promptTokens: number; completionTokens: number; cachedInputTokens?:number; cost?:{amount:number;currency:"USD"|"CNY"} }
   | { type: "done" };
 
 const OUTPUT_LIMIT_MESSAGE="模型输出因长度限制被截断，内容尚未完成。输出设为 0 时使用服务商默认额度，仍可能达到限制；无需为测试连接修改此设置。长篇写作可在聊天上下文或设置中提高「单次输出上限」，并检查模型的输出与上下文容量；长篇也可分章生成。已接收的内容仍保留在预览中。";
@@ -250,6 +251,7 @@ async function* streamOpenAiCompatible(request: CompletionRequest): AsyncGenerat
         type: "usage",
         promptTokens: pickNumber(usage.prompt_tokens),
         completionTokens: pickNumber(usage.completion_tokens),
+        ...(openAiCachedTokens(usage)!==undefined?{cachedInputTokens:openAiCachedTokens(usage)}:{}),
         ...(reportedUsageCost(usage,resolveBaseUrl(provider))?{cost:reportedUsageCost(usage,resolveBaseUrl(provider))}:{}),
       };
     }

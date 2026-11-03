@@ -69,6 +69,11 @@ type Captured = { path: string; headers: IncomingMessage["headers"]; body: strin
 describe("Provider 适配层", () => {
   const captured: Captured[] = [];
 
+  it("缓存命中统计穿过流式适配层，输入总量不重复相加",async()=>{
+    const chunks=await collect(provider("openai",{baseUrl:base}),"cache-model");
+    expect(chunks.find(c=>c.type==="usage")).toMatchObject({promptTokens:15,completionTokens:6,cachedInputTokens:10});
+  });
+
   beforeAll(async () => {
     once((req, res) => {
       captured.push({ path: req.url ?? "", headers: req.headers, body: (req as IncomingMessage & { body: string }).body });
@@ -91,7 +96,7 @@ describe("Provider 适配层", () => {
       sse(res, [
         JSON.stringify({ choices: [{ delta: { reasoning_content: "想一想。", content: "你" } }] }),
         JSON.stringify({ choices: [{ delta: { content: "好" } }] }),
-        JSON.stringify({ choices: [{ delta: {} }], usage: { prompt_tokens: 15, completion_tokens: 6 } }),
+        JSON.stringify({ choices: [{ delta: {} }], usage: { prompt_tokens: 15, completion_tokens: 6,...(JSON.parse((req as IncomingMessage & {body:string}).body).model==="cache-model"?{prompt_cache_hit_tokens:10,prompt_cache_miss_tokens:5}:{}) } }),
         "[DONE]",
       ]);
     });

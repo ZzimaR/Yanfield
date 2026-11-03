@@ -193,7 +193,7 @@ export function ChatMessageView({
         ) : null}
 
         <div className="mt-2 flex flex-wrap items-center gap-0.5">
-          {message.usage&&message.usage.totalTokens>0?<div className="mr-auto"><UsageIndicator iconOnly reportedCost={message.usage.reportedCost} estimatedTokens={message.usage.estimatedTokens} promptTokens={message.usage.promptTokens} completionTokens={message.usage.completionTokens} latencyMs={message.usage.latencyMs} price={pricing??{inputPerMillion:0,outputPerMillion:0}}/></div>:<span className="mr-auto text-[10px] text-ink-3">{formatRelativeTime(message.createdAt)}</span>}
+          {message.usage&&message.usage.totalTokens>0?<div className="mr-auto"><UsageIndicator iconOnly cachedInputTokens={message.usage.cachedInputTokens} cacheReportedInputTokens={message.usage.cacheReportedInputTokens} reportedCost={message.usage.reportedCost} estimatedTokens={message.usage.estimatedTokens} promptTokens={message.usage.promptTokens} completionTokens={message.usage.completionTokens} latencyMs={message.usage.latencyMs} price={pricing??{inputPerMillion:0,outputPerMillion:0}}/></div>:<span className="mr-auto text-[10px] text-ink-3">{formatRelativeTime(message.createdAt)}</span>}
           <IconButton
             label="复制回复"
             size="sm"

@@ -293,6 +293,10 @@ export function getDb(): DB {
   fs.mkdirSync(path.dirname(dbPath), { recursive: true });
   const db = new DatabaseSync(dbPath);
   db.exec(SCHEMA);
+  const logColumns=new Set((db.prepare("PRAGMA table_info(ai_logs)").all() as {name:string}[]).map(c=>c.name));
+  for(const column of ["cached_input_tokens","cache_reported_input_tokens"]){
+    if(!logColumns.has(column))db.exec(`ALTER TABLE ai_logs ADD COLUMN ${column} INTEGER NOT NULL DEFAULT 0`);
+  }
   dbInstance = db;
   return db;
 }

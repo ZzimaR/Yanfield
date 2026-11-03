@@ -217,7 +217,7 @@ export function ContextSection({ settings, update }: ContextSectionProps) {
         <div>
           <h3 className="text-[14px] font-medium text-ink">用量与费用</h3>
           <p className="mt-1 text-[12px] leading-relaxed text-ink-3">
-            每次请求优先采用服务商返回的 token。填上你的单价后，这里按人民币估算，实际账单以服务商为准。两项都留 0 则只统计 token。
+            优先采用接口返回的用量；缓存命中与普通输入分别估算，未报告缓存的部分按普通输入单价估算。实际账单以服务商为准。
           </p>
         </div>
         <Button size="sm" variant="secondary" loading={fetchingPrice} onClick={async()=>{
@@ -232,7 +232,7 @@ export function ContextSection({ settings, update }: ContextSectionProps) {
           <p className="text-[11px] text-ink-3">获取时间：{new Date(official.fetchedAt).toLocaleString()} · <a href={official.source} target="_blank" rel="noreferrer" className="text-accent underline">官方来源与时段规则</a></p>
           {official.rates.map(rate=><div key={rate.period} className="flex flex-wrap items-center justify-between gap-2 border-t border-line pt-2">
             <span>{rate.period}：输入 {rate.inputPerMillion} · 缓存命中 {rate.cachedInputPerMillion} · 输出 {rate.outputPerMillion}</span>
-            <Button size="sm" onClick={()=>{update({aiPricing:{inputPerMillion:rate.inputPerMillion,outputPerMillion:rate.outputPerMillion}});toast({title:"已采用官方单价",description:`${official.model} · ${rate.period} · 输入按缓存未命中估算`,tone:"success"});}}>采用此单价</Button>
+            <Button size="sm" onClick={()=>{update({aiPricing:{inputPerMillion:rate.inputPerMillion,outputPerMillion:rate.outputPerMillion,cachedInputPerMillion:rate.cachedInputPerMillion}});toast({title:"已采用官方单价",description:`${official.model} · ${rate.period} · 已填入普通输入、缓存命中和输出三档单价`,tone:"success"});}}>采用此单价</Button>
           </div>)}
           <p className="text-[11px] text-ink-3">当前费用估算共用一组单价。选择后用于后续显示估算，不是逐次实际账单；缓存、峰谷时段和切换模型都会影响准确度。第三方中转价不适用。</p>
         </div>:null}
@@ -240,6 +240,8 @@ export function ContextSection({ settings, update }: ContextSectionProps) {
           <div className="space-y-1">
             <AiSpendLine
               prefix="今日 "
+              cachedInputTokens={stats.todayCachedInputTokens}
+              cacheReportedInputTokens={stats.todayCacheReportedInputTokens}
               promptTokens={stats.todayPromptTokens}
               completionTokens={stats.todayCompletionTokens}
               calls={stats.todayAiCalls}
@@ -247,6 +249,8 @@ export function ContextSection({ settings, update }: ContextSectionProps) {
             />
             <AiSpendLine
               prefix="累计 "
+              cachedInputTokens={stats.aiCachedInputTokens}
+              cacheReportedInputTokens={stats.aiCacheReportedInputTokens}
               promptTokens={stats.aiPromptTokens}
               completionTokens={stats.aiCompletionTokens}
               calls={stats.aiCalls}
@@ -258,7 +262,7 @@ export function ContextSection({ settings, update }: ContextSectionProps) {
         )}
         <div className="grid gap-3 sm:grid-cols-2">
           <Input
-            label="输入单价"
+            label="普通输入单价（缓存未命中）"
             type="number"
             min={0}
             step="0.01"
@@ -271,6 +275,10 @@ export function ContextSection({ settings, update }: ContextSectionProps) {
               update({ aiPricing: { ...pricing, inputPerMillion: num } });
             }}
           />
+          <Input label="缓存命中输入单价" type="number" min={0} step="0.001"
+            value={pricing.cachedInputPerMillion==null?"":String(pricing.cachedInputPerMillion)}
+            placeholder="未配置" hint="元 / 百万 tokens；留空为未知，填 0 表示免费"
+            onChange={event=>{const value=event.target.value.trim();const rate=value===""?null:Number(value);if(rate!==null&&(!Number.isFinite(rate)||rate<0))return;update({aiPricing:{...pricing,cachedInputPerMillion:rate}});}}/>
           <Input
             label="输出单价"
             type="number"

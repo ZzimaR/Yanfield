@@ -1,3 +1,4 @@
+import type { CacheUsage } from "./cache-usage";
 /**
  * AI 引擎（服务端）
  *
@@ -105,24 +106,28 @@ function makeUsage(promptTokens: number, completionTokens: number, latencyMs: nu
 }
 
 /** 服务商若在流末尾带回 usage，用它覆盖本地估算。同一条流里后来的数字覆盖先前的。 */
-function absorbUsage(chunk: ProviderChunk, box: { prompt: number; completion: number }): boolean {
+type UsageBox = {prompt:number;completion:number;reportedCost?:AiUsage["reportedCost"]} & CacheUsage;
+function absorbUsage(chunk: ProviderChunk, box: UsageBox): boolean {
   if (chunk.type !== "usage") return false;
   if (chunk.promptTokens > 0) box.prompt = chunk.promptTokens;
   if (chunk.completionTokens > 0) box.completion = chunk.completionTokens;
+  if(chunk.cost)box.reportedCost={...chunk.cost,complete:true};
+  box.cachedInputTokens=chunk.cachedInputTokens;
+  box.cacheReportedInputTokens=chunk.cachedInputTokens===undefined?undefined:chunk.promptTokens;
   return true;
 }
 
 function settleUsage(
   estimatedPrompt: number,
   estimatedCompletion: number,
-  reported: { prompt: number; completion: number },
+  reported: UsageBox,
   latencyMs: number,
 ): AiUsage {
-  return makeUsage(
+  return {...makeUsage(
     reported.prompt > 0 ? reported.prompt : estimatedPrompt,
     reported.completion > 0 ? reported.completion : estimatedCompletion,
     latencyMs,
-  );
+  ),cachedInputTokens:reported.cachedInputTokens,cacheReportedInputTokens:reported.cacheReportedInputTokens,reportedCost:reported.reportedCost};
 }
 
 function contextTokens(messages: AiMessage[]): number {
@@ -134,8 +139,8 @@ async function collectCompletion(
   messages: AiMessage[],
   signal: AbortSignal | undefined,
   maxTokens: number,
-): Promise<{ text: string; prompt: number; completion: number }> {
-  const reported = { prompt: 0, completion: 0 };
+): Promise<{text:string} & UsageBox> {
+  const reported:UsageBox = { prompt: 0, completion: 0 };
   let text = "";
   for await (const chunk of streamCompletion({
     provider: target.provider,
@@ -148,7 +153,7 @@ async function collectCompletion(
     if (absorbUsage(chunk, reported)) continue;
     if (chunk.type === "delta") text += chunk.text;
   }
-  return { text: text.trim(), prompt: reported.prompt, completion: reported.completion };
+  return { text: text.trim(), ...reported };
 }
 
 /* ============================== 行动（Action）构造 ============================== */
@@ -221,6 +226,7 @@ export async function* runChatStream(params: ChatRunParams): AsyncGenerator<AiSt
   let accumulated = "";
   let promptTokens = 0;
   let completionTokens = 0;
+  const cacheUsage:CacheUsage & {reportedCost?:AiUsage["reportedCost"]}={};
   let sessionId = params.sessionId ?? null;
   const feature: AiFeature = "chat";
 
@@ -308,7 +314,7 @@ export async function* runChatStream(params: ChatRunParams): AsyncGenerator<AiSt
       ];
       promptTokens = contextTokens(messages) + contextTokens([{ role: "user", content: planUser }]) + contextTokens(writeMessages);
       const reported = { prompt: planResult.prompt, completion: planResult.completion };
-      const writeReported = { prompt: 0, completion: 0 };
+      const writeReported:UsageBox = { prompt: 0, completion: 0 };
       for await (const chunk of streamCompletion({ provider: writeTarget.provider, model: writeTarget.model, messages: writeMessages, temperature: 0.85, maxTokens: config.maxTokens > 0 ? config.maxTokens : undefined, signal: params.signal })) {
         if (absorbUsage(chunk, writeReported)) continue;
         const handled = handleChunk(chunk, (text) => {
@@ -316,12 +322,17 @@ export async function* runChatStream(params: ChatRunParams): AsyncGenerator<AiSt
         });
         if (handled) yield handled;
       }
+      const firstCost=planResult.reportedCost,secondCost=writeReported.reportedCost;
+      if(firstCost&&secondCost&&firstCost.currency===secondCost.currency)cacheUsage.reportedCost={...firstCost,amount:firstCost.amount+secondCost.amount,complete:true};
+      else if(firstCost||secondCost)cacheUsage.reportedCost={...(firstCost||secondCost)!,complete:false};
+      cacheUsage.cachedInputTokens=(planResult.cachedInputTokens??0)+(writeReported.cachedInputTokens??0);
+      cacheUsage.cacheReportedInputTokens=(planResult.cacheReportedInputTokens??0)+(writeReported.cacheReportedInputTokens??0);
       reported.prompt += writeReported.prompt;
       reported.completion += writeReported.completion;
       completionTokens = reported.completion;
       promptTokens = reported.prompt > 0 ? reported.prompt : promptTokens;
     } else {
-      const reported = { prompt: 0, completion: 0 };
+      const reported:UsageBox = { prompt: 0, completion: 0 };
       for await (const chunk of streamCompletion({
         provider: chatTarget.provider,
         model: chatTarget.model,
@@ -336,11 +347,12 @@ export async function* runChatStream(params: ChatRunParams): AsyncGenerator<AiSt
         });
         if (handled) yield handled;
       }
+      Object.assign(cacheUsage,{cachedInputTokens:reported.cachedInputTokens,cacheReportedInputTokens:reported.cacheReportedInputTokens,reportedCost:reported.reportedCost});
       if (reported.prompt > 0) promptTokens = reported.prompt;
       completionTokens = reported.completion;
     }
 
-    const usage = settleUsage(promptTokens, estimateTokens(accumulated), { prompt: promptTokens, completion: completionTokens }, Date.now() - startedAt);
+    const usage = settleUsage(promptTokens, estimateTokens(accumulated), { prompt: promptTokens, completion: completionTokens,...cacheUsage }, Date.now() - startedAt);
     const actions: AiAction[] = [];
     updateMessage(assistantMessageId, { content: accumulated, status: "complete", usage, actions });
     addAiLog({
@@ -350,6 +362,7 @@ export async function* runChatStream(params: ChatRunParams): AsyncGenerator<AiSt
       provider: target.provider.name,
       model: target.model,
       promptTokens: usage.promptTokens,
+      cachedInputTokens:usage.cachedInputTokens,cacheReportedInputTokens:usage.cacheReportedInputTokens,
       completionTokens: usage.completionTokens,
       latencyMs: usage.latencyMs,
       status: "ok",
@@ -468,7 +481,7 @@ export async function* runCodexStream(params: CodexRunParams): AsyncGenerator<Ai
       { role: "user", content: userContent },
     ];
     promptTokens = contextTokens(messages);
-    const reported = { prompt: 0, completion: 0 };
+    const reported:UsageBox = { prompt: 0, completion: 0 };
     for await (const chunk of streamCompletion({
       provider: target.provider,
       model: target.model,
@@ -488,7 +501,7 @@ export async function* runCodexStream(params: CodexRunParams): AsyncGenerator<Ai
     const usage = settleUsage(
       promptTokens,
       estimateTokens(accumulated),
-      { prompt: promptTokens, completion: completionTokens },
+      reported,
       Date.now() - startedAt,
     );
     addAiLog({
@@ -498,6 +511,7 @@ export async function* runCodexStream(params: CodexRunParams): AsyncGenerator<Ai
       provider: target.provider.name,
       model: target.model,
       promptTokens: usage.promptTokens,
+      cachedInputTokens:usage.cachedInputTokens,cacheReportedInputTokens:usage.cacheReportedInputTokens,
       completionTokens: usage.completionTokens,
       latencyMs: usage.latencyMs,
       status: "ok",
@@ -604,7 +618,7 @@ export async function* runTaskStream(params: TaskRunParams): AsyncGenerator<AiSt
       { role: "user", content: finalUser },
     ];
     const promptTokens = contextTokens(messages);
-    const reported = { prompt: 0, completion: 0 };
+    const reported:UsageBox = { prompt: 0, completion: 0 };
 
     for await (const chunk of streamCompletion({
       provider: target.provider,
@@ -631,6 +645,7 @@ export async function* runTaskStream(params: TaskRunParams): AsyncGenerator<AiSt
       provider: target.provider.name,
       model: target.model,
       promptTokens: usage.promptTokens,
+      cachedInputTokens:usage.cachedInputTokens,cacheReportedInputTokens:usage.cacheReportedInputTokens,
       completionTokens: usage.completionTokens,
       latencyMs: usage.latencyMs,
       status: "ok",
@@ -746,7 +761,7 @@ export async function* runArchiveExtract(params: ArchiveExtractParams): AsyncGen
   const fallbackSummary = plain.replace(/\s+/g, " ").slice(0, 160);
   let payload: ReturnType<typeof normalizeArchive>;
   let accumulated = "";
-  const reported = { prompt: 0, completion: 0 };
+  const reported:UsageBox = { prompt: 0, completion: 0 };
   let estimatedPrompt = estimateTokens(plain);
 
   if (target.provider.kind === "demo") {
@@ -827,6 +842,7 @@ export async function* runArchiveExtract(params: ArchiveExtractParams): AsyncGen
     provider: target.provider.name,
     model: target.model,
     promptTokens: usage.promptTokens,
+      cachedInputTokens:usage.cachedInputTokens,cacheReportedInputTokens:usage.cacheReportedInputTokens,
     completionTokens: usage.completionTokens,
     latencyMs: usage.latencyMs,
     status: "ok",

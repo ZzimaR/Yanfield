@@ -3,12 +3,12 @@ import {mkdtempSync,rmSync} from "node:fs";
 import {tmpdir} from "node:os";
 import {join} from "node:path";
 import type {AiStreamEvent} from "@/lib/types";
-const fake=vi.hoisted(()=>({queue:[] as string[],inputs:[] as unknown[],costs:[] as ({amount:number;currency:"USD"|"CNY"}|undefined)[]}));
+const fake=vi.hoisted(()=>({queue:[] as string[],inputs:[] as unknown[],cache:[] as (number|undefined)[],costs:[] as ({amount:number;currency:"USD"|"CNY"}|undefined)[]}));
 vi.mock("@/lib/ai/provider",()=>({streamCompletion:async function*(input:unknown){
   fake.inputs.push(input);
   const value=fake.queue.shift();if(value===undefined)throw new Error("unexpected call");
   const sourceId=value.includes("__SOURCE_ID__")?JSON.parse((input as {messages:{content:string}[]}).messages[1].content).sources[0].id:"";
-  yield {type:"delta",text:value.replaceAll("__SOURCE_ID__",sourceId)};yield {type:"usage",promptTokens:10,completionTokens:5,cost:fake.costs.shift()};
+  yield {type:"delta",text:value.replaceAll("__SOURCE_ID__",sourceId)};yield {type:"usage",promptTokens:10,completionTokens:5,cachedInputTokens:fake.cache.shift(),cost:fake.costs.shift()};
 }}));
 vi.mock("@/lib/ai/engine",()=>({resolveTarget:()=>({provider:{id:"test",name:"test",kind:"openai"},model:"test"}),mergeContextConfig:(c:unknown)=>({contextBudget:24000,includeCharacters:true,includeWorld:true,includeForeshadows:true,includeArchives:true,includeNovelOutline:true,includeVolumeOutline:true,includeChapterBlueprint:true,includeStyleGuide:true,...(c as object)})}));
 const folder=mkdtempSync(join(tmpdir(),"yanfield-run-"));
@@ -19,6 +19,16 @@ async function collect(request:Parameters<typeof runtime.runAgent>[0],signal?:Ab
 const plan=(calls:unknown[],message="处理任务")=>JSON.stringify({message,calls,done:!calls.length});
 
 describe("Agent连续工具执行",()=>{
+  it("累计缓存统计、未报告调用和日志持久化不会重复计算输入",async()=>{
+    const novel=repo.createNovel({title:"缓存统计"});
+    fake.cache=[8,undefined];fake.queue=[plan([{name:"workspace",args:{}}]),plan([],"完成")];
+    const event=(await collect({novelId:novel.id,message:"检查进度"})).filter(e=>e.type==="agent").at(-1)!;
+    if(event.type!=="agent")throw new Error("missing");
+    expect(event.run.usage).toMatchObject({promptTokens:20,cachedInputTokens:8,cacheReportedInputTokens:10});
+    expect(store.getRun(event.run.id).usage.cachedInputTokens).toBe(8);
+    expect(repo.getStats().aiCachedInputTokens).toBeGreaterThanOrEqual(8);
+  });
+
   it("DSML 工具封套转成同一套经过校验的调用，不额外请求修复",async()=>{
     const novel=repo.createNovel({title:"DSML 兼容"});
     fake.queue=['<｜｜DSML｜｜ calls><｜｜DSML｜｜ invoke name="workspace"><｜｜DSML｜｜ parameter name="args" string="false">{}</｜｜DSML｜｜ parameter></｜｜DSML｜｜ invoke></｜｜DSML｜｜ calls>',plan([],"已查看")];
