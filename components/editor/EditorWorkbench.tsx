@@ -7,7 +7,7 @@ import type { Editor } from "@tiptap/react";
 import { Feather, Plus } from "lucide-react";
 import { Button, EmptyState, Sheet, useToast } from "@/components/ui/kit";
 import { AiTaskBar } from "@/components/ai/AiTaskBar";
-import { apiPatch, useApi } from "@/lib/client/api";
+import { apiGet, apiPatch, useApi } from "@/lib/client/api";
 import { EditorBridgeProvider } from "@/lib/editor/bridge";
 import { HAND_OFF_EVENT } from "@/lib/editor/hand-off";
 import { emitFocusAi } from "@/lib/editor/events";
@@ -25,6 +25,8 @@ import { useHotkeys, useLocalStorageState, useMediaQuery, useResizePanel } from 
 import { applyTheme } from "@/lib/ui/theme";
 import type { AppSettings, Chapter } from "@/lib/types";
 import { CommandPalette } from "./CommandPalette";
+import { updateAgentReview } from "@/lib/editor/agent-review";
+import { AGENT_UPDATED } from "@/lib/ai/agent/client";
 import type { AgentRun } from "@/lib/ai/agent/types";
 import { EditorCanvas } from "./EditorCanvas";
 import { EditorHeader, type EditorTheme } from "./EditorHeader";
@@ -277,18 +279,38 @@ export function EditorWorkbench({ novelId }: EditorWorkbenchProps) {
     const open=(event:Event)=>{
       const value=(event as CustomEvent<{run:AgentRun;changeId:string}>).detail;
       if(value.run.novelId!==novelId)return;
-      const change=value.run.changes.find(c=>c.id===value.changeId);
-      if(!change)return;
-      void flush().then(()=>{if(change.appliedId||change.targetId)setChapterId((change.appliedId||change.targetId)!);setReview(value);}).catch(()=>{});
+      void (async()=>{
+        await flush();
+        const latest=await apiGet<AgentRun>(`/api/ai/agent/${value.run.id}`);
+        const change=latest.changes.find(c=>c.id===value.changeId);
+        if(!change)return;
+        await actions.refresh();
+        if(change.appliedId||change.targetId)setChapterId((change.appliedId||change.targetId)!);
+        setReview({...value,run:latest});
+      })().catch(()=>{});
     };
     const navigate=(event:Event)=>{
       const value=(event as CustomEvent<{kind:string;id:string}>).detail;
-      if(value.kind==="chapter"||value.kind==="blueprint")selectChapter(value.id);
+      if(value.kind==="chapter"||value.kind==="blueprint") {
+        setReview(null);
+        // A newly applied chapter may not be in the stale directory yet. Refresh before
+        // selecting it, otherwise the missing-chapter fallback sends the author to chapter one.
+        void flush().then(()=>actions.refresh()).then(()=>setChapterId(value.id)).catch(()=>{});
+      }
       if(value.kind==="outline"||value.kind==="volume-outline"||value.kind==="blueprint") {setTab("outline");setLeftOpen(true);}
     };
     window.addEventListener("yantian:agent-review",open);window.addEventListener("yantian:agent-navigate",navigate);
     return()=>{window.removeEventListener("yantian:agent-review",open);window.removeEventListener("yantian:agent-navigate",navigate);};
-  },[novelId,flush,setChapterId,selectChapter,setTab,setLeftOpen]);
+  },[novelId,flush,setChapterId,actions,selectChapter,setTab,setLeftOpen]);
+  // Applying from either the card or inline review must leave the author in the editable chapter.
+  React.useEffect(()=>{
+    const updated=(event:Event)=>{
+      const run=(event as CustomEvent<AgentRun>).detail;
+      setReview(current=>updateAgentReview(current,run));
+    };
+    window.addEventListener(AGENT_UPDATED,updated);
+    return()=>window.removeEventListener(AGENT_UPDATED,updated);
+  },[]);
   React.useEffect(()=>{if(review){const c=review.run.changes.find(c=>c.id===review.changeId);if((c?.appliedId||c?.targetId)&&(c?.appliedId||c?.targetId)!==chapterId)setReview(null);}},[chapterId,review]);
 
   /* ---------------- 主题 ---------------- */

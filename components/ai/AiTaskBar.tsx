@@ -1,7 +1,7 @@
 "use client";
 import * as React from "react";
-import {Compass,Eraser,Gauge,Layers,ListTree,PenLine,Sparkles} from "lucide-react";
-import {Button,Tooltip,useToast} from "@/components/ui/kit";
+import {ChevronDown,Compass,Eraser,Gauge,Layers,ListTree,PenLine,Sparkles} from "lucide-react";
+import {Button,Dropdown,useToast} from "@/components/ui/kit";
 import {useEditorBridge} from "@/lib/editor/bridge";
 import {handToAssistant} from "@/lib/editor/hand-off";
 import type {AiFeature,ContextConfig} from "@/lib/types";
@@ -83,7 +83,7 @@ export interface AiTaskBarProps {
   context?:Partial<ContextConfig>;className?:string;
 }
 /** All shortcuts use the same agent, proposal, and review workflow as the chat panel. */
-export function AiTaskBar({chapterId,selection,compact=false,className}:AiTaskBarProps) {
+export function AiTaskBar({chapterId,selection,className}:AiTaskBarProps) {
   const bridge=useEditorBridge(),{toast}=useToast();
   const run=(task:TaskDef)=>{
     const selected=(selection??bridge?.getSelectionText()??"").trim();
@@ -91,5 +91,5 @@ export function AiTaskBar({chapterId,selection,compact=false,className}:AiTaskBa
     const instruction=task.feature==="continue"?"承接当前章末尾续写约600字，追加到本章，不新建下一章。":task.needsSelection?`${task.label}当前选中的段落，保持其余正文和人物事实不变。`:task.instruction||task.hint;
     handToAssistant({reference:chapterId?{type:"chapter",id:chapterId,label:"当前章节"}:null,taskId:`shortcut-${task.key}`,taskLabel:task.label,prompt:instruction,selection:selected||undefined,autoSend:true});
   };
-  return <div className={cn("flex min-w-0 items-center gap-1",className)}>{TASKS.map(task=><Tooltip key={task.key} label={task.hint}><Button size="sm" variant="ghost" icon={task.icon} aria-label={task.label} disabled={!chapterId} onClick={()=>run(task)}>{compact?null:task.label}</Button></Tooltip>)}</div>;
+  return <Dropdown width={236} trigger={<Button className={cn("h-7 gap-1.5 px-2 text-[11px] text-accent",className)} size="sm" variant="ghost" aria-label="AI 快捷任务" aria-haspopup="menu" disabled={!chapterId} icon={<Sparkles className="size-3.5"/>}>AI 助手<ChevronDown className="size-3"/></Button>} items={TASKS.map(task=>({label:task.label,icon:task.icon,disabled:!chapterId,onSelect:()=>run(task)}))}/>;
 }

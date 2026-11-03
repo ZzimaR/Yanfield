@@ -67,7 +67,13 @@ export function AgentRunCard({runId,initial,disabled=false,onContinue}:{runId:st
   const live=run.changes.filter(c=>c.state!=="rejected"&&c.state!=="reverted");
   const materials=live.filter(c=>c.kind!=="chapter");
   const chapterCount=live.filter(c=>c.kind==="chapter").length;
-  const apply=(changes:AgentChange[])=>mutate(()=>commitAgent(run.id,{selections:changes.map(c=>({id:c.id,fields:fields[c.id]}))},bridge));
+  const apply=(changes:AgentChange[])=>mutate(async()=>{
+    const result=await commitAgent(run.id,{selections:changes.map(c=>({id:c.id,fields:fields[c.id]}))},bridge);
+    const chapter=result.changes.find(c=>changes.some(selected=>selected.id===c.id)&&c.kind==="chapter"&&c.state==="applied");
+    const id=chapter?.appliedId||chapter?.targetId;
+    if(id)window.dispatchEvent(new CustomEvent("yantian:agent-navigate",{detail:{kind:"chapter",id}}));
+    return result;
+  });
   const selected=pending.filter(c=>picked[c.id]!==false);
   const openTarget=(target:AgentReference & {changeId?:string})=>{
     const candidate=run.changes.find(c=>c.id===(target.changeId||target.id));
@@ -122,7 +128,8 @@ export function AgentRunCard({runId,initial,disabled=false,onContinue}:{runId:st
           <div className="my-2 flex items-center justify-between text-[10px] text-ink-4"><span>{run.model}</span><span>{countWords(String(c.after.content||""))} 字</span></div>
           <p className={`whitespace-pre-wrap font-serif text-[14px] leading-[2] text-ink-2 ${expanded===c.id?"":"line-clamp-5"}`}>{stripHtml(String(c.after.content||""))}</p>
           <button type="button" className="my-2 flex w-full items-center justify-center gap-1 text-[11px] text-ink-3" onClick={()=>setExpanded(expanded===c.id?null:c.id)}><ChevronDown className="size-3"/>{expanded===c.id?"收起":"展开全文"}</button>
-          <Button className="w-full justify-center border-accent/20 bg-accent/5 py-2 text-accent hover:bg-accent/10" size="sm" variant="secondary" icon={<BookOpen className="size-3"/>} disabled={running||busy||disabled} onClick={()=>openAgentReview(run,c.id)}>{isPending?"在正文中审阅改动":"查看本次改动"}</Button>
+          {c.state==="applied"?<Button className="w-full justify-center border-accent/20 bg-accent/5 py-2 text-accent hover:bg-accent/10" size="sm" variant="secondary" icon={<BookOpen className="size-3"/>} disabled={running||busy||disabled} onClick={()=>openTarget({kind:"chapter",id:c.appliedId||c.targetId||c.id,title:c.title,changeId:c.id})}>打开正文 · 继续编辑</Button>:null}
+          <Button className="mt-1 w-full justify-center" size="sm" variant="ghost" disabled={running||busy||disabled} onClick={()=>openAgentReview(run,c.id)}>{isPending?"在正文中审阅改动":"查看历史改动"}</Button>
         </>:<>
           {["character","world","foreshadow"].includes(c.kind)?<div className="mt-3 rounded-xl border border-line/65 bg-paper/25 p-3"><MaterialPreview kind={c.kind as "character"|"world"|"foreshadow"} fields={{...c.before,...c.after}} showTitle={false}/></div>:null}
           <p className="mt-2 text-[11px] leading-relaxed text-ink-4">{c.reason}</p>

@@ -22,6 +22,7 @@ interface FormatToolbarProps {
   /** 编辑器实例；未就绪时工具栏不渲染 */
   editor: Editor | null;
   className?: string;
+  children?: React.ReactNode;
 }
 
 /** 禁用态视觉：IconButton 本身没有 disabled 样式，这里补齐 */
@@ -84,7 +85,7 @@ const TEXT_BUTTON_CLASS = "size-auto h-7 min-w-7 w-auto px-1.5 text-[11px] font-
  * 点击后焦点回到正文，选区不丢失。段落样式用互斥的三个按钮（正文 / H2 / H3），
  * 与图标按钮共用 aria-label 中文 + Tooltip，方便键盘与读屏。
  */
-export function FormatToolbar({ editor, className }: FormatToolbarProps) {
+export function FormatToolbar({ editor, className, children }: FormatToolbarProps) {
   useEditorTick(editor);
 
   if (!editor) return null;
@@ -183,6 +184,7 @@ export function FormatToolbar({ editor, className }: FormatToolbarProps) {
       <ToolbarButton label="分隔线" onClick={() => editor.chain().focus().setHorizontalRule().run()}>
         <Minus className="size-3.5" />
       </ToolbarButton>
+      {children?<><ToolbarDivider />{children}</>:null}
     </div>
   );
 }

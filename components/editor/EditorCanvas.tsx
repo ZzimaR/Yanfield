@@ -7,7 +7,7 @@ import Placeholder from "@tiptap/extension-placeholder";
 import CharacterCount from "@tiptap/extension-character-count";
 import Highlight from "@tiptap/extension-highlight";
 import { MessagesSquare, Minimize2 } from "lucide-react";
-import { IconButton, Skeleton, Tooltip } from "@/components/ui/kit";
+import { IconButton, Sheet, Skeleton, Tooltip } from "@/components/ui/kit";
 import { cn, countWords, formatDateTime, formatWords } from "@/lib/ui/cn";
 import { useLocalStorageState } from "@/lib/ui/hooks";
 import type { ChapterStatus } from "@/lib/types";
@@ -152,6 +152,8 @@ export function EditorCanvas(props: EditorCanvasProps) {
     review,
     onCloseReview,
   } = props;
+
+  const pendingReview = Boolean(review?.run.changes.some(c => c.id === review.changeId && c.state === "pending"));
 
   // 最新 props 放 ref，供编辑器事件回调读取，避免 useEditor 闭包过期
   const handlersRef = React.useRef(props);
@@ -387,7 +389,7 @@ export function EditorCanvas(props: EditorCanvasProps) {
         >
           <input
             value={title}
-            disabled={Boolean(review)}
+            disabled={pendingReview}
             onChange={(event) => onTitleChange(event.target.value)}
             placeholder="未命名章节"
             aria-label="章节标题"
@@ -414,24 +416,16 @@ export function EditorCanvas(props: EditorCanvasProps) {
             </div>
           )}
 
-          {/* 格式工具栏：紧跟 meta 行、不进入沉浸模式 */}
-          {!immersive ? <FormatToolbar editor={editor} className="mb-4 border-b border-line/70 pb-2" /> : null}
-
-          {/* AI 快捷任务条：正文顶部的常驻入口（沉浸模式下隐藏，留给纯粹写作） */}
-          {!immersive && aiBar ? (
-            <div className="mb-6 flex min-w-0 items-center gap-2 border-b border-line/70 pb-3">
-              <span className="shrink-0 text-[11px] font-medium tracking-wide text-ink-4">AI 快捷</span>
-              {/* 窄屏时任务条横向滚动，不换行挤压正文 */}
-              <div className="scroll-hide min-w-0 flex-1 overflow-x-auto [&_button]:shrink-0 [&_button]:whitespace-nowrap">
-                {aiBar}
-              </div>
-            </div>
-          ) : null}
+          {/* AI 任务收进格式工具栏的一个下拉入口。 */}
+          {!immersive ? <FormatToolbar editor={editor} className="mb-6 border-b border-line/70 pb-2">{aiBar}</FormatToolbar> : null}
 
           {editor ? (
             <>
-              {review?<AgentReview key={review.changeId} initial={review.run} changeId={review.changeId} onClose={onCloseReview||(()=>{})}/>:null}
-              <div className={review?"hidden":""}><EditorContent editor={editor} /></div>
+              {review && pendingReview?<AgentReview key={`${review.run.id}:${review.changeId}`} initial={review.run} changeId={review.changeId} onClose={onCloseReview||(()=>{})}/>:null}
+              <div className={pendingReview?"hidden":""}><EditorContent editor={editor} /></div>
+              <Sheet open={Boolean(review && !pendingReview)} onClose={onCloseReview || (()=>{})} title="历史改动对比" width={760}>
+                {review && !pendingReview?<div className="p-5"><AgentReview key={`${review.run.id}:${review.changeId}`} initial={review.run} changeId={review.changeId} onClose={onCloseReview||(()=>{})}/></div>:null}
+              </Sheet>
             </>
           ) : (
             <div className="space-y-2.5 pt-2">
