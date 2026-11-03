@@ -1,3 +1,4 @@
+import { modelThinking, type ThinkingLevel } from "./thinking";
 import type { CacheUsage } from "./cache-usage";
 /**
  * AI 引擎（服务端）
@@ -70,6 +71,7 @@ export interface ResolvedTarget {
   provider: ProviderConfig;
   model: string;
   role: "chat" | "prose";
+  thinkingLevel?: ThinkingLevel;
 }
 
 export function resolveTarget(role: "chat" | "prose"): ResolvedTarget {
@@ -88,7 +90,7 @@ export function resolveTarget(role: "chat" | "prose"): ResolvedTarget {
   let model = wanted.model && modelIds.includes(wanted.model) ? wanted.model : "";
   if (!model) model = modelIds[0] ?? (provider.kind === "demo" ? "yanfield-demo" : "");
   if (!model) throw new ApiError(`Provider「${provider.name}」还没有配置模型。`, 400);
-  return { provider, model, role };
+  return { provider, model, role,thinkingLevel:modelThinking(settings,provider,model) };
 }
 
 export function mergeContextConfig(partial?: Partial<ContextConfig>): ContextConfig {
@@ -144,7 +146,7 @@ async function collectCompletion(
   let text = "";
   for await (const chunk of streamCompletion({
     provider: target.provider,
-    model: target.model,
+    model: target.model, thinkingLevel: target.thinkingLevel,
     messages,
     temperature: 0.7,
     maxTokens,
@@ -315,7 +317,7 @@ export async function* runChatStream(params: ChatRunParams): AsyncGenerator<AiSt
       promptTokens = contextTokens(messages) + contextTokens([{ role: "user", content: planUser }]) + contextTokens(writeMessages);
       const reported = { prompt: planResult.prompt, completion: planResult.completion };
       const writeReported:UsageBox = { prompt: 0, completion: 0 };
-      for await (const chunk of streamCompletion({ provider: writeTarget.provider, model: writeTarget.model, messages: writeMessages, temperature: 0.85, maxTokens: config.maxTokens > 0 ? config.maxTokens : undefined, signal: params.signal })) {
+      for await (const chunk of streamCompletion({ provider: writeTarget.provider, model: writeTarget.model, thinkingLevel: writeTarget.thinkingLevel, messages: writeMessages, temperature: 0.85, maxTokens: config.maxTokens > 0 ? config.maxTokens : undefined, signal: params.signal })) {
         if (absorbUsage(chunk, writeReported)) continue;
         const handled = handleChunk(chunk, (text) => {
           accumulated += text;
@@ -335,7 +337,7 @@ export async function* runChatStream(params: ChatRunParams): AsyncGenerator<AiSt
       const reported:UsageBox = { prompt: 0, completion: 0 };
       for await (const chunk of streamCompletion({
         provider: chatTarget.provider,
-        model: chatTarget.model,
+        model: chatTarget.model, thinkingLevel: chatTarget.thinkingLevel,
         messages,
         temperature: preset.temperature,
         maxTokens: config.maxTokens > 0 ? config.maxTokens : undefined,
@@ -484,7 +486,7 @@ export async function* runCodexStream(params: CodexRunParams): AsyncGenerator<Ai
     const reported:UsageBox = { prompt: 0, completion: 0 };
     for await (const chunk of streamCompletion({
       provider: target.provider,
-      model: target.model,
+      model: target.model, thinkingLevel: target.thinkingLevel,
       messages,
       temperature: 0.2,
       maxTokens: 6000,
@@ -622,7 +624,7 @@ export async function* runTaskStream(params: TaskRunParams): AsyncGenerator<AiSt
 
     for await (const chunk of streamCompletion({
       provider: target.provider,
-      model: target.model,
+      model: target.model, thinkingLevel: target.thinkingLevel,
       messages,
       temperature: preset.temperature,
       maxTokens: config.maxTokens > 0 ? config.maxTokens : undefined,
@@ -796,7 +798,7 @@ export async function* runArchiveExtract(params: ArchiveExtractParams): AsyncGen
     ];
     for await (const chunk of streamCompletion({
       provider: target.provider,
-      model: target.model,
+      model: target.model, thinkingLevel: target.thinkingLevel,
       messages,
       temperature: 0.2,
       maxTokens: 2000,

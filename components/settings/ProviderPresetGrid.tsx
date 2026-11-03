@@ -26,7 +26,7 @@ export function ProviderPresetGrid({ existingNames, onPick }: ProviderPresetGrid
             快速添加主流服务商
           </h3>
           <p className="mt-1 text-[11.5px] leading-5 text-ink-3">
-            选一个品牌，Base URL、接入协议与推荐模型都会自动填好，只需要粘贴 API Key。
+            选择服务商只预填地址与协议。填好 Key 后，手动拉取账户可用模型，或自行填写模型 ID。
           </p>
         </div>
         <button
@@ -81,7 +81,7 @@ export function ProviderPresetGrid({ existingNames, onPick }: ProviderPresetGrid
                 </span>
                 <span className="mt-0.5 line-clamp-1 text-[10.5px] leading-4 text-ink-3">{preset.description}</span>
                 <span className="mt-0.5 block font-mono text-[9.5px] text-ink-3">
-                  {preset.models.length > 0 ? `${preset.models.length} 个推荐模型` : "自定义 Base URL"}
+                  {preset.key === "custom" ? "自定义 Base URL" : "手动拉取模型"}
                 </span>
               </span>
               <ArrowUpRight

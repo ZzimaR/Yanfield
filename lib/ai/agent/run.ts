@@ -1,4 +1,6 @@
-import { chapterDirectoryWindow, writerMessages } from "./context";
+import { proposalReceipt } from "./receipt";
+import { automaticMaterialPolicy } from "./material-policy";
+import { chapterDirectoryWindow, writerMessages, candidateContext } from "./context";
 import { z } from "zod";
 import { parseAgentDecision, supportsDecisionJson, usesDecisionTool, DECISION_TOOLS, nativeDecisionSystem } from "./decision";
 import { protocolDiagnostic } from "./diagnostics";
@@ -33,7 +35,9 @@ reject_change {changeId}：丢弃本轮候选。
 写完读取候选（read id可填changeId），检查章纲、事实一致性和字数；必要时最多再写两轮，修订同一候选须传其changeId。字数由工具计算。工具失败时修正参数或如实报告，绝不假称已完成。所有修改仅待确认，只有应用回执成功才可说已保存。最终说明改了哪些、哪些仍待确认。
 正文完成后系统会单独整理有原文依据的资料卡，因此不用提前猜测人物身世或为每个人物创建空壳。只整理资料的任务请先读正文，再用propose按字段完整整理；未知字段省略。
 资料卡要便于后续写作：身份、性格、目标、口吻、当前处境分别填对应字段，不把全部信息塞进一句身份；设定用summary概括、content分段整理位置/运作方式/剧情关联。信息量以原文依据为准，不新建只有名称的空卡，不为了详细而虚构。
-长篇批量建卡每轮最多提出两张完整卡片，其余分轮完成，避免输出截断。最多12轮，合理批量读取；不要无界读全书。已经给出的写作要求随每次write_chapter传入。`;
+长篇批量建卡每轮最多提出两张完整卡片，其余分轮完成，避免输出截断。最多12轮，合理批量读取；不要无界读全书。已经给出的写作要求随每次write_chapter传入。
+回复要求：默认用2—4句说明本轮做了什么、仍待作者确认什么；作者明确要求分析、方案或细节时再展开。候选内容已在任务卡展示，不要重复粘贴整章或整张卡，不罗列历史候选清单、不输出数据库ID/changeId、原始字段名。应用入口在当前这条任务卡，不能编造“角色页签/正文页签点应用”等界面路径。润色可以在授权范围内细化动作，但复盘必须承认这些是新增细节，不能称为“原有”。目标字数明确时应主动在剩余写作轮次内补到至少90%，不能用“若想达到原目标再告诉我”代替完成要求；短选区按原句长度润色，不凑100字。暂存不等于已保存；只能依据本轮工具回执描述结果，工具回执如出现possiblyRemoved，必须核对未授权丢失的事实并修正，不能对着实际删除的候选声称没删。不把旧候选当已应用、不猜旧任务状态，不把局部工具失败说成整体成功。字数仅引用工具统计。
+事实边界：已保存的作者设定与已写正文同为事实依据，正文没提到不等于设定不成立；“不增加X”只禁止新增，不授权删除已有X，例如不增加出航限制不能把已有的退潮送信、涨潮收船规则删掉；整理旧卡不能因正文未出现就删掉卡里已有的规矩或事实，除非作者明确要求删除或先确认冲突。跨章核对以最新明确事件为准，已交代的交付不能反复说成未知。未确认的方案、人物关系和背景不能成为默认设定；未知就保留未知或询问，不能说“不回答就默认某种身份”。整理既有资料、反推已写章纲时不得新增未发生的对话、动作或离场，不把合理推断说成原文事实。例如“涨潮收船”不意味着“潮未退时船绝不出航”，“信的收件人未在材料中出现”不等于“信没有收件人”。作者明确要求构思未来剧情、设计外貌时可以提出新增创意，但要把建议与既定事实区分开。`;
 
 export async function* runAgent(request: AgentRequest, signal?: AbortSignal): AsyncGenerator<AiStreamEvent> {
   const novel=repo.getNovel(request.novelId);
@@ -41,19 +45,24 @@ export async function* runAgent(request: AgentRequest, signal?: AbortSignal): As
   if(request.chapterId && repo.getChapter(request.chapterId)?.novelId!==novel.id) throw new ApiError("章节不属于该作品",400);
   const target=resolveTarget("chat");
   const config=mergeContextConfig(request.context);
+  const deepThinking=!!target.thinkingLevel&&target.thinkingLevel!=="off";
+  let lastDecisionReasoning="";
   const decisionOverhead=usesDecisionTool(target.provider,target.model)?estimateTokens(JSON.stringify(DECISION_TOOLS)):0;
   const started=Date.now();
   const run:AgentRun={id:uid("agent"),novelId:novel.id,chapterId:request.chapterId||null,request:request.message,status:"running",summary:"正在理解任务",error:"",steps:[],changes:[],references:[],usage:{promptTokens:0,completionTokens:0,totalTokens:0,latencyMs:0},model:target.model,provider:target.provider.name,preview:"",createdAt:new Date().toISOString(),updatedAt:new Date().toISOString()};
   const observed=new Map<string,Fields|null>();
   const material=new Map<string,unknown>();
+  const appendBases=new Map<string,string>();
   const history=trimChatHistory(request.history??[],{maxChars:12000,maxMessages:10});
-  const messages:AiMessage[]=[{role:"system",content:(usesDecisionTool(target.provider,target.model)?nativeDecisionSystem(SYSTEM):SYSTEM)+"\n"+agentPreamble(request.agentId,repo.getSettings())+`\n作品id=${novel.id}。作者文风与约束：${config.includeStyleGuide?novel.styleGuide:""}\n${config.customInstruction||""}\n禁用词：${novel.forbiddenWords.join("、")}`} ,...history.kept.map(m=>m.role==="assistant"?{...m,content:JSON.stringify({message:m.content,calls:[],done:true})}:m),{role:"user",content:JSON.stringify({request:request.message,currentChapterId:request.chapterId||null,mentions:request.mentions,selection:request.selection,snapshot:request.snapshot,historyOmitted:history.trimmed})}];
+  const messages:AiMessage[]=[{role:"system",content:(usesDecisionTool(target.provider,target.model)?nativeDecisionSystem(SYSTEM):SYSTEM)+"\n"+agentPreamble(request.agentId,repo.getSettings())+`\n作品id=${novel.id}。作者文风与约束：${config.includeStyleGuide?novel.styleGuide:""}\n${config.customInstruction||""}\n禁用词：${novel.forbiddenWords.join("、")}`} ,...history.kept.map(m=>m.role==="assistant"?{...m,content:JSON.stringify({message:m.content,calls:[],done:true}),...(deepThinking?{reasoning_content:""}:{})}:m),{role:"user",content:JSON.stringify({request:request.message,currentChapterId:request.chapterId||null,mentions:request.mentions,selection:request.selection,snapshot:request.snapshot,historyOmitted:history.trimmed})}];
   let previous:AgentRun|undefined;
   if(request.previousRunId) {
     previous=getRun(request.previousRunId);
     if(previous.novelId!==novel.id) throw new ApiError("任务不属于该作品",400);
     messages.push({role:"user",content:JSON.stringify({previousRun:{id:previous.id,summary:previous.summary,changes:previous.changes.map(c=>({id:c.id,kind:c.kind,targetId:c.appliedId||c.targetId,title:c.title,state:c.state,changedFields:Object.keys(c.after)}))}})});
   }
+  run.materialPolicy=automaticMaterialPolicy(request.message,previous,request.selection);
+  if(previous)messages.push({role:"user",content:JSON.stringify({automaticMaterialExtraction:run.materialPolicy,restriction:"skip表示本轮不自动回填资料；继续遵守作者明确限制，不擅自恢复整理"})});
   if(request.sessionId) {
     if(repo.getChatSession(request.sessionId)?.novelId!==novel.id) throw new ApiError("会话不属于该作品",400);
     run.sessionId=request.sessionId;
@@ -72,13 +81,15 @@ export async function* runAgent(request: AgentRequest, signal?: AbortSignal): As
     if(run.messageId)repo.updateMessage(run.messageId,{actions:[{id:run.id,type:"agent-run",label:"任务与改动",payload:{runId:run.id},applied:false}],content:run.summary||"正在处理任务",status:run.status==="running"?"streaming":run.status==="error"?"error":run.status==="aborted"?"aborted":"complete",usage:run.usage,error:run.error});
   };
   let completionCalls=0,pricedCalls=0;
-  async function* complete(input:AiMessage[],decisionOutput=false):AsyncGenerator<string> {
+  async function* complete(input:AiMessage[],decisionOutput=false,materialOutput=false):AsyncGenerator<string> {
     let raw="",prompt=0,output=0;
+    if(decisionOutput)lastDecisionReasoning="";
     let cachedInputTokens:number|undefined;
     let reported=false,cost:{amount:number;currency:"USD"|"CNY"}|undefined;
     try {
-      for await(const chunk of streamCompletion({provider:target.provider,model:target.model,messages:input,maxTokens:config.maxTokens>0?config.maxTokens:undefined,temperature:0.4,signal,...(decisionOutput ? usesDecisionTool(target.provider,target.model)?{decisionTools:DECISION_TOOLS}:supportsDecisionJson(target.provider,target.model)?{outputFormat:"json" as const}:{} : {})})) {
+      for await(const chunk of streamCompletion({provider:target.provider,model:target.model,messages:input,maxTokens:config.maxTokens>0?config.maxTokens:undefined,temperature:0.4,signal,disableThinking:true,thinkingLevel:target.thinkingLevel,...(decisionOutput ? usesDecisionTool(target.provider,target.model)?{decisionTools:DECISION_TOOLS}:supportsDecisionJson(target.provider,target.model)?{outputFormat:"json" as const}:{} : materialOutput&&supportsDecisionJson(target.provider,target.model)?{outputFormat:"json" as const}:{})})) {
         if(signal?.aborted) throw new DOMException("已停止","AbortError");
+        if(chunk.type==="reasoning"&&decisionOutput&&deepThinking)lastDecisionReasoning+=chunk.text;
         if(chunk.type==="delta") {raw+=chunk.text;yield chunk.text;}
         if(chunk.type==="usage") {prompt=chunk.promptTokens;output=chunk.completionTokens;reported=true;cachedInputTokens=chunk.cachedInputTokens;if(chunk.cost)cost=chunk.cost;}
       }
@@ -89,7 +100,7 @@ export async function* runAgent(request: AgentRequest, signal?: AbortSignal): As
       }
       if(run.usage.reportedCost)run.usage.reportedCost.complete=pricedCalls===completionCalls;
       run.usage.estimatedTokens=Boolean(run.usage.estimatedTokens||!reported);
-      run.usage.promptTokens+=reported?prompt:input.reduce((n,m)=>n+estimateTokens(m.content),0)+(decisionOutput?decisionOverhead:0);
+      run.usage.promptTokens+=reported?prompt:input.reduce((n,m)=>n+estimateTokens(m.content+(m.reasoning_content||"")),0)+(decisionOutput?decisionOverhead:0);
       run.usage.completionTokens+=reported?output:estimateTokens(raw);
       if(reported&&cachedInputTokens!==undefined){run.usage.cachedInputTokens=(run.usage.cachedInputTokens??0)+cachedInputTokens;run.usage.cacheReportedInputTokens=(run.usage.cacheReportedInputTokens??0)+prompt;}
       checkpoint();
@@ -107,7 +118,7 @@ export async function* runAgent(request: AgentRequest, signal?: AbortSignal): As
   const read=(kind:EntityKind,id:string):Fields|null=>{
     permitted(kind,id);
     const candidate=run.changes.find(c=>c.kind===kind && c.state==="pending" && (c.id===id || c.targetId===id)) || previous?.changes.find(c=>c.id===id&&c.kind===kind&&c.state==="pending");
-    if(candidate) return {...candidate.before,...candidate.after,id:candidate.targetId||candidate.id};
+    if(candidate) return candidateContext(candidate);
     let row=visibleEntity(kind,id,novel.id);observed.set(`${kind}:${id}`,row);
     if(row&&request.snapshot?.id===id&&request.snapshot.kind===kind) {
       const allowed=Object.keys(patchSchemas[kind].shape);
@@ -127,8 +138,8 @@ export async function* runAgent(request: AgentRequest, signal?: AbortSignal): As
       if(signal?.aborted) throw new DOMException("已停止","AbortError");
       // Pin the instruction and latest task state; evict old observations, never tool-result pairs from native protocols.
       const budget=config.contextBudget>0 ? config.contextBudget : 24000;
-      while(messages.length>baseMessages+2 && messages.reduce((n,m)=>n+estimateTokens(m.content),0)+decisionOverhead>budget) messages.splice(baseMessages,1);
-      if(messages.reduce((n,m)=>n+estimateTokens(m.content),0)+decisionOverhead>budget) throw new Error("任务材料超过上下文预算，请提高预算或缩小任务范围");
+      while(messages.length>baseMessages+2 && messages.reduce((n,m)=>n+estimateTokens(m.content+(m.reasoning_content||"")),0)+decisionOverhead>budget) messages.splice(baseMessages,1);
+      if(messages.reduce((n,m)=>n+estimateTokens(m.content+(m.reasoning_content||"")),0)+decisionOverhead>budget) throw new Error("任务材料超过上下文预算，请提高预算或缩小任务范围");
       let raw="",decision: z.infer<typeof decisionSchema>|undefined;
       for(let attempt=0;attempt<2;attempt++) {
         raw="";
@@ -147,7 +158,7 @@ export async function* runAgent(request: AgentRequest, signal?: AbortSignal): As
         const detail=run.diagnostics?.at(-1)?.issues[0];
         throw new Error(`模型两次返回均未通过工具指令校验${detail?`（${detail.path}: ${detail.message}）`:""}。${run.changes.length?"本轮已完成的候选已保留":"本轮尚未生成新候选，上一轮候选不受影响"}。可展开调试详情查看原因。`);
       }
-      messages.push({role:"assistant",content:JSON.stringify(decision)});
+      messages.push({role:"assistant",content:JSON.stringify(decision),...(deepThinking?{reasoning_content:lastDecisionReasoning}:{})});
       run.summary=decision.message;
       const progressText=decision.message.trim();
       run.progress??=[];
@@ -214,7 +225,7 @@ export async function* runAgent(request: AgentRequest, signal?: AbortSignal): As
               }
             }
             if(prior&&previous){prior.state="rejected";const parent=previous.changes.find(x=>x.id===prior.targetId&&x.state==="pending");if(parent)parent.state="rejected";saveRun(previous);}
-            result={changeId:c.id,title:c.title,state:c.state};
+            result=proposalReceipt(c);
           } else if(call.name==="reject_change") {
             const c=run.changes.find(c=>c.id===args.changeId);
             if(!c||c.state!=="pending") throw new Error("待确认改动不存在");
@@ -222,23 +233,30 @@ export async function* runAgent(request: AgentRequest, signal?: AbortSignal): As
           } else {
             if(++writes>3) throw new Error("已达到三版写作上限，请审阅现有候选");
             const id=typeof args.id==="string"?args.id:null;
-            let candidate=run.changes.find(c=>c.id===id&&c.kind==="chapter");
-            const prior=previous?.changes.find(c=>c.id===id&&c.kind==="chapter"&&c.state==="pending");
+            let candidate=id?run.changes.find(c=>c.kind==="chapter"&&c.state==="pending"&&(c.id===id||c.targetId===id)):undefined;
+            const prior=id?previous?.changes.find(c=>c.kind==="chapter"&&c.state==="pending"&&(c.id===id||c.targetId===id)):undefined;
             if(!candidate&&prior) {candidate={...prior,id:uid("change"),after:{...prior.after}};run.changes.push(candidate);}
             const actualId=candidate?candidate.targetId:id;
             if(id&&!candidate&&!observed.has(`chapter:${id}`)) throw new Error("改正文前请先读取目标章节");
-            const source=candidate?{...candidate.before,...candidate.after}:id?read("chapter",id):null;
-            const words=z.number().int().min(100).max(8000).parse(args.words??2000);
-            const instruction=z.string().min(1).parse(args.instruction);
+            const source=candidate?candidateContext(candidate):id?read("chapter",id):null;
             const mode=z.enum(["rewrite","append","selection"]).parse(args.mode??"rewrite");
+            const words=z.number().int().min(mode==="selection"?1:100).max(8000).parse(args.words??(mode==="selection"?Math.max(1,countWords(request.selection||"")):2000));
+            const instruction=z.string().min(1).parse(args.instruction);
             if(mode==="selection"&&(!request.selection||actualId!==request.chapterId)) throw new Error("当前没有对应章节的选区，请选择后重试");
+            if(mode==="selection") {
+              const html=String(source?.content||""),selection=request.selection!;
+              if(!html.includes(selection)||html.indexOf(selection)!==html.lastIndexOf(selection))throw new Error("选区跨格式或在章内重复，请改为整章修改或选取唯一完整段落");
+            }
+            const appendBase=mode==="append"?(appendBases.get(candidate?.id||"")??String(source?.content||"")):"";
+            const appendDraft=mode==="append"&&candidate&&appendBases.has(candidate.id)?String(candidate.after.content||"").slice(appendBase.length):undefined;
+            const writerSource=mode==="append"?{...source,content:appendBase,wordCount:countWords(appendBase)}:source;
             run.preview="";
-            const writer=writerMessages({style:config.includeStyleGuide?novel.styleGuide:"",customInstruction:config.customInstruction,forbiddenWords:novel.forbiddenWords,materials:[...material.entries()],currentKey:actualId?`chapter:${actualId}`:undefined,current:source,request:request.message,instruction,words,mode,selection:request.selection,changes:run.changes.filter(c=>c.kind!=="chapter"&&c.state==="pending").map(c=>({kind:c.kind,...c.after}))});
-            if(writer.reduce((n,m)=>n+estimateTokens(m.content),0)>budget) throw new Error("写作材料超过上下文预算，请提高预算或缩小范围");
+            const writer=writerMessages({style:config.includeStyleGuide?novel.styleGuide:"",customInstruction:config.customInstruction,forbiddenWords:novel.forbiddenWords,materials:[...material.entries()],currentKey:actualId?`chapter:${actualId}`:undefined,current:writerSource,request:request.message,instruction,words,mode,appendDraft,selection:request.selection,changes:run.changes.filter(c=>c.kind!=="chapter"&&c.state==="pending").map(c=>({kind:c.kind,...c.after}))});
+            if(writer.reduce((n,m)=>n+estimateTokens(m.content+(m.reasoning_content||"")),0)>budget) throw new Error("写作材料超过上下文预算，请提高预算或缩小范围");
             for await(const delta of complete(writer)) {run.preview+=delta;yield {type:"agent-preview",runId:run.id,text:delta};}
             if(signal?.aborted) throw new DOMException("已停止","AbortError");
             let content=proseHtml(run.preview);
-            if(mode==="append") content=String(source?.content||"")+content;
+            if(mode==="append") content=appendBase+content;
             if(mode==="selection") {
               const html=String(source?.content||"");
               const selection=request.selection!;
@@ -247,13 +265,16 @@ export async function* runAgent(request: AgentRequest, signal?: AbortSignal): As
               const escaped=run.preview.trim().replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/\n+/g,"<br>");
               content=html.replace(selection,escaped);
             }
-            const title=String(args.title||source?.title||candidate?.title||"新章节");
+            if(candidate&&appendBases.has(candidate.id)&&!content.startsWith(appendBases.get(candidate.id)!))throw new Error("本轮为追加任务，不能改动原文，请只修订新增段落");
+            const proposedNewCount=run.changes.filter(c=>c.kind==="chapter"&&!c.targetId&&c.state==="pending"&&c.id!==candidate?.id).length;
+            const title=String(args.title||source?.title||candidate?.title||`第 ${repo.listChapters(novel.id,false).length+proposedNewCount+1} 章`);
             let change;
             if(candidate) {candidate.after={...candidate.after,content};change=candidate;}
             else {
               change=propose(run,"chapter",actualId,{title,content,...(!actualId?{volumeId:typeof args.volumeId==="string"?args.volumeId:null}: {})},instruction,title);
               if(actualId&&observed.has(`chapter:${actualId}`)) change.before=observed.get(`chapter:${actualId}`)!;
             }
+            if(mode==="append")appendBases.set(change.id,appendBase);
             if(prior&&previous){
               prior.state="rejected";
               for(const child of previous.changes.filter(c=>c.targetId===prior.id&&c.state==="pending")) {
@@ -261,9 +282,10 @@ export async function* runAgent(request: AgentRequest, signal?: AbortSignal): As
               }
               saveRun(previous);
             }
+            const generated=countWords(run.preview);
             run.preview="";
             const actual=countWords(content);
-            result={changeId:change.id,title,words:actual,targetWords:words,ratio:Math.round(actual/words*100),state:"pending",hint:"可以read候选并复核；修订请传changeId，不要再次新建章节"};
+            result={changeId:change.id,title,words:actual,generatedWords:generated,targetWords:words,ratio:Math.round(generated/words*100),state:"pending",hint:mode==="append"?"words是全章总字数，generatedWords才是本次新增字数；不要混淆。原文保持不变。":"可以read候选并复核；修订请传changeId，不要再次新建章节。若明确目标字数未到90%，应在剩余轮次内主动打磨，不反问是否要完成原要求。"};
           }
           step.status="complete";
           const resultRow=result as Fields;
@@ -301,7 +323,7 @@ export async function* runAgent(request: AgentRequest, signal?: AbortSignal): As
     }
     if(!finished) run.summary="已达到执行轮次上限，已完成的候选在下方，可审阅后继续。";
     const drafts=run.changes.filter(c=>c.kind==="chapter"&&c.state==="pending"&&typeof c.after.content==="string");
-    const optedOut=/(?:不要|不用|不必|无需|别).{0,6}(?:资料|建卡|卡片|整理)|只(?:写|改|修改|生成)正文/.test(request.message);
+    const optedOut=run.materialPolicy==="skip";
     if(drafts.length&&!optedOut&&!request.selection&&(config.includeCharacters||config.includeWorld||config.includeForeshadows)) {
       const step:AgentStep={id:uid("step"),tool:"organize_materials",label:"整理正文资料",detail:"核对人物、设定和伏笔，已有资料只补空白；所有卡片仍待确认。",status:"running" as "running"|"complete"|"error"};
       run.steps.push(step);checkpoint();yield {type:"agent",run};
@@ -323,10 +345,10 @@ export async function* runAgent(request: AgentRequest, signal?: AbortSignal): As
         }
         const input:AiMessage[]=[{role:"system",content:MATERIAL_PROMPT},{role:"user",content:JSON.stringify({sources,existing,allowedKinds:[...(config.includeCharacters?["character"]:[]),...(config.includeWorld?["world"]:[]),...(config.includeForeshadows?["foreshadow"]:[])]})}];
         const budget=config.contextBudget>0?config.contextBudget:24000;
-        if(input.reduce((n,m)=>n+estimateTokens(m.content),0)>budget)throw new Error("资料整理材料超过预算，本轮正文已保留，可引用单章继续整理");
+        if(input.reduce((n,m)=>n+estimateTokens(m.content+(m.reasoning_content||"")),0)>budget)throw new Error("资料整理材料超过预算，本轮正文已保留，可引用单章继续整理");
         let parsed:z.infer<typeof materialResultSchema>|undefined;
         for(let attempt=0;attempt<2;attempt++) {
-          let raw="";for await(const delta of complete(input))raw+=delta;
+          let raw="";for await(const delta of complete(input,false,true))raw+=delta;
           const result=materialResultSchema.safeParse(extractJson(raw));if(result.success){parsed=result.data;break;}
           input.push({role:"user",content:"请按cards、kind、fields、evidence约定返回有效JSON。"});
         }

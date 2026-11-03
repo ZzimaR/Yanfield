@@ -86,8 +86,10 @@ OpenAI 兼容接口的 DeepSeek `prompt_cache_hit_tokens` / `prompt_cache_miss_t
 
 ## 工具调用可靠性
 
-DeepSeek 的 OpenAI 兼容通道优先使用声明的原生工具函数（workspace/list/read/propose/write_chapter/reject_change/read_archive/respond），规划阶段关闭 thinking 并要求工具调用。普通讨论和完成说明通过 respond 返回；写手仍输出正文，不强制套工具格式。每个工具参数继续经过原有 schema、可见性、目标归属与候选确认流程，原生返回不直接写库。
+DeepSeek 的 OpenAI 兼容通道优先使用声明的原生工具函数（workspace/list/read/propose/write_chapter/reject_change/read_archive/respond），规划阶段默认关闭 thinking 并要求工具调用；用户显式开启已适配模型的思考档位后，使用 auto 工具选择并在本轮内保留必要的推理历史。普通讨论和完成说明通过 respond 返回；写手仍输出正文，不强制套工具格式。每个工具参数继续经过原有 schema、可见性、目标归属与候选确认流程，原生返回不直接写库。
 
 已知 OpenAI 官方端点的文本规划启用 JSON Output；未知兼容端点和其他协议保留原有文本规划。有效的文本 DSML 封套仍可兼容，但不猜测修补损坏的调用。每轮最多12个调用、总计最多36个调用，均通过同一执行器。损坏输出仅保存在脱敏诊断里，不回灌成下一轮的 assistant 示例；成功结果归一为标准 JSON 对话记录，空白返回也进入一次修复流程。原生工具定义计入上下文预算和缺失 usage 时的输入估算。
 
 实测覆盖、失败方案与当前限制见 [真实模型连续任务回归记录](agent-protocol-validation.md)。
+
+输出质量与多轮实测记录见 [agent-quality-validation.md](./agent-quality-validation.md)。

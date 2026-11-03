@@ -1,3 +1,4 @@
+import { supportsThinking, type ThinkingLevel } from "./thinking";
 import { openAiCachedTokens } from "./cache-usage";
 /**
  * Provider 适配层（服务端专用）
@@ -18,6 +19,7 @@ export class ProviderError extends Error {
 export interface AiMessage {
   role: "system" | "user" | "assistant";
   content: string;
+  reasoning_content?: string;
 }
 
 export interface CompletionRequest {
@@ -29,6 +31,8 @@ export interface CompletionRequest {
   purpose?: "connection-test";
   /** Structured planner output only; prose generation must remain plain text. */
   outputFormat?: "json";
+  disableThinking?: boolean;
+  thinkingLevel?: ThinkingLevel;
   decisionTools?: {name:string;description:string;parameters:Record<string,unknown>}[];
   signal?: AbortSignal;
 }
@@ -213,6 +217,8 @@ function openAiChatUrl(provider: ProviderConfig): string {
 async function* streamOpenAiCompatible(request: CompletionRequest): AsyncGenerator<ProviderChunk> {
   const { provider, model, messages, temperature, maxTokens, signal } = request;
   const reasoning = isReasoningModel(model);
+  const level=supportsThinking(provider,model)?request.thinkingLevel:undefined;
+  const thinking=!!level&&level!=="off";
   const response = await fetch(openAiChatUrl(provider), {
     method: "POST",
     headers: { "Content-Type": "application/json", ...authHeaders(provider) },
@@ -221,11 +227,13 @@ async function* streamOpenAiCompatible(request: CompletionRequest): AsyncGenerat
       messages,
       stream: true,
       stream_options: { include_usage: true },
+      ...(request.disableThinking&&!reasoning&&/^deepseek-/i.test(model)?{thinking:{type:"disabled"}}:{}),
       ...(request.decisionTools?{
         tools:request.decisionTools.map(tool=>({type:"function",function:tool})),
-        tool_choice:"required",
+        tool_choice:thinking?"auto":"required",
         ...(/^deepseek-/i.test(model)||resolveBaseUrl(provider).includes("api.deepseek.com")?{thinking:{type:"disabled"}}:{})
       }:request.outputFormat === "json" ? {response_format:{type:"json_object"}} : {}),
+      ...(level?{thinking:{type:thinking?"enabled":"disabled"},...(thinking?{reasoning_effort:level}:{})}:{}),
       ...(reasoning
         ? {}
         : {
@@ -285,7 +293,7 @@ async function* streamOpenAiCompatible(request: CompletionRequest): AsyncGenerat
       const response=reply?parse(reply.arguments):null;
       const planned=calls.filter(call=>call.name!=="respond").map(call=>({name:call.name,args:parse(call.arguments)}));
       yield {type:"delta",text:JSON.stringify({message:reply?(response&&typeof response==="object"&&"message" in response?response.message:null):fallbackText,calls:planned,done:!!reply&&!planned.length})};
-    }else if(fallbackText)yield {type:"delta",text:fallbackText};
+    }else if(fallbackText)yield {type:"delta",text:thinking?JSON.stringify({message:fallbackText,calls:[],done:true}):fallbackText};
   }
 }
 

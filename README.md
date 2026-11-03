@@ -6,7 +6,7 @@
 [![Node](https://img.shields.io/badge/Node-%E2%89%A522.13-3c873a)](https://nodejs.org)
 [![Next.js](https://img.shields.io/badge/Next.js-15-000000)](https://nextjs.org)
 [![TypeScript](https://img.shields.io/badge/TypeScript-strict-3178c6)](https://www.typescriptlang.org)
-[![Tests](https://img.shields.io/badge/tests-282%20passing-2f5d62)](tests)
+[![Tests](https://img.shields.io/badge/tests-308%20passing-2f5d62)](tests)
 [![Docker](https://img.shields.io/badge/Docker-ready-2496ed)](Dockerfile)
 
 > **状态：v0.1.0 开发中，尚未发布正式版本。** 核心流程可试用，多步 Agent 需配置实际模型；接口和界面仍可能调整，欢迎试用与反馈。
@@ -37,7 +37,7 @@ pnpm dev
 
 打开 http://127.0.0.1:3000 。第一次启动会自己建数据库，并放进示例作品《潮信》，可以直接写。
 
-接模型可以等写完再做。左下角齿轮打开设置，选 DeepSeek（或其他 OpenAI 兼容服务），粘贴 API Key 即可。也可以把 `.env.example` 复制成 `.env`，填一个 `*_API_KEY`，下次启动会自动建好服务。细节见 [docs/ai-providers.md](docs/ai-providers.md)。
+接模型可以等写完再做。左下角齿轮打开设置，选 DeepSeek（或其他 OpenAI 兼容服务），粘贴 API Key，主动拉取并选择可用模型。也可以把 `.env.example` 复制成 `.env`，填一个 `*_API_KEY`，下次启动会自动建好服务。细节见 [docs/ai-providers.md](docs/ai-providers.md)。
 
 [![写作台功能示意：资料、正文与可审阅的 AI 修改](docs/screenshots/workspace-overview.svg)](docs/screenshots/workspace-overview.svg)
 
@@ -84,7 +84,7 @@ pnpm dev
 - 用量收进输入框底部的小状态行与消息明细图标。可识别的接口费用保留原币种；未返回费用时按配置单价明确标为预估，未设单价显示未知。今日汇总是预估，不是账户账单
 - 内置提示词预设：续写、扩写、润色、去 AI 味、章节诊断、章纲、人物卡、世界观卡、故事档案提取等
 - 兼容 OpenAI（含 DeepSeek / 通义 / Kimi / GLM / OpenRouter / SiliconFlow 等 OpenAI 兼容服务）、Anthropic、Gemini、Ollama，以及任意自定义 OpenAI 兼容网关
-- 设置页内置 11 家主流服务商预设（选品牌自动填好 Base URL 与推荐模型）；可用 API Key 从服务商**拉取真实模型列表**，也可以手动添加任意模型 id
+- 设置页内置 11 家主流服务商预设（选品牌只填好 Base URL 与协议，不内置过时模型）；可用 API Key 从服务商**拉取真实模型列表**，也可以手动添加任意模型 id
 - **统一模型配置**：在设置或 AI 面板切换默认模型；规划、正文写作与资料整理分别调用并计入本轮用量
 - 也支持环境变量自动接入
 - 没有 API Key 时可使用离线模板功能；多步 Agent 需要配置实际模型，演示模型不会假装执行任务
@@ -128,7 +128,7 @@ docs/         功能、架构、模型服务、部署、常见问题、路线图
 
 ```bash
 pnpm typecheck   # tsc --noEmit
-pnpm test        # vitest（282 个用例）
+pnpm test        # vitest（308 个用例）
 pnpm build       # 生产构建
 pnpm db:seed     # 重新生成示例作品（不删用户数据）
 ```

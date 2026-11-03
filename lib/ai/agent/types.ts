@@ -30,6 +30,7 @@ export interface AgentRun {
   status: "running" | "ready" | "complete" | "aborted" | "error";
   errorCode?:string; diagnostics?:AgentDiagnostic[];
   progress?: {id:string;text:string;stepIndex:number}[];
+  materialPolicy?: "auto" | "skip";
   summary: string; error: string; steps: AgentStep[]; changes: AgentChange[];
   references: AgentReference[]; usage: AiUsage; model: string; provider: string;
   preview: string; createdAt: string; updatedAt: string;

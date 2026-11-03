@@ -5,7 +5,7 @@ import { copyText } from "@/lib/ui/clipboard";
 import { entityTone } from "@/lib/ui/entity-tone";
 import { AgentProgress } from "./AgentProgress";
 import { MaterialPreview } from "@/components/cards/MaterialPreview";
-import { Button, useToast } from "@/components/ui/kit";
+import { Button, Markdown, useToast } from "@/components/ui/kit";
 import { apiGet, apiPatch, useDataChanged } from "@/lib/client/api";
 import { useEditorBridge } from "@/lib/editor/bridge";
 import { countWords, stripHtml } from "@/lib/ui/cn";
@@ -157,7 +157,7 @@ export function AgentRunCard({runId,initial,disabled=false,onContinue}:{runId:st
       </details>)}
       <button type="button" className="mt-2 text-accent underline" onClick={async()=>{try{await copyText(JSON.stringify({runId:run.id,errorCode:run.errorCode,model:run.model,provider:run.provider,diagnostics:run.diagnostics},null,2));toast({title:"已复制调试信息",tone:"success"});}catch{toast({title:"复制失败，请手动选中调试详情",tone:"error"});}}}>复制调试信息</button>
     </details>:null}
-    {!running && run.summary.trim() && run.summary.trim()!==run.progress?.at(-1)?.text?<p className="whitespace-pre-wrap break-words border-t border-line/60 px-4 py-3 text-[13px] leading-[1.9] text-ink-2">{run.summary}</p>:null}
+    {!running && run.summary.trim() && run.summary.trim()!==run.progress?.at(-1)?.text?<Markdown text={run.summary} className="break-words border-t border-line/60 px-4 py-3 text-[13px] leading-[1.9] text-ink-2"/>:null}
     {!running?<div className="flex flex-wrap items-center gap-2 border-t border-line/70 bg-paper/35 px-4 py-3">
       {pending.length?<Button variant="primary" size="sm" className="min-h-9 flex-1 justify-center shadow-none" loading={busy} disabled={disabled||!selected.length||selected.some(c=>fields[c.id]?.length===0)} onClick={()=>void apply(selected)}>应用选中的 {selected.length} 项</Button>:null}
       {applied.length?<Button size="sm" variant="ghost" disabled={disabled||busy} icon={<RotateCcw className="size-3"/>} onClick={()=>void mutate(()=>commitAgent(run.id,{op:"undo"},bridge))}>撤回本轮</Button>:null}

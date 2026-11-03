@@ -126,6 +126,56 @@ describe("Agent连续工具执行",()=>{
     for(const input of fake.inputs)expect((input as {maxTokens?:number}).maxTokens).toBe(maxTokens||undefined);
   });
 
+  it("不增加资料及后续无附加要求的追问不会触发资料整理",async()=>{
+    const novel=repo.createNovel({title:"不增加资料"}),chapter=repo.createChapter(novel.id,{title:"第一章",content:"<p>林舟收起信。</p>"});
+    fake.queue=[plan([{name:"read",args:{kind:"chapter",id:chapter.id}}]),plan([{name:"write_chapter",args:{id:chapter.id,instruction:"润色"}}]),"林舟把信收进袖中。",plan([],"候选待确认")];
+    const events=await collect({novelId:novel.id,chapterId:chapter.id,message:"润色本章，不增加资料"});
+    const first=events.filter(e=>e.type==="agent").at(-1)!;if(first.type!=="agent")throw new Error("missing");
+    expect(first.run.materialPolicy).toBe("skip");expect(first.run.steps.some(s=>s.tool==="organize_materials")).toBe(false);
+    fake.queue=[plan([],"暂不继续修改")];
+    const follow=(await collect({novelId:novel.id,chapterId:chapter.id,message:"再短一点",previousRunId:first.run.id})).filter(e=>e.type==="agent").at(-1)!;
+    if(follow.type!=="agent")throw new Error("missing");expect(follow.run.materialPolicy).toBe("skip");
+  });
+
+  it("小选区目标按原句计，不强制100/2000字，且只替换选中短语",async()=>{
+    const novel=repo.createNovel({title:"短选区"}),chapter=repo.createChapter(novel.id,{title:"第一章",content:"<p>林舟把信压在账本下。</p>"});fake.inputs=[];
+    fake.queue=[plan([{name:"read",args:{kind:"chapter",id:chapter.id}}]),plan([{name:"write_chapter",args:{id:chapter.id,mode:"selection",instruction:"只润色选中短语"}}]),"将信压在账本下",plan([],"候选待确认")];
+    const events=await collect({novelId:novel.id,chapterId:chapter.id,message:"只润色这句",selection:"把信压在账本下"});
+    const event=events.filter(e=>e.type==="agent").at(-1)!;if(event.type!=="agent")throw new Error("missing");
+    expect(event.run.changes[0].after.content).toBe("<p>林舟将信压在账本下。</p>");
+    const writer=fake.inputs.find(i=>(i as {messages:{content:string}[]}).messages[0].content.startsWith("你是小说写手")) as {messages:{content:string}[]};
+    expect(JSON.parse(writer.messages.at(-1)!.content).targetWords).toBe("把信压在账本下".length);
+  });
+  it("重复或跨格式的选区先拒绝，不调用写手浪费token",async()=>{
+    const novel=repo.createNovel({title:"重复选区"}),chapter=repo.createChapter(novel.id,{title:"第一章",content:"<p>信在账本下。</p><p>信在账本下。</p>"});fake.inputs=[];
+    fake.queue=[plan([{name:"read",args:{kind:"chapter",id:chapter.id}}]),plan([{name:"write_chapter",args:{id:chapter.id,mode:"selection",instruction:"润色"}}]),plan([],"选区重复，请重新选择")];
+    const events=await collect({novelId:novel.id,chapterId:chapter.id,message:"润色这句",selection:"信在账本下"});
+    const event=events.filter(e=>e.type==="agent").at(-1)!;if(event.type!=="agent")throw new Error("missing");
+    expect(event.run.changes).toHaveLength(0);expect(fake.inputs).toHaveLength(3);expect(event.run.steps.at(-1)?.status).toBe("error");
+  });
+
+  it("同轮追加再打磨替换新增部分，不把两版连在一起，统计区分新增与全章",async()=>{
+    const novel=repo.createNovel({title:"追加版本"}),chapter=repo.createChapter(novel.id,{title:"第一章",content:"<p>不可修改的原文。</p>"});fake.inputs=[];
+    const write=(instruction:string)=>plan([{name:"write_chapter",args:{id:chapter.id,mode:"append",instruction,words:100}}]);
+    fake.queue=[plan([{name:"read",args:{kind:"chapter",id:chapter.id}}]),write("先续写"),"首版新增段落。",write("只把本轮新增部分重写"),"新版新增。",plan([],"候选待确认")];
+    const events=await collect({novelId:novel.id,chapterId:chapter.id,message:"在末尾追加，不增加资料"});
+    const event=events.filter(e=>e.type==="agent").at(-1)!;if(event.type!=="agent")throw new Error("missing");
+    expect(event.run.changes).toHaveLength(1);expect(event.run.changes[0].after.content).toBe(chapter.content+"<p>新版新增。</p>");
+    const writers=fake.inputs.filter(i=>(i as {messages:{content:string}[]}).messages[0].content.startsWith("你是小说写手")) as {messages:{content:string}[]}[];
+    expect(JSON.parse(writers[1].messages[2].content).current.content).toBe(chapter.content);
+    expect(JSON.parse(writers[1].messages.at(-1)!.content).appendDraft).toBe("<p>首版新增段落。</p>");
+    const messages=(fake.inputs.at(-1) as {messages:{content:string}[]}).messages;
+    const result=JSON.parse(messages.filter(m=>m.content.startsWith("工具 write_chapter 返回：")).at(-1)!.content.split("\n当前候选")[0].split("返回：")[1]);
+    expect(result).toMatchObject({generatedWords:4,words:11,targetWords:100,ratio:4});
+  });
+
+  it("模型漏给新章标题时按实际目录给出章号，不回执第三章却创建新章节",async()=>{
+    const novel=repo.createNovel({title:"章节编号"});repo.createChapter(novel.id,{title:"第一章"});repo.createChapter(novel.id,{title:"第二章"});
+    fake.queue=[plan([{name:"write_chapter",args:{instruction:"续写下一章",words:100}}]),"天亮后，林舟回到渡口。",plan([],"候选待确认")];
+    const events=await collect({novelId:novel.id,message:"续写下一章，不增加资料"});const event=events.filter(e=>e.type==="agent").at(-1)!;
+    if(event.type!=="agent")throw new Error("missing");expect(event.run.changes[0].title).toBe("第 3 章");expect(event.run.changes[0].after.title).toBe("第 3 章");
+  });
+
   it("重试复用助手消息，刷新历史不增加提问或回复",async()=>{
     const novel=repo.createNovel({title:"原位重试"}),session=repo.createChatSession(novel.id,{});
     fake.queue=["invalid", "invalid"];

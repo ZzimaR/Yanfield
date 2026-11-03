@@ -19,6 +19,7 @@ import {
   RefreshCw,
   Settings2,
 } from "lucide-react";
+import { THINKING_OPTIONS, modelThinking, supportsThinking, thinkingKey, type ThinkingLevel } from "@/lib/ai/thinking";
 import { Spinner, useToast } from "@/components/ui/kit";
 import { apiGet, apiPatch, notifyDataChanged } from "@/lib/client/api";
 import type { AppSettings, ModelOption, ProviderConfig } from "@/lib/types";
@@ -174,6 +175,18 @@ export function ModelPicker({
     };
   }, [open]);
 
+  const thinkingProvider=groups.find(p=>p.id===target?.providerId);
+  const thinkingSupported=!!thinkingProvider&&supportsThinking(thinkingProvider,target?.model||"");
+  const thinking=thinkingProvider&&settings?modelThinking(settings,thinkingProvider,target?.model||""):undefined;
+  const chooseThinking=async(value:ThinkingLevel)=>{
+    if(busy||!target)return;
+    setBusy("thinking");setError(null);
+    try{
+      const updated=await apiPatch<AppSettings>("/api/settings",{modelThinking:{[thinkingKey(target.providerId,target.model)]:value}});
+      onChanged(updated);notifyDataChanged("settings");
+    }catch(cause){setError(cause instanceof Error?cause.message:"设置失败");}finally{setBusy(null);}
+  };
+
   const choose = React.useCallback(
     async (provider: ProviderConfig, model: ModelOption) => {
       if (busy) return;
@@ -260,6 +273,7 @@ export function ModelPicker({
           aria-hidden
         />
         <span className="truncate">{label}</span>
+        {thinkingSupported?<span className="shrink-0 text-[9px] text-ink-4">思考·{THINKING_OPTIONS.find(o=>o.value===thinking)?.label}</span>:null}
         <ChevronDown className="size-2.5 shrink-0 opacity-70" />
       </button>
 
@@ -269,7 +283,7 @@ export function ModelPicker({
               ref={menuRef}
               role="dialog"
               aria-label="选择默认模型"
-              className="fixed z-[90] overflow-hidden rounded-md border border-line bg-surface text-ink shadow-float rise-in"
+              className="fixed z-[90] max-h-[calc(100dvh-16px)] overflow-y-auto rounded-md border border-line bg-surface text-ink shadow-float rise-in"
               style={{ top: pos?.top ?? -9999, left: pos?.left ?? -9999, width: MENU_WIDTH }}
             >
               <div className="flex items-baseline justify-between gap-2 border-b border-line px-3 py-2">
@@ -279,6 +293,11 @@ export function ModelPicker({
                 </span>
               </div>
 
+              {thinkingSupported?<div className="border-b border-line px-3 py-3">
+                <div className="mb-2 flex items-center justify-between text-[11px]"><span className="text-ink-3">当前模型 · 思考程度</span><span className="text-ink-4">按模型记忆</span></div>
+                <div className="flex gap-1" role="group" aria-label="思考程度">{THINKING_OPTIONS.map(option=><button key={option.value} type="button" aria-pressed={thinking===option.value} disabled={busy!==null} onClick={()=>void chooseThinking(option.value)} className={cn("flex-1 rounded-md px-2 py-1.5 text-[11px]",thinking===option.value?"bg-accent/10 text-accent":"bg-surface-2 text-ink-3 hover:text-ink")}>{option.label}</button>)}</div>
+                <p className="mt-2 text-[10px] leading-relaxed text-ink-4">思考与正文共用输出上限；开启后等待和 token 消耗会增加。</p>
+              </div>:null}
               <div className="scroll-thin max-h-[min(380px,55vh)] overflow-y-auto p-1.5">
                 {realProviders.length === 0 ? (
                   <div className="mx-1 mb-1.5 rounded-sm border border-gold/25 bg-gold-soft/70 px-2.5 py-2 text-[11px] leading-relaxed text-ink-2 dark:bg-gold-soft/30">

@@ -23,3 +23,8 @@ describe("Agent 进展展示",()=>{
   expect(()=>renderToStaticMarkup(<AgentProgress run={{...fixture,progress:undefined}} renderTargets={()=>null}/>)).not.toThrow();
  });
 });
+
+it("Agent说明按Markdown排版，保留引号且不执行原始HTML",()=>{
+ const html=renderToStaticMarkup(<AgentProgress run={{...fixture,progress:[{id:"p",stepIndex:0,text:'### 核对结果\n\n**只改口吻**，保留“账本下”。\n\n<img src=x onerror=alert(1)>'}]}} renderTargets={()=>null}/>);
+ expect(html).toContain("<strong>只改口吻</strong>");expect(html).not.toContain("### 核对结果");expect(html).not.toContain('<img src="x"');expect(html).toContain("保留“账本下”");
+});

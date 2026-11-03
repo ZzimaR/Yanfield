@@ -45,18 +45,18 @@ describe("环境变量自动接入模型服务", () => {
     }
   });
 
-  it("创建了 DeepSeek 服务并把默认模型切过去", () => {
+  it("环境变量只创建服务，不注入可能过期的模型", () => {
     const deepseek = repo.listProviders().find((provider) => provider.name === "DeepSeek");
     expect(deepseek).toBeTruthy();
     expect(deepseek?.kind).toBe("openai");
     expect(deepseek?.baseUrl).toContain("api.deepseek.com");
     expect(deepseek?.apiKey).toBe("sk-test-deepseek");
     expect(deepseek?.enabled).toBe(true);
-    expect(deepseek?.models.map((model) => model.id)).toContain("deepseek-chat");
+    expect(deepseek?.models).toEqual([]);
 
     const settings = repo.getSettings();
     expect(settings.models.chat.providerId).toBe(deepseek?.id);
-    expect(settings.models.chat.model).toBe("deepseek-chat");
+    expect(settings.models.chat.model).toBe("");
     expect(settings.models.prose.providerId).toBe(deepseek?.id);
   });
 

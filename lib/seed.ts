@@ -110,7 +110,7 @@ export function ensureEnvProviders(): ProviderConfig[] {
         kind: preset.kind,
         baseUrl: preset.baseUrl,
         apiKey,
-        models: preset.models.map((model) => ({ ...model })),
+        models: [],
         enabled: true,
       }),
     );
@@ -145,7 +145,7 @@ export function ensureEnvProviders(): ProviderConfig[] {
         kind: "ollama",
         baseUrl: ollamaBase,
         apiKey: "",
-        models: preset ? preset.models.map((model) => ({ ...model })) : [{ id: "qwen2.5:7b", label: "qwen2.5:7b" }],
+        models: [],
         enabled: true,
       }),
     );

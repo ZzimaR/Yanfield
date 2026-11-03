@@ -6,29 +6,16 @@
 
 ## 一步接入：内置 11 家服务商预设
 
-设置页 **模型服务 → 新增服务 → 快速添加** 里内置了 11 家服务商预设，选一个品牌就会自动带出类型、baseURL 与推荐模型，你只需要粘贴 Key、点「测试连接」即可。
+设置页 **模型服务 → 新增服务 → 快速添加** 保留服务商地址与协议预设，不再内置推荐模型。填写 Key 后，主动点击 **拉取模型列表** 获取账户当前可用的模型；不支持列出模型的网关可以手动填写模型 ID。
 
-| 预设 | 类型 | baseURL | 推荐模型 | 环境变量 |
-| --- | --- | --- | --- | --- |
-| OpenAI | OpenAI 兼容 | `https://api.openai.com/v1` | `gpt-4o`(128K)、`gpt-4o-mini`、`gpt-4.1`(1M) | `OPENAI_API_KEY` |
-| DeepSeek | OpenAI 兼容 | `https://api.deepseek.com/v1` | `deepseek-chat`(64K)、`deepseek-reasoner` | `DEEPSEEK_API_KEY` |
-| 通义千问（DashScope） | OpenAI 兼容 | `https://dashscope.aliyuncs.com/compatible-mode/v1` | `qwen-plus`(128K)、`qwen-max`、`qwen-long` | `DASHSCOPE_API_KEY` |
-| Moonshot / Kimi | OpenAI 兼容 | `https://api.moonshot.cn/v1` | `moonshot-v1-128k`、`kimi-latest` | `MOONSHOT_API_KEY` |
-| 智谱 GLM | OpenAI 兼容 | `https://open.bigmodel.cn/api/paas/v4` | `glm-4.5`、`glm-4-plus`、`glm-4-flash` | `ZHIPU_API_KEY` |
-| Anthropic Claude | Anthropic | `https://api.anthropic.com` | `claude-sonnet-4-5`、`claude-haiku-4-5`、`claude-opus-4-1`(200K) | `ANTHROPIC_API_KEY` |
-| Google Gemini | Gemini | `https://generativelanguage.googleapis.com` | `gemini-2.5-pro`、`gemini-2.5-flash`、`gemini-2.0-flash`(1M) | `GEMINI_API_KEY` |
-| OpenRouter | OpenAI 兼容 | `https://openrouter.ai/api/v1` | 任一上游模型（如 `deepseek/deepseek-chat`） | `OPENROUTER_API_KEY` |
-| 硅基流动 | OpenAI 兼容 | `https://api.siliconflow.cn/v1` | `deepseek-ai/DeepSeek-V3`、`Qwen/Qwen2.5-72B-Instruct` | `SILICONFLOW_API_KEY` |
-| Ollama（本地） | Ollama | `http://127.0.0.1:11434/v1` | `qwen2.5:7b`、`llama3.1:8b`、`deepseek-r1:7b` | `OLLAMA_BASE_URL` |
-| 自定义 OpenAI 兼容 | OpenAI 兼容 | 自填 | 自填（vLLM / LM Studio / one-api / 自建网关） | `YANFIELD_OPENAI_COMPAT_*` |
-
-- 预设里的每个模型都带 **contextWindow**（上下文窗口）标注，设置页会显示，用来判断上下文预算能开到多大。
-- **预设只是推荐兜底，不是真实列表**：填好 API Key 后，在「模型列表」区块点 **拉取模型列表**，砚田会带着 Key 请求服务商的 `/models` 接口，把真实可用模型拉下来覆盖推荐列表（OpenAI 兼容 / Anthropic / Gemini / Ollama 都支持）；也可以**手动添加任意模型 id**，或删除某个模型。
-- 不想点界面？Docker / 自托管场景可以用下面的环境变量在首次启动时自动创建。
+- 打开设置或选择品牌不会自动联网拉取。
+- 新服务的模型列表为空；已有配置升级后保留，不会被清空。
+- 显式拉取成功后，以这次返回的列表替换表单里的旧列表；点击「保存」才保存服务配置。拉取失败保留原列表。
+- 接口未返回上下文容量或价格时，不会根据旧预设冒充实时信息；请按服务商文档填写。
 
 ## 环境变量自动创建 Provider（可选）
 
-服务端首次初始化（`ensureReady()`）会读取以下环境变量，按预设自动创建 Provider；**已有同名 Provider 会跳过**，不会覆盖你在设置页里手改过的配置。如果当前默认模型还指向「离线演示模式」，会自动切到第一个创建成功的真实服务。
+服务端首次初始化（`ensureReady()`）会读取以下环境变量，按预设自动创建 Provider；**已有同名 Provider 会跳过**，不会覆盖你在设置页里手改过的配置。如果当前默认模型还指向「离线演示模式」，会选中第一个创建成功的真实服务；品牌服务仍需手动拉取并选择模型。
 
 | 环境变量 | 对应预设 |
 | --- | --- |
@@ -42,7 +29,7 @@
 | `OPENROUTER_API_KEY` | OpenRouter |
 | `SILICONFLOW_API_KEY` | 硅基流动 |
 | `OLLAMA_BASE_URL` | Ollama（免 Key） |
-| `YANFIELD_OPENAI_COMPAT_BASE_URL` + `_API_KEY` + `_MODEL` | 自定义 OpenAI 兼容（`_MODEL` 留空时默认 `gpt-4o-mini`，请改成实际模型名） |
+| `YANFIELD_OPENAI_COMPAT_BASE_URL` + `_API_KEY` + `_MODEL` | 自定义 OpenAI 兼容（`_MODEL` 可填写实际模型 ID；留空则之后手动拉取） |
 
 完整模板见仓库根目录 [`.env.example`](../.env.example)。不填任何变量、只在设置页里配，也完全等价——环境变量只是首次启动的便捷预置。
 
@@ -213,3 +200,9 @@ AI 对话与所有写作任务（续写 / 润色 / 诊断 / 大纲 / 档案提�
 - 长上下文 = 高费用：调小上下文预算、关掉不必要维度、用「前 N 章摘要」替代全文，都能显著降本。
 - 密钥明文存在本地数据库；公用电脑上建议用「演示模式」或本地 Ollama，用完在设置里清空密钥。
 - 演示模式（`kind: demo`）完全不联网，适合先熟悉 diff 审批流程。
+
+## 思考程度
+
+聊天输入框旁的模型选择菜单会为已适配的模型显示「关闭 / 轻量 / 深入 / 尽力」，按服务商与模型分别记忆。目前适配 OpenAI 兼容通道的 `deepseek-flash`、`deepseek-v4-pro`；其他模型不展示无效控件。默认关闭，开启后思考与正文共用输出上限，等待与 token 消耗可能增加。
+
+思考模式工具调用会在本轮请求内传回必要的 reasoning_content，不把它显示成执行过程说明。参数依据 [DeepSeek 思考模式文档](https://api-docs.deepseek.com/guides/thinking_mode/)。

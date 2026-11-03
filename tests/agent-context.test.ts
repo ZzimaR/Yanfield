@@ -1,5 +1,5 @@
 import {describe,it,expect} from "vitest";
-import {chapterDirectoryWindow,writerMessages,stableJson,type WriterContext} from "@/lib/ai/agent/context";
+import {chapterDirectoryWindow,writerMessages,stableJson,candidateContext,type WriterContext} from "@/lib/ai/agent/context";
 const base:WriterContext={style:"克制",customInstruction:"保留悬念",forbiddenWords:["总而言之"],materials:[["chapter:c1",{id:"c1",content:"唯一正文"}],["world:b",{id:"b",content:"按潮时收信",updatedAt:"old"}],["character:a",{id:"a",identity:"收信人"}]],currentKey:"chapter:c1",current:{id:"c1",content:"唯一正文"},request:"润色",instruction:"加强悬念",words:2000,mode:"rewrite",changes:[]};
 describe("可缓存写作上下文",()=>{
  it("任务、目标字数和当前正文变化不改变稳定规则与资料前缀",()=>{
@@ -24,4 +24,9 @@ it("两千章目录只返回窗口、全局序号与明确引用，不把全书�
  const chapters=Array.from({length:2000},(_,i)=>({id:`c${i}`,title:`第${i+1}章`,volumeId:null,orderIndex:i,wordCount:2000}));
  const result=chapterDirectoryWindow(chapters,"c100",["c0"]);
  expect(result).toHaveLength(18);expect(result.find(c=>c.id==="c100")?.index).toBe(101);expect(result.some(c=>c.id==="c1999")).toBe(true);expect(result.some(c=>c.id==="c0")).toBe(true);
+});
+
+it("读取候选重新统计字数，不沿用保存版本的旧数值",()=>{
+ const value=candidateContext({id:"candidate",kind:"chapter",targetId:"chapter",before:{content:"<p>旧。</p>",wordCount:1},after:{content:"<p>这是新正文。</p>"}});
+ expect(value).toMatchObject({id:"chapter",wordCount:5,content:"<p>这是新正文。</p>"});
 });

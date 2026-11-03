@@ -12,7 +12,7 @@ import { PROVIDER_KINDS } from "./settings-utils";
 export interface ProviderDialogProps {
   open: boolean;
   provider: ProviderConfig | null;
-  /** 从「快速添加」选中的品牌预设；新增时用于预填名称 / Base URL / 模型。 */
+  /** 从「快速添加」选中的品牌预设；只预填名称、协议与 Base URL。 */
   preset?: ProviderPreset | null;
   onClose: () => void;
   onSaved: (provider: ProviderConfig) => void;
@@ -25,8 +25,6 @@ interface ProviderForm {
   apiKey: string;
   models: ModelOption[];
   enabled: boolean;
-  /** 模型列表是否仍来自品牌预设（用于提示「推荐模型」）。 */
-  fromPreset: boolean;
 }
 
 const DEFAULT_KIND: ProviderKind = "openai";
@@ -38,7 +36,6 @@ const EMPTY_FORM: ProviderForm = {
   apiKey: "",
   models: [],
   enabled: true,
-  fromPreset: false,
 };
 
 function formFromProvider(provider: ProviderConfig | null): ProviderForm {
@@ -50,7 +47,6 @@ function formFromProvider(provider: ProviderConfig | null): ProviderForm {
     apiKey: "",
     models: provider.models,
     enabled: provider.enabled,
-    fromPreset: false,
   };
 }
 
@@ -62,7 +58,6 @@ function formFromPreset(preset: ProviderPreset): ProviderForm {
     apiKey: "",
     models: preset.models,
     enabled: true,
-    fromPreset: true,
   };
 }
 
@@ -94,7 +89,7 @@ export function ProviderDialog({ open, provider, preset, onClose, onSaved }: Pro
   };
 
   const changeModels = (models: ModelOption[]) => {
-    setForm((current) => ({ ...current, models, fromPreset: false }));
+    setForm((current) => ({ ...current, models }));
   };
 
   const submit = async () => {
@@ -228,7 +223,6 @@ export function ProviderDialog({ open, provider, preset, onClose, onSaved }: Pro
           baseUrl={form.baseUrl}
           apiKey={form.apiKey}
           providerId={provider?.id ?? null}
-          fromPreset={form.fromPreset}
         />
         <div className="flex items-center justify-between rounded-md border border-line bg-surface-2 px-3 py-2.5">
           <Switch

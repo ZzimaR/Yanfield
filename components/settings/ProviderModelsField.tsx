@@ -4,7 +4,7 @@
  * ProviderDialog 的「模型列表」字段：
  * - 从服务商拉取真实模型列表（POST /api/providers/models，未保存的服务也能预览）
  * - 手动添加 / 删除模型行
- * - 从品牌预设带入的推荐模型会标注来源
+ * - 不灌入预设模型；显式拉取以服务商本次返回为准
  */
 
 import * as React from "react";
@@ -22,8 +22,6 @@ export interface ProviderModelsFieldProps {
   apiKey: string;
   /** 已保存的 Provider id；编辑时用来复用库里的 API Key。 */
   providerId: string | null;
-  /** 模型来自品牌预设（尚未拉取/手改），显示「推荐模型」提示。 */
-  fromPreset: boolean;
 }
 
 interface FetchModelsResponse {
@@ -39,7 +37,6 @@ export function ProviderModelsField({
   baseUrl,
   apiKey,
   providerId,
-  fromPreset,
 }: ProviderModelsFieldProps) {
   const { toast } = useToast();
   const [fetching, setFetching] = React.useState(false);
@@ -59,19 +56,13 @@ export function ProviderModelsField({
         baseUrl: baseUrl.trim() || undefined,
         apiKey: apiKey.trim() || undefined,
       });
-      // 拉取结果优先，保留用户手动添加、但服务端没有返回的条目
+      // Explicit refresh replaces the account catalog; old preset entries must not linger.
       const seen = new Set<string>();
-      const merged: ModelOption[] = [];
-      for (const model of result.models) {
-        if (!model.id || seen.has(model.id)) continue;
+      const merged = result.models.filter((model) => {
+        if (!model.id || seen.has(model.id)) return false;
         seen.add(model.id);
-        merged.push(model);
-      }
-      for (const model of models) {
-        if (!model.id || seen.has(model.id)) continue;
-        seen.add(model.id);
-        merged.push(model);
-      }
+        return true;
+      });
       onChange(merged);
       toast({
         title: "已拉取模型列表",
@@ -129,9 +120,6 @@ export function ProviderModelsField({
         </div>
       </div>
 
-      {fromPreset ? (
-        <p className="mb-2 text-[10.5px] leading-5 text-ink-3">当前是「推荐模型」，可拉取服务商的真实模型列表覆盖。</p>
-      ) : null}
 
       <div className="rounded-md border border-line bg-surface-2/60">
         {models.length === 0 ? (

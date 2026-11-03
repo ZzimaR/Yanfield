@@ -580,6 +580,7 @@ export interface AppSettings {
   dailyWordGoal: number;
   /** 双模型分工：对话/大纲模型 vs 正文模型 */
   models: ModelSetting;
+  modelThinking?: Record<string,"off"|"low"|"high"|"max">;
   /** 自定义智能体人设（AGENTS 里 id=custom 时使用） */
   customAgent: { name: string; role: string; persona: string; greeting: string };
   /**

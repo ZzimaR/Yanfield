@@ -202,6 +202,15 @@ export function buildSettingsPatch(current: AppSettings, body: Json): Partial<Ap
   if (proseFont) patch.proseFont = proseFont;
 
   if (body.defaultContext !== undefined) patch.defaultContext = mergeContext(current.defaultContext, body.defaultContext);
+  if(body.modelThinking!==undefined){
+    if(!isObject(body.modelThinking)||Object.keys(body.modelThinking).length>200)throw new ApiError("modelThinking 必须是模型档位映射",400);
+    const next={...current.modelThinking};
+    for(const [key,value] of Object.entries(body.modelThinking)){
+      if(!key||key.length>512||typeof value!=="string"||!["off","low","high","max"].includes(value))throw new ApiError("思考档位无效",400);
+      next[key]=value as "off"|"low"|"high"|"max";
+    }
+    patch.modelThinking=next;
+  }
   if (body.models !== undefined) patch.models = mergeModels(current.models, body.models);
   if (body.customAgent !== undefined) patch.customAgent = mergeCustomAgent(current.customAgent, body.customAgent);
   if (body.agentOverrides !== undefined) {

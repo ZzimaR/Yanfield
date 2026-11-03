@@ -74,6 +74,20 @@ describe("Provider 适配层", () => {
     expect(chunks.find(c=>c.type==="usage")).toMatchObject({promptTokens:15,completionTokens:6,cachedInputTokens:10});
   });
 
+  it("DeepSeek正文显式关闭混合思考，其他模型与显式推理模型不被误改",async()=>{
+    for(const model of ["deepseek-flash","custom-model","deepseek-reasoner"]){
+      for await(const _chunk of streamCompletion({provider:provider("openai",{baseUrl:base}),model,messages:[{role:"user",content:"写正文"}],disableThinking:true})){}
+      const input=JSON.parse(captured.at(-1)!.body);
+      expect(input.thinking).toEqual(model==="deepseek-flash"?{type:"disabled"}:undefined);expect(input.tools).toBeUndefined();
+    }
+  });
+
+  it("思考轻量真实映射enabled/low与auto工具选择，推理历史不丢失",async()=>{
+    const chunks:ProviderChunk[]=[];
+    for await(const chunk of streamCompletion({provider:provider("openai",{baseUrl:base}),model:"deepseek-flash",messages:[{role:"assistant",content:"前次答复",reasoning_content:"前次推理"},{role:"user",content:"继续"}],disableThinking:true,thinkingLevel:"low",decisionTools:[{name:"respond",description:"答复",parameters:{type:"object"}}]}))chunks.push(chunk);
+    const input=JSON.parse(captured.at(-1)!.body);expect(input.thinking).toEqual({type:"enabled"});expect(input.reasoning_effort).toBe("low");expect(input.tool_choice).toBe("auto");expect(input.messages[0].reasoning_content).toBe("前次推理");
+  });
+
   it("原生规划函数参数跨SSE分片组装，普通文字与工具协议分开",async()=>{
     const chunks:ProviderChunk[]=[];
     for await(const chunk of streamCompletion({provider:provider("openai",{baseUrl:base}),model:"deepseek-flash",messages:[{role:"user",content:"规划"}],decisionTools:[{name:"respond",description:"答复",parameters:{type:"object"}}]}))chunks.push(chunk);
