@@ -19,6 +19,41 @@ async function collect(request:Parameters<typeof runtime.runAgent>[0],signal?:Ab
 const plan=(calls:unknown[],message="处理任务")=>JSON.stringify({message,calls,done:!calls.length});
 
 describe("Agent连续工具执行",()=>{
+  it.each([0,32000,64000])("主编遵循用户输出上限 %i，不再写死内部额度",async(maxTokens)=>{
+    const novel=repo.createNovel({title:"用户输出上限"});
+    fake.inputs=[];
+    fake.queue=[plan([{name:"write_chapter",args:{title:"第一章",instruction:"河边",words:2000}}]),"河水退了。",plan([],"等待确认"),JSON.stringify({cards:[]})];
+    await collect({novelId:novel.id,message:"写第一章",context:{maxTokens}});
+    expect(fake.inputs).toHaveLength(4);
+    for(const input of fake.inputs)expect((input as {maxTokens?:number}).maxTokens).toBe(maxTokens||undefined);
+  });
+
+  it("重试复用助手消息，刷新历史不增加提问或回复",async()=>{
+    const novel=repo.createNovel({title:"原位重试"}),session=repo.createChatSession(novel.id,{});
+    fake.queue=["invalid", "invalid"];
+    const first=(await collect({novelId:novel.id,sessionId:session.id,message:"新建设定"})).filter(e=>e.type==="agent").at(-1)!;
+    if(first.type!=="agent")throw new Error("missing");
+    expect(first.run.status).toBe("error");
+    const messages=repo.listMessages(session.id);
+    fake.queue=[plan([],"重试完成")];
+    const second=(await collect({novelId:novel.id,sessionId:session.id,message:"新建设定",previousRunId:first.run.id,retryRunId:first.run.id})).filter(e=>e.type==="agent").at(-1)!;
+    if(second.type!=="agent")throw new Error("missing");
+    const saved=repo.listMessages(session.id);
+    expect(saved).toHaveLength(2);
+    expect(saved.map(m=>m.id)).toEqual(messages.map(m=>m.id));
+    expect(saved[1].content).toBe("重试完成");
+    expect(saved[1].actions[0].id).toBe(second.run.id);
+    expect(store.getRun(first.run.id).status).toBe("error");
+  });
+  it("跨会话重试被拒绝，不写入重复消息",async()=>{
+    const novel=repo.createNovel({title:"重试校验"}),a=repo.createChatSession(novel.id,{}),b=repo.createChatSession(novel.id,{});
+    fake.queue=[plan([],"完成")];
+    const first=(await collect({novelId:novel.id,sessionId:a.id,message:"查看"})).filter(e=>e.type==="agent").at(-1)!;
+    if(first.type!=="agent")throw new Error("missing");
+    await expect(collect({novelId:novel.id,sessionId:b.id,message:"查看",retryRunId:first.run.id})).rejects.toThrow("重试任务与会话不匹配");
+    expect(repo.listMessages(b.id)).toHaveLength(0);
+  });
+
   it("完整接口费用按调用求和，缺失任一调用费用时只算部分返回",async()=>{
     const novel=repo.createNovel({title:"费用来源"});
     fake.queue=[plan([{name:"workspace",args:{}}]),plan([],"完成")];fake.costs=[{amount:0.01,currency:"USD"},{amount:0.02,currency:"USD"}];

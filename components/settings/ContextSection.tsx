@@ -148,14 +148,17 @@ export function ContextSection({ settings, update }: ContextSectionProps) {
           </div>
           <div className="h-px bg-line/70" />
           <Slider
-            label="单次输出上限（0 = 模型默认）"
+            label="单次输出上限（0 = 自动）"
             min={0}
-            max={16000}
+            max={64000}
             step={250}
             value={context.maxTokens}
-            hint={context.maxTokens === 0 ? "模型默认" : `${context.maxTokens} tokens`}
+            hint={context.maxTokens === 0 ? "自动" : `${context.maxTokens} tokens`}
             onChange={(value) => patchContext({ maxTokens: value })}
           />
+          <p className="text-[11.5px] leading-5 text-ink-3">
+            控制每次模型调用，主编规划、正文写作和资料整理均生效；多步任务总用量可能超过此值。0 自动选择：通常使用服务商默认，Anthropic 接口使用 4096；并非无限。长篇写作可尝试 16000–32000 tokens，再按模型支持范围调整。tokens 不等于中文字数；上限越高，允许生成的内容越多，也可能增加等待和费用。
+          </p>
           <Slider
             label="前情摘要章数"
             min={0}

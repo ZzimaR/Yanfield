@@ -57,6 +57,10 @@ export function humanizeAiError(raw: unknown, options?: { status?: number; code?
         : raw === null || raw === undefined
           ? ""
           : String(raw).trim();
+  if(message.includes("模型输出因长度限制被截断")) return {
+    title:"输出达到长度限制，内容未完成",
+    hint:"已收到的内容仍保留。请在聊天上下文或设置中提高单次输出上限，并检查模型容量；也可分章生成。",
+  };
   const status = options?.status ?? extractStatus(message);
   const settingsAction = { action: "settings-models" as const };
 

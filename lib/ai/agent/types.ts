@@ -32,6 +32,7 @@ export interface AgentRequest {
   context?: Partial<ContextConfig>;
   history?: { role: "user" | "assistant"; content: string }[];
   previousRunId?: string;
+  retryRunId?: string;
   snapshot?:{kind:"world"|"character"|"foreshadow";id:string|null;fields:Fields};
   mentions?: { type: string; id: string; label: string }[];
   selection?: string;

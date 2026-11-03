@@ -1,4 +1,5 @@
 "use client";
+import { copyText } from "@/lib/ui/clipboard";
 
 /**
  * AI 助手面板（编辑器右栏 / 独立 AI 页面共用）
@@ -291,14 +292,15 @@ export function AiPanel({
 
   /* ---------------- 发送 / 快捷提问 / 重试 ---------------- */
 
-  const sendAgent = React.useCallback(async (text: string) => {
+  const sendAgent = React.useCallback(async (text: string, retryMessage?: UIMessage) => {
     if (!text.trim() || chat.streaming || sendingRef.current) return;
     sendingRef.current=true;
     const originalKey=chat.activeKey;
     // Persist unsaved writing before the agent reads the chapter; a failed save leaves the input intact.
     try { await bridge?.flush?.(); } catch { sendingRef.current=false;return; }
-    const history = chat.activeTab.messages.filter(m=>m.status!=="streaming").slice(-10).map(m=>({role:m.role,content:m.content}));
-    const previous = [...chat.activeTab.messages].reverse().flatMap(m=>m.actions).find(a=>a.type==="agent-run");
+    const historyMessages = retryMessage ? chat.activeTab.messages.slice(0, Math.max(0, chat.activeTab.messages.findIndex(m=>m.id===retryMessage.id)-1)) : chat.activeTab.messages;
+    const history = historyMessages.filter(m=>m.status!=="streaming").slice(-10).map(m=>({role:m.role,content:m.content}));
+    const previous = [...(retryMessage ? [retryMessage] : chat.activeTab.messages)].reverse().flatMap(m=>m.actions).find(a=>a.type==="agent-run");
     const previousRunId = previous && typeof previous.payload==="object" && previous.payload ? (previous.payload as {runId?:string}).runId : undefined;
     const selection=task?.selection||bridge?.getSelectionText().trim()||undefined;
     const references=[...mentions];
@@ -306,14 +308,14 @@ export function AiPanel({
     const snapshot=task?.snapshot??(attached&&(!attached.id||references.some(m=>m.type===attached.kind&&m.id===attached.id))?attached:undefined);
     const sessionId=await chat.prepareSession();
     if(activeTabKeyRef.current!==originalKey){sendingRef.current=false;return;}
-    const assistantId=chat.beginExchange(text);
+    const assistantId=chat.beginExchange(text, retryMessage?.id);
     const controller=new AbortController();
     editAbortRef.current=controller;
     setDraft("");setMentions([]);setTask(null);setReferenceSnapshots(prev=>({...prev,[originalKey]:undefined}));
     let currentRun:AgentRun|undefined;
     let action:AiAction|undefined;
     try {
-      await streamAiAgent({novelId,chapterId:task?.targetChapterId||chapterId,sessionId:sessionId||undefined,agentId:chat.activeTab.agentId,message:text,snapshot,history,previousRunId,selection,mentions:references,context:contextConfig}, {
+      await streamAiAgent({novelId,chapterId:task?.targetChapterId||chapterId,sessionId:sessionId||undefined,agentId:chat.activeTab.agentId,message:text,snapshot,history,previousRunId,retryRunId:retryMessage ? previousRunId : undefined,selection,mentions:references,context:contextConfig}, {
         signal:controller.signal,
         onEvent:event=>{
           if(event.type==="meta") chat.patchExchange(assistantId,{provider:event.provider,model:event.model});
@@ -349,13 +351,13 @@ export function AiPanel({
   const handleRetry=React.useCallback((message:UIMessage)=>{
     const index=chat.activeTab.messages.findIndex(m=>m.id===message.id);
     const original=chat.activeTab.messages.slice(0,index).reverse().find(m=>m.role==="user");
-    if(original)void sendAgent(original.content);
+    if(original)void sendAgent(original.content, message);
   },[chat.activeTab.messages,sendAgent]);
 
   const handleCopy = React.useCallback(
     async (message: UIMessage) => {
       try {
-        await navigator.clipboard.writeText(message.content);
+        await copyText([message.content, message.error].filter(Boolean).join("\n\n"));
         toast({ title: "已复制", tone: "success" });
       } catch {
         toast({ title: "复制失败", description: "请手动选中内容复制。", tone: "error" });

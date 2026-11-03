@@ -16,7 +16,7 @@ export const POST=handle(async request=>{
     novelId:z.string().min(1), chapterId:z.string().nullable().optional(), message:z.string().trim().min(1).max(60000),
     history:z.array(z.object({role:z.enum(["user","assistant"]),content:z.string().max(100000)})).max(50).optional(),
     snapshot:z.object({kind:z.enum(["world","character","foreshadow"]),id:z.string().nullable(),fields:z.record(z.string(),z.unknown())}).optional(),
-    previousRunId:z.string().optional(),mentions:z.array(z.object({type:z.string(),id:z.string(),label:z.string()})).max(30).optional(),
+    retryRunId:z.string().optional(),previousRunId:z.string().optional(),mentions:z.array(z.object({type:z.string(),id:z.string(),label:z.string()})).max(30).optional(),
     selection:z.string().max(30000).optional(),
     context:z.object({
       contextBudget:z.number().int().min(0).max(200000),maxTokens:z.number().int().min(0).max(64000),

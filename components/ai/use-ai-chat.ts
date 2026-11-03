@@ -92,7 +92,7 @@ export interface UseAiChatResult {
   setAgent: (agentId: AgentId) => void;
   openSession: (session: ChatSession) => Promise<OpenSessionResult>;
   /** 在当前会话里先放下一问一答，供设定任务自己接流。返回 assistant 消息 id。 */
-  beginExchange: (userText: string) => string;
+  beginExchange: (userText: string, replaceId?: string) => string;
   prepareSession:()=>Promise<string|null>;
   /** 按 assistantId 精确更新回复（流式期间切 tab 也不会写错）。 */
   patchExchange: (assistantId: string, patch: Partial<UIMessage>) => void;
@@ -571,13 +571,16 @@ export function useAiChat({ novelId, chapterId, defaultAgentId }: UseAiChatOptio
   /* ---------------- 资料助手（外部接流） ---------------- */
 
   const beginExchange = React.useCallback(
-    (userText: string): string => {
+    (userText: string, replaceId?: string): string => {
       const current = stateRef.current;
       const tab = current.tabs.find((item) => item.key === current.activeKey) ?? current.tabs[0];
       const tabKey = tab?.key ?? current.activeKey;
       const assistant = createMessage("assistant");
       assistant.status = "streaming";
-      appendMessages(tabKey, [createMessage("user", userText), assistant]);
+      if (replaceId) {
+        assistant.id = replaceId;
+        setTabs(prev => prev.map(t => t.key === tabKey ? {...t, messages: t.messages.map(m => m.id === replaceId ? assistant : m)} : t));
+      } else appendMessages(tabKey, [createMessage("user", userText), assistant]);
       exchangeRef.current = {
         assistantId: assistant.id,
         tabKey,

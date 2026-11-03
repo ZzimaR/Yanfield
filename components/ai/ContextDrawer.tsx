@@ -156,6 +156,15 @@ export function ContextDrawer({
             />
           </div>
 
+          <label className="mt-3 flex items-center justify-between gap-2 text-[11px] text-ink-2">
+            单次输出上限（tokens）
+            <input type="number" min={0} max={64000} step={1000} value={config.maxTokens}
+              onChange={event=>{const value=Number(event.target.value);if(Number.isFinite(value))onConfigChange({...config,maxTokens:Math.min(64000,Math.max(0,Math.round(value)))});}}
+              className="w-24 rounded-sm border border-line bg-surface px-1.5 py-1" />
+          </label>
+          <p className="mt-1 text-[10.5px] leading-relaxed text-ink-3">
+            0 自动选择：通常用服务商默认，Anthropic 为 4096，并非无限。主编、写手、资料整理每次调用均使用此值；长篇可尝试 16000–32000，须在模型支持范围内。tokens 不等于字数，实际生成越多，等待和费用通常越高。
+          </p>
           {/* 上下文预算 */}
           <div className="mt-2 flex items-center justify-between gap-2 border-t border-line pt-2">
             <label

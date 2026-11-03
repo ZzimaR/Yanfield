@@ -34,6 +34,8 @@ export type ProviderChunk =
   | { type: "usage"; promptTokens: number; completionTokens: number; cost?:{amount:number;currency:"USD"|"CNY"} }
   | { type: "done" };
 
+const OUTPUT_LIMIT_MESSAGE="模型输出因长度限制被截断，内容尚未完成。请在聊天上下文或设置中提高「单次输出上限」，并检查模型的输出与上下文容量；长篇也可分章生成。已接收的内容仍保留在预览中。";
+
 const DEFAULT_BASE: Record<ProviderConfig["kind"], string> = {
   openai: "https://api.openai.com/v1",
   anthropic: "https://api.anthropic.com",
@@ -225,6 +227,7 @@ async function* streamOpenAiCompatible(request: CompletionRequest): AsyncGenerat
   });
   if (!response.ok) throw await httpError(response, provider);
 
+  let outputLimited = false;
   for await (const payload of readSse(response)) {
     if (payload === "[DONE]") break;
     const json = safeJson(payload);
@@ -232,6 +235,7 @@ async function* streamOpenAiCompatible(request: CompletionRequest): AsyncGenerat
     if (errorMessage) throw new ProviderError(errorMessage);
 
     const choice = get(json, "choices", "0");
+    if(get(choice,"finish_reason")==="length") outputLimited=true;
     const delta = asRecord(get(choice, "delta"));
     if (delta) {
       const reasoning = pickString(delta.reasoning_content) || pickString(delta.reasoning);
@@ -249,6 +253,7 @@ async function* streamOpenAiCompatible(request: CompletionRequest): AsyncGenerat
       };
     }
   }
+  if(outputLimited) throw new ProviderError(OUTPUT_LIMIT_MESSAGE);
 }
 
 /* ------------------------------ Anthropic ------------------------------ */
@@ -284,6 +289,7 @@ async function* streamAnthropic(request: CompletionRequest): AsyncGenerator<Prov
   if (!response.ok) throw await httpError(response, provider);
 
   let promptTokens = 0;
+  let outputLimited = false;
   for await (const payload of readSse(response)) {
     const json = safeJson(payload);
     const type = pickString(get(json, "type"));
@@ -295,12 +301,14 @@ async function* streamAnthropic(request: CompletionRequest): AsyncGenerator<Prov
     } else if (type === "message_start") {
       promptTokens = pickNumber(get(json, "message", "usage", "input_tokens"));
     } else if (type === "message_delta") {
+      if(get(json,"delta","stop_reason")==="max_tokens" || get(json,"delta","stop_reason")==="model_context_window_exceeded") outputLimited=true;
       const completionTokens = pickNumber(get(json, "usage", "output_tokens"));
       yield { type: "usage", promptTokens, completionTokens };
     } else if (type === "error") {
       throw new ProviderError(pickString(get(json, "error", "message")) || "Anthropic 返回错误");
     }
   }
+  if(outputLimited) throw new ProviderError(OUTPUT_LIMIT_MESSAGE);
 }
 
 /* ------------------------------ Gemini ------------------------------ */
@@ -331,8 +339,10 @@ async function* streamGemini(request: CompletionRequest): AsyncGenerator<Provide
   });
   if (!response.ok) throw await httpError(response, provider);
 
+  let outputLimited = false;
   for await (const payload of readSse(response)) {
     const json = safeJson(payload);
+    if(get(json,"candidates","0","finishReason")==="MAX_TOKENS") outputLimited=true;
     const parts = get(json, "candidates", "0", "content", "parts");
     if (Array.isArray(parts)) {
       for (const part of parts) {
@@ -356,6 +366,7 @@ async function* streamGemini(request: CompletionRequest): AsyncGenerator<Provide
       };
     }
   }
+  if(outputLimited) throw new ProviderError(OUTPUT_LIMIT_MESSAGE);
 }
 
 /* ------------------------------ 离线演示 Provider ------------------------------ */
