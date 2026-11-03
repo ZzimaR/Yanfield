@@ -985,15 +985,12 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
 
 /* ============================== Markdown（安全轻量渲染） ============================== */
 
-function escapeHtml(text: string): string {
-  return text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
-}
-
 const INLINE_RE = /(\*\*[^*]+\*\*|\*[^*]+\*|`[^`]+`|\[[^\]]+\]\((https?:\/\/[^\s)]+)\))/g;
 
 function renderInline(text: string, keyPrefix: string): React.ReactNode[] {
   const nodes: React.ReactNode[] = [];
-  const source = escapeHtml(text);
+  // React escapes text nodes and attributes; pre-escaping would display entities literally.
+  const source = text;
   let last = 0;
   let index = 0;
   for (const match of source.matchAll(INLINE_RE)) {

@@ -6,7 +6,7 @@
 [![Node](https://img.shields.io/badge/Node-%E2%89%A522.13-3c873a)](https://nodejs.org)
 [![Next.js](https://img.shields.io/badge/Next.js-15-000000)](https://nextjs.org)
 [![TypeScript](https://img.shields.io/badge/TypeScript-strict-3178c6)](https://www.typescriptlang.org)
-[![Tests](https://img.shields.io/badge/tests-206%20passing-2f5d62)](tests)
+[![Tests](https://img.shields.io/badge/tests-250%20passing-2f5d62)](tests)
 [![Docker](https://img.shields.io/badge/Docker-ready-2496ed)](Dockerfile)
 
 > **状态：v0.1.0 开发中，尚未发布正式版本。** 核心流程可试用，多步 Agent 需配置实际模型；接口和界面仍可能调整，欢迎试用与反馈。
@@ -76,6 +76,7 @@ pnpm dev
 - 对话会用第一条提问自动命名，历史中的默认标题也会从消息中补出；空会话保留「新对话」
 - `Enter` 发送、`Shift + Enter` 换行；点「技能」在输入框内展开技能清单，选中后自动填好提示词
 - `@` 引用章节、角色、设定、伏笔和档案；可配置上下文预算与逐节预览
+- 关键进展按顺序保留，当前步骤原地更新，正文起草显示实时预览；上翻阅读时暂停自动滚动，点「有新进展」回到底部。刷新后保留新任务的进展记录
 - 运行卡片显示执行过程、引用资料、正文候选和资料改动；可选择条目或字段应用，服务端校验版本并以事务写入
 - 写完正文会整理有原文依据的资料候选，匹配姓名和别名以减少重复；自动整理只补已有卡的空白，不覆盖作者事实
 - 用量收进输入框底部的小状态行与消息明细图标。可识别的接口费用保留原币种；未返回费用时按配置单价明确标为预估，未设单价显示未知。今日汇总是预估，不是账户账单
@@ -123,7 +124,7 @@ docs/         功能、架构、模型服务、部署、常见问题、路线图
 
 ```bash
 pnpm typecheck   # tsc --noEmit
-pnpm test        # vitest（206 个用例）
+pnpm test        # vitest（250 个用例）
 pnpm build       # 生产构建
 pnpm db:seed     # 重新生成示例作品（不删用户数据）
 ```

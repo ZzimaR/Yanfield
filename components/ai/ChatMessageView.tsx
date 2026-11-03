@@ -117,9 +117,9 @@ export function ChatMessageView({
           </div>
         ) : null}
 
-        {message.content ? (
+        {message.content && !message.actions.some(a=>a.type==="agent-run") ? (
           <Markdown text={message.content} className={cn("mt-1 text-[13px] leading-[1.9]", isStreaming && "ai-caret")} />
-        ) : isStreaming ? (
+        ) : isStreaming && !message.actions.some(a=>a.type==="agent-run") ? (
           <div className="ai-caret mt-1 h-5" aria-label="正在生成" />
         ) : null}
 

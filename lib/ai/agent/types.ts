@@ -29,6 +29,7 @@ export interface AgentRun {
   sessionId?:string; messageId?:string;
   status: "running" | "ready" | "complete" | "aborted" | "error";
   errorCode?:string; diagnostics?:AgentDiagnostic[];
+  progress?: {id:string;text:string;stepIndex:number}[];
   summary: string; error: string; steps: AgentStep[]; changes: AgentChange[];
   references: AgentReference[]; usage: AiUsage; model: string; provider: string;
   preview: string; createdAt: string; updatedAt: string;

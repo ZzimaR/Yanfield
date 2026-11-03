@@ -42,6 +42,7 @@ export interface ChatComposerProps {
   onSend: () => void;
   onStop: () => void;
   streaming: boolean;
+  sending?: boolean;
   disabled?: boolean;
   novelId: string;
   chapterId?: string | null;
@@ -82,6 +83,7 @@ export function ChatComposer({
   onSend,
   onStop,
   streaming,
+  sending = false,
   disabled = false,
   novelId,
   chapterId,
@@ -258,7 +260,7 @@ export function ChatComposer({
       // @ 引用选择器打开时先选引用，不发送
       if (mention.open) return;
       event.preventDefault();
-      onSend();
+      if(!streaming && !sending && !disabled)onSend();
       return;
     }
     if (event.key === "Escape") {
@@ -487,10 +489,10 @@ export function ChatComposer({
               size="sm"
               icon={<Send className="size-3" />}
               onClick={onSend}
-              disabled={disabled || !value.trim()}
+              disabled={disabled || sending || !value.trim()}
               className="ml-1 min-h-8 shrink-0 justify-center whitespace-nowrap rounded-xl px-3 shadow-none"
             >
-              发送
+              {sending?"准备中…":"发送"}
             </Button>
           )}
         </div>

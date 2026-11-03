@@ -6,7 +6,7 @@ import StarterKit from "@tiptap/starter-kit";
 import Placeholder from "@tiptap/extension-placeholder";
 import CharacterCount from "@tiptap/extension-character-count";
 import Highlight from "@tiptap/extension-highlight";
-import { Minimize2 } from "lucide-react";
+import { MessagesSquare, Minimize2 } from "lucide-react";
 import { IconButton, Skeleton, Tooltip } from "@/components/ui/kit";
 import { cn, countWords, formatDateTime, formatWords } from "@/lib/ui/cn";
 import { useLocalStorageState } from "@/lib/ui/hooks";
@@ -362,7 +362,12 @@ export function EditorCanvas(props: EditorCanvasProps) {
         />
       ) : null}
       {immersive ? (
-        <div className="absolute right-3 top-3 z-20">
+        <div className="absolute right-3 top-3 z-20 flex items-center gap-2">
+          <Tooltip label="打开 AI 助手（Alt+J）" side="left">
+            <IconButton label="打开 AI 助手" onClick={onAskAi} className="border-line bg-surface/90 text-accent shadow-xs backdrop-blur hover:bg-surface">
+              <MessagesSquare className="size-4" />
+            </IconButton>
+          </Tooltip>
           <Tooltip label="退出沉浸" side="left">
             <IconButton
               label="退出沉浸"

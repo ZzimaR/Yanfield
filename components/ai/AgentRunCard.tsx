@@ -3,6 +3,7 @@ import * as React from "react";
 import { BookOpen, User, MapPin, Bookmark, FolderOpen, Layers3, Check, ChevronDown, CircleAlert, FilePenLine, Loader2, RotateCcw } from "lucide-react";
 import { copyText } from "@/lib/ui/clipboard";
 import { entityTone } from "@/lib/ui/entity-tone";
+import { AgentProgress } from "./AgentProgress";
 import { MaterialPreview } from "@/components/cards/MaterialPreview";
 import { Button, useToast } from "@/components/ui/kit";
 import { apiGet, apiPatch, useDataChanged } from "@/lib/client/api";
@@ -88,8 +89,9 @@ export function AgentRunCard({runId,initial,disabled=false,onContinue}:{runId:st
       <span className="font-medium text-ink">{running?"助手正在处理":pending.length?"待确认改动":applied.length?"已应用":"任务记录"}</span>
       <span className="ml-auto text-[10px] text-ink-4">{[chapterCount?`正文 · ${chapterCount}`:"",materials.length?`资料 · ${materials.length}`:""].filter(Boolean).join("　")}</span>
     </div>
+    <AgentProgress run={run} renderTargets={step=>step.targets?.length?<div className="mt-1.5 flex flex-wrap gap-1.5">{step.targets.map(chip)}</div>:null}/>
     <div className="px-4 py-2.5">
-      <details open={running||undefined} className="text-[11px] text-ink-3">
+      <details className="text-[11px] text-ink-3">
         <summary className="cursor-pointer py-1">执行过程 · {run.steps.length} 步</summary>
         <ol className="my-2 space-y-3 border-l border-line pl-3">{run.steps.map((step,index)=><li key={step.id}>
           <div className={`flex items-center gap-1.5 ${step.status==="error"?"text-danger":"text-ink-3"}`}>
@@ -107,7 +109,6 @@ export function AgentRunCard({runId,initial,disabled=false,onContinue}:{runId:st
       <div className="flex flex-wrap gap-1.5">{materials.map(c=><button key={c.id} type="button" onClick={()=>openTarget({kind:c.kind,id:c.targetId||c.id,title:c.title,changeId:c.id})} className={`max-w-full truncate rounded-lg border px-2 py-1.5 text-[11px] transition-colors hover:border-jade/40 ${entityTone(c.kind)}`}><span className="mr-1.5 opacity-70">{ENTITY_LABEL[c.kind]}</span>{c.title}</button>)}</div>
       <p className="mt-2 text-[10px] leading-relaxed text-ink-4">新建 {materials.filter(c=>!c.before).length} · 更新 {materials.filter(c=>c.before).length}　{materials.some(c=>c.state==="pending")?"点击资料查看内容与依据，确认后加入资料库。":"已应用的资料可打开继续编辑。"}</p>
     </div>:null}
-    {run.preview?<div className="max-h-48 overflow-y-auto border-t border-line/60 px-4 py-4"><p className="mb-2 text-[10px] text-jade">写手正在起草</p><p className="whitespace-pre-wrap font-serif text-[13px] leading-loose text-ink-2">{run.preview}</p></div>:null}
     {run.changes.filter(c=>c.kind==="chapter"||materialsOpen).map(c=>{
       const isPending=c.state==="pending",isChapter=c.kind==="chapter";
       const keys=Object.keys(c.after),chosen=fields[c.id]??keys;
@@ -149,6 +150,7 @@ export function AgentRunCard({runId,initial,disabled=false,onContinue}:{runId:st
       </details>)}
       <button type="button" className="mt-2 text-accent underline" onClick={async()=>{try{await copyText(JSON.stringify({runId:run.id,errorCode:run.errorCode,model:run.model,provider:run.provider,diagnostics:run.diagnostics},null,2));toast({title:"已复制调试信息",tone:"success"});}catch{toast({title:"复制失败，请手动选中调试详情",tone:"error"});}}}>复制调试信息</button>
     </details>:null}
+    {!running && run.summary.trim() && run.summary.trim()!==run.progress?.at(-1)?.text?<p className="whitespace-pre-wrap break-words border-t border-line/60 px-4 py-3 text-[13px] leading-[1.9] text-ink-2">{run.summary}</p>:null}
     {!running?<div className="flex flex-wrap items-center gap-2 border-t border-line/70 bg-paper/35 px-4 py-3">
       {pending.length?<Button variant="primary" size="sm" className="min-h-9 flex-1 justify-center shadow-none" loading={busy} disabled={disabled||!selected.length||selected.some(c=>fields[c.id]?.length===0)} onClick={()=>void apply(selected)}>应用选中的 {selected.length} 项</Button>:null}
       {applied.length?<Button size="sm" variant="ghost" disabled={disabled||busy} icon={<RotateCcw className="size-3"/>} onClick={()=>void mutate(()=>commitAgent(run.id,{op:"undo"},bridge))}>撤回本轮</Button>:null}

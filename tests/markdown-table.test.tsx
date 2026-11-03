@@ -40,3 +40,19 @@ describe("Markdown 表格", () => {
   });
 
 });
+
+
+describe("Markdown 文本转义",()=>{
+ it("引号、单引号和与号只由 React 转义一次",()=>{
+  const html=renderToStaticMarkup(<Markdown text={'称呼 "素"，A & B，it’s fine。'}/>);
+  expect(html).toContain('&quot;素&quot;');expect(html).not.toContain('&amp;quot;');expect(html).not.toContain('&amp;amp;');
+ });
+ it("原始 HTML 保持文本，不创建标签或事件",()=>{
+  const html=renderToStaticMarkup(<Markdown text={'<img src=x onerror="alert(1)"> <script>alert(1)</script>'}/>);
+  expect(html).not.toContain('<img');expect(html).not.toContain('<script');expect(html).toContain('&lt;img');
+ });
+ it("链接参数中的与号不会被重复编码",()=>{
+  const html=renderToStaticMarkup(<Markdown text={'[资料](https://example.com/?a=1&b=2)'}/>);
+  expect(html).toContain('href="https://example.com/?a=1&amp;b=2"');expect(html).not.toContain('&amp;amp;');
+ });
+});

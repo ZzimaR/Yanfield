@@ -24,7 +24,6 @@ import { cn } from "@/lib/ui/cn";
 import { useHotkeys, useLocalStorageState, useMediaQuery, useResizePanel } from "@/lib/ui/hooks";
 import { applyTheme } from "@/lib/ui/theme";
 import type { AppSettings, Chapter } from "@/lib/types";
-import { AiPanelSlot } from "./AiPanelSlot";
 import { CommandPalette } from "./CommandPalette";
 import type { AgentRun } from "@/lib/ai/agent/types";
 import { EditorCanvas } from "./EditorCanvas";
@@ -489,10 +488,10 @@ export function EditorWorkbench({ novelId }: EditorWorkbenchProps) {
 
   /* 内联栏只在对应断点渲染；窄屏一律走抽屉，避免挤压正文 */
   const leftInlineVisible = isDesktop && leftOpen && !immersive;
-  const showRightInline = isWide && rightOpen && !immersive;
+  const showRightInline = isWide && rightOpen;
 
   /** 打开目录（桌面展开内联栏 / 窄屏打开抽屉），并切到目录页签 */
-  const openToc = () => openLeftTab("toc");
+  const openToc = () => { setImmersive(false); openLeftTab("toc"); };
 
   return (
     <EditorBridgeProvider value={bridge}>
@@ -643,29 +642,18 @@ export function EditorWorkbench({ novelId }: EditorWorkbenchProps) {
           </main>
 
           {/* 右栏：AI 协作（仅 ≥1024 内联，窄屏走抽屉） */}
-          {showRightInline ? (
-            <>
-              <div
-                role="separator"
-                aria-orientation="vertical"
-                aria-label="拖拽调整右栏宽度"
-                onPointerDown={rightPanel.onPointerDown}
-                className="hidden w-1 shrink-0 cursor-col-resize border-l border-line bg-surface-2/40 transition-colors duration-150 hover:bg-accent-soft lg:block"
-              />
-              <aside
-                style={{ width: rightPanel.width }}
-                className="hidden min-h-0 min-w-0 shrink-0 overflow-hidden lg:flex"
-                aria-label="AI 协作面板"
-              >
-                <EditorRightRail
-                  novelId={novelId}
-                  chapterId={chapter?.id ?? null}
-                  chapterTitle={title || null}
-                  onClose={() => setRightOpen(false)}
-                />
-              </aside>
-            </>
-          ) : null}
+          {showRightInline ? <div role="separator" aria-orientation="vertical" aria-label="拖拽调整右栏宽度" onPointerDown={rightPanel.onPointerDown} className="hidden w-1 shrink-0 cursor-col-resize border-l border-line bg-surface-2/40 hover:bg-accent-soft lg:block" /> : null}
+          {!isWide && drawerRightOpen ? <button type="button" aria-label="关闭助手遮罩" className="fixed inset-0 z-40 bg-black/30" onClick={()=>setDrawerRightOpen(false)} /> : null}
+          {/* Keep one panel mounted across collapse, immersion and responsive layouts. */}
+          <aside
+            style={{width:isWide?rightPanel.width:440,maxWidth:"100vw"}}
+            className={cn("min-h-0 min-w-0 shrink-0 overflow-hidden bg-surface",isWide?(showRightInline?"flex":"hidden"):(drawerRightOpen?"fixed inset-y-0 right-0 z-50 flex shadow-float":"hidden"))}
+            aria-label="AI 协作面板"
+            role={!isWide&&drawerRightOpen?"dialog":undefined}
+            aria-modal={!isWide&&drawerRightOpen?true:undefined}
+          >
+            <EditorRightRail novelId={novelId} chapterId={chapter?.id??null} chapterTitle={title||null} onClose={()=>isWide?setRightOpen(false):setDrawerRightOpen(false)}/>
+          </aside>
         </div>
 
         {/* 窄屏：目录 / 章纲 / 设定 / 档案 抽屉 */}
@@ -687,25 +675,6 @@ export function EditorWorkbench({ novelId }: EditorWorkbenchProps) {
               actions={actions}
               onSelectChapter={selectChapter}
             />
-          </div>
-        </Sheet>
-
-        {/* 窄屏：AI 协作抽屉（不挤压正文） */}
-        <Sheet
-          open={!isWide && drawerRightOpen && !immersive}
-          onClose={() => setDrawerRightOpen(false)}
-          title="AI 协作"
-          width={440}
-        >
-          <div className="flex h-full min-h-0 flex-col">
-            <EditorErrorBoundary resetKey={`ai:${novelId}:${chapter?.id ?? "none"}`} title="AI 面板">
-              <AiPanelSlot
-                novelId={novelId}
-                chapterId={chapter?.id ?? null}
-                chapterTitle={title || null}
-                onClose={() => setDrawerRightOpen(false)}
-              />
-            </EditorErrorBoundary>
           </div>
         </Sheet>
 

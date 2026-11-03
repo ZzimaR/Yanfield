@@ -19,6 +19,25 @@ async function collect(request:Parameters<typeof runtime.runAgent>[0],signal?:Ab
 const plan=(calls:unknown[],message="处理任务")=>JSON.stringify({message,calls,done:!calls.length});
 
 describe("Agent连续工具执行",()=>{
+  it("DSML 工具封套转成同一套经过校验的调用，不额外请求修复",async()=>{
+    const novel=repo.createNovel({title:"DSML 兼容"});
+    fake.queue=['<｜｜DSML｜｜ calls><｜｜DSML｜｜ invoke name="workspace"><｜｜DSML｜｜ parameter name="args" string="false">{}</｜｜DSML｜｜ parameter></｜｜DSML｜｜ invoke></｜｜DSML｜｜ calls>',plan([],"已查看")];
+    const event=(await collect({novelId:novel.id,message:"查看作品"})).filter(e=>e.type==="agent").at(-1)!;
+    if(event.type!=="agent")throw new Error("missing");
+    expect(event.run.status).toBe("complete");expect(event.run.steps[0].tool).toBe("workspace");expect(event.run.diagnostics).toBeUndefined();
+  });
+
+  it("进展顺序追加、连续重复去重，并随任务持久化",async()=>{
+    const novel=repo.createNovel({title:"进展记录"});
+    fake.queue=[plan([{name:"workspace",args:{}}],"先查看作品进度。"),plan([{name:"workspace",args:{}}],"先查看作品进度。"),plan([],"已核对作品进度。")];
+    const events=(await collect({novelId:novel.id,message:"查看进度"})).filter(e=>e.type==="agent");
+    const last=events.at(-1)!;
+    if(last.type!=="agent")throw new Error("missing");
+    expect(last.run.progress?.map(p=>[p.text,p.stepIndex])).toEqual([["先查看作品进度。",0],["已核对作品进度。",2]]);
+    expect(store.getRun(last.run.id).progress).toEqual(last.run.progress);
+    expect(events.filter(e=>e.type==="agent").every(e=>e.run.progress?.[0]?.text==="先查看作品进度。" || !e.run.progress?.length)).toBe(true);
+  });
+
   it("长说明不使有效工具指令被拒绝",async()=>{
     const novel=repo.createNovel({title:"长说明"});
     fake.queue=[plan([{name:"workspace",args:{}}],"长篇资料说明。".repeat(400)),plan([],"完成")];

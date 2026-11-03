@@ -625,7 +625,7 @@ export function ChapterTree({
               title="还没有章节"
               description="先建一卷来组织篇幅，或直接写第一章。"
               action={
-                <div className="flex items-center gap-2">
+                <div className="flex flex-wrap items-center justify-center gap-2 [&>button]:shrink-0 [&>button]:whitespace-nowrap">
                   <Button
                     variant="primary"
                     size="sm"

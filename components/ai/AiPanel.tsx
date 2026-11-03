@@ -198,6 +198,7 @@ export function AiPanel({
   const [task, setTask] = React.useState<{ id: string; label: string; snapshot?:HandOffDetail["snapshot"];selection?:string;targetChapterId?:string } | null>(null);
   const pendingAutoSendRef=React.useRef<string|null>(null);
   const sendingRef=React.useRef(false);
+  const [preparing,setPreparing]=React.useState(false);
   const activeTabKeyRef=React.useRef(chat.activeKey);activeTabKeyRef.current=chat.activeKey;
   const codexAbortRef = React.useRef<AbortController | null>(null);
   const editAbortRef = React.useRef<AbortController | null>(null);
@@ -264,12 +265,31 @@ export function AiPanel({
     return () => window.removeEventListener("yantian:editor-focus-ai", focusComposer);
   }, []);
 
-  // 消息变化时贴底滚动
   const scrollRef = React.useRef<HTMLDivElement | null>(null);
-  React.useEffect(() => {
-    const element = scrollRef.current;
-    if (element) element.scrollTop = element.scrollHeight;
-  }, [chat.activeTab.messages, activeKey]);
+  const followingRef = React.useRef(true);
+  const [hasNewProgress,setHasNewProgress] = React.useState(false);
+  const followLatest = React.useCallback(()=>{
+    followingRef.current=true;setHasNewProgress(false);
+    const element=scrollRef.current;
+    if(element)element.scrollTop=element.scrollHeight;
+  },[]);
+  React.useEffect(()=>{followLatest();},[activeKey,followLatest]);
+  React.useEffect(()=>{
+    const frame=requestAnimationFrame(()=>{
+      if(followingRef.current)followLatest();
+      else setHasNewProgress(true);
+    });
+    return()=>cancelAnimationFrame(frame);
+  },[chat.activeTab.messages,followLatest]);
+  React.useEffect(()=>{
+    const content=scrollRef.current?.firstElementChild;
+    if(!content || typeof ResizeObserver==="undefined")return;
+    const observer=new ResizeObserver(()=>{
+      if(followingRef.current)followLatest();
+      else setHasNewProgress(true);
+    });
+    observer.observe(content);return()=>observer.disconnect();
+  },[activeKey,chat.activeTab.messages.length,followLatest]);
 
   /** 当前实际会用的 Provider / 模型（后端 resolveTarget 规则推导，用于顶栏展示与无模型引导） */
   const target = React.useMemo(
@@ -294,10 +314,10 @@ export function AiPanel({
 
   const sendAgent = React.useCallback(async (text: string, retryMessage?: UIMessage) => {
     if (!text.trim() || chat.streaming || sendingRef.current) return;
-    sendingRef.current=true;
+    sendingRef.current=true;setPreparing(true);
     const originalKey=chat.activeKey;
     // Persist unsaved writing before the agent reads the chapter; a failed save leaves the input intact.
-    try { await bridge?.flush?.(); } catch { sendingRef.current=false;return; }
+    try { await bridge?.flush?.(); } catch { sendingRef.current=false;setPreparing(false);return; }
     const historyMessages = retryMessage ? chat.activeTab.messages.slice(0, Math.max(0, chat.activeTab.messages.findIndex(m=>m.id===retryMessage.id)-1)) : chat.activeTab.messages;
     const history = historyMessages.filter(m=>m.status!=="streaming").slice(-10).map(m=>({role:m.role,content:m.content}));
     const previous = [...(retryMessage ? [retryMessage] : chat.activeTab.messages)].reverse().flatMap(m=>m.actions).find(a=>a.type==="agent-run");
@@ -307,8 +327,9 @@ export function AiPanel({
     const attached=referenceSnapshots[originalKey];
     const snapshot=task?.snapshot??(attached&&(!attached.id||references.some(m=>m.type===attached.kind&&m.id===attached.id))?attached:undefined);
     const sessionId=await chat.prepareSession();
-    if(activeTabKeyRef.current!==originalKey){sendingRef.current=false;return;}
+    if(activeTabKeyRef.current!==originalKey){sendingRef.current=false;setPreparing(false);return;}
     const assistantId=chat.beginExchange(text, retryMessage?.id);
+    setPreparing(false);
     const controller=new AbortController();
     editAbortRef.current=controller;
     setDraft("");setMentions([]);setTask(null);setReferenceSnapshots(prev=>({...prev,[originalKey]:undefined}));
@@ -622,7 +643,11 @@ export function AiPanel({
       ) : null}
 
       {/* 对话区 */}
-      <div ref={scrollRef} className="scroll-thin min-h-0 flex-1 overflow-y-auto px-5 py-5">
+      <div ref={scrollRef} onScroll={event=>{
+        const element=event.currentTarget;
+        followingRef.current=element.scrollHeight-element.scrollTop-element.clientHeight<48;
+        if(followingRef.current)setHasNewProgress(false);
+      }} className="scroll-thin min-h-0 flex-1 overflow-y-auto px-5 py-5">
         {chat.activeTab.messages.length === 0 ? (
           <WelcomePanel
             agent={activeAgent}
@@ -665,6 +690,7 @@ export function AiPanel({
         )}
       </div>
 
+      {hasNewProgress?<div className="flex shrink-0 justify-center pb-2" aria-live="polite"><button type="button" className="rounded-full border border-accent/20 bg-accent-soft px-3 py-1 text-[11px] text-accent" onClick={followLatest}>有新进展 · 回到底部 ↓</button></div>:null}
       {/* 上下文用量 + 输入区 */}
       <div className="shrink-0">
         <ChatComposer
@@ -681,6 +707,7 @@ export function AiPanel({
             chat.stop();
           }}
           streaming={chat.streaming}
+          sending={preparing}
           novelId={novelId}
           chapterId={chapterId}
           placeholder={

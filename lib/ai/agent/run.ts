@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { parseAgentDecision } from "./decision";
 import { protocolDiagnostic } from "./diagnostics";
 import * as repo from "@/lib/repo";
 import { resolveTarget, mergeContextConfig } from "@/lib/ai/engine";
@@ -127,7 +128,7 @@ export async function* runAgent(request: AgentRequest, signal?: AbortSignal): As
       for(let attempt=0;attempt<2;attempt++) {
         raw="";
         for await(const delta of complete(messages)) raw+=delta;
-        const json=extractJson(raw);
+        const json=parseAgentDecision(raw);
         const parsed=decisionSchema.safeParse(json);
         if(parsed.success) {decision=parsed.data;break;}
         const diagnostic=protocolDiagnostic(raw,json,parsed.error.issues,round+1,attempt+1);
@@ -143,6 +144,11 @@ export async function* runAgent(request: AgentRequest, signal?: AbortSignal): As
       }
       messages.push({role:"assistant",content:raw});
       run.summary=decision.message;
+      const progressText=decision.message.trim();
+      run.progress??=[];
+      if(progressText && run.progress.at(-1)?.text!==progressText) {
+        run.progress.push({id:uid("progress"),text:progressText,stepIndex:run.steps.length});
+      }
       // A nonempty reply with no tools is terminal even if the model omits done.
       if(!decision.calls.length && (decision.done || decision.message.trim())) {finished=true;break;}
       if(!decision.calls.length) throw new Error("模型没有给出下一步操作");
