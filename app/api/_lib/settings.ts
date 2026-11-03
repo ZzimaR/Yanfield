@@ -206,8 +206,8 @@ export function buildSettingsPatch(current: AppSettings, body: Json): Partial<Ap
     if(!isObject(body.modelThinking)||Object.keys(body.modelThinking).length>200)throw new ApiError("modelThinking 必须是模型档位映射",400);
     const next={...current.modelThinking};
     for(const [key,value] of Object.entries(body.modelThinking)){
-      if(!key||key.length>512||typeof value!=="string"||!["off","low","high","max"].includes(value))throw new ApiError("思考档位无效",400);
-      next[key]=value as "off"|"low"|"high"|"max";
+      if(!key||key.length>512||typeof value!=="string"||!["default","off","minimal","low","medium","high","xhigh","max","ultra"].includes(value))throw new ApiError("思考档位无效",400);
+      next[key]=value as NonNullable<AppSettings["modelThinking"]>[string];
     }
     patch.modelThinking=next;
   }

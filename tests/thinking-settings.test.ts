@@ -9,14 +9,15 @@ it("服务商预设不再夹带静态推荐模型",()=>{expect(PROVIDER_PRESETS.
 describe("按模型记忆思考程度",()=>{
  it("不同服务/模型互不覆盖，未适配模型不虚报档位",()=>{
   const key=thinkingKey("p","deepseek-flash");const settings={modelThinking:{[key]:"low" as const}};
-  expect(modelThinking(settings,{id:"p",kind:"openai"},"deepseek-flash")).toBe("low");
-  expect(modelThinking(settings,{id:"other",kind:"openai"},"deepseek-flash")).toBe("off");
+  expect(modelThinking(settings,{id:"p",kind:"openai",baseUrl:"https://api.deepseek.com/v1"},"deepseek-flash")).toBe("low");
+  expect(modelThinking(settings,{id:"other",kind:"openai",baseUrl:"https://api.deepseek.com/v1"},"deepseek-flash")).toBe("default");
   expect(supportsThinking({kind:"openai"},"custom-model")).toBe(false);
  });
  it("设置合并保留其他档位，拒绝不支持的值",()=>{
   const current={...DEFAULT_APP_SETTINGS,modelThinking:{"a:deepseek-flash":"high" as const}};
   expect(buildSettingsPatch(current,{modelThinking:{"b:deepseek-flash":"low"}}).modelThinking).toEqual({"a:deepseek-flash":"high","b:deepseek-flash":"low"});
-  expect(()=>buildSettingsPatch(current,{modelThinking:{"b:x":"medium"}})).toThrow();
+  expect(buildSettingsPatch(current,{modelThinking:{"b:x":"medium","c:x":"xhigh","d:x":"default"}}).modelThinking).toMatchObject({"b:x":"medium","c:x":"xhigh","d:x":"default"});
+  expect(()=>buildSettingsPatch(current,{modelThinking:{"b:x":"made-up"}})).toThrow();
   expect(()=>buildSettingsPatch(current,{modelThinking:{"b:x":["low"]}})).toThrow();
  });
 });

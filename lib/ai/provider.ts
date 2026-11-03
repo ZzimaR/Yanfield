@@ -1,4 +1,5 @@
-import { supportsThinking, type ThinkingLevel } from "./thinking";
+import { discoverModelCapabilities } from "./model-capabilities";
+import { thinkingProfile, thinkingParameters, type ThinkingLevel } from "./thinking";
 import { openAiCachedTokens } from "./cache-usage";
 /**
  * Provider 适配层（服务端专用）
@@ -217,8 +218,9 @@ function openAiChatUrl(provider: ProviderConfig): string {
 async function* streamOpenAiCompatible(request: CompletionRequest): AsyncGenerator<ProviderChunk> {
   const { provider, model, messages, temperature, maxTokens, signal } = request;
   const reasoning = isReasoningModel(model);
-  const level=supportsThinking(provider,model)?request.thinkingLevel:undefined;
-  const thinking=!!level&&level!=="off";
+  const params=thinkingParameters(provider,model,request.thinkingLevel);
+  const profile=thinkingProfile(provider,model);
+  const thinking=profile.adapter==="deepseek" && request.thinkingLevel!=="off" && (Object.keys(params).length>0 || request.thinkingLevel==="default");
   const response = await fetch(openAiChatUrl(provider), {
     method: "POST",
     headers: { "Content-Type": "application/json", ...authHeaders(provider) },
@@ -227,13 +229,13 @@ async function* streamOpenAiCompatible(request: CompletionRequest): AsyncGenerat
       messages,
       stream: true,
       stream_options: { include_usage: true },
-      ...(request.disableThinking&&!reasoning&&/^deepseek-/i.test(model)?{thinking:{type:"disabled"}}:{}),
+      ...(request.disableThinking&&!reasoning&&profile.adapter==="deepseek"&&!request.thinkingLevel?{thinking:{type:"disabled"}}:{}),
       ...(request.decisionTools?{
         tools:request.decisionTools.map(tool=>({type:"function",function:tool})),
         tool_choice:thinking?"auto":"required",
-        ...(/^deepseek-/i.test(model)||resolveBaseUrl(provider).includes("api.deepseek.com")?{thinking:{type:"disabled"}}:{})
+        ...(profile.adapter==="deepseek"&&!request.thinkingLevel?{thinking:{type:"disabled"}}:{})
       }:request.outputFormat === "json" ? {response_format:{type:"json_object"}} : {}),
-      ...(level?{thinking:{type:thinking?"enabled":"disabled"},...(thinking?{reasoning_effort:level}:{})}:{}),
+      ...params,
       ...(reasoning
         ? {}
         : {
@@ -309,6 +311,7 @@ function anthropicMessagesUrl(provider: ProviderConfig): string {
 async function* streamAnthropic(request: CompletionRequest): AsyncGenerator<ProviderChunk> {
   const { provider, model, messages, temperature, maxTokens, signal } = request;
   const system = messages.filter((m) => m.role === "system").map((m) => m.content).join("\n\n");
+  const effortParams = thinkingParameters(provider,model,request.thinkingLevel);
   const conversation = messages
     .filter((m) => m.role !== "system")
     .map((m) => ({ role: m.role === "assistant" ? "assistant" : "user", content: m.content }));
@@ -320,10 +323,11 @@ async function* streamAnthropic(request: CompletionRequest): AsyncGenerator<Prov
     body: JSON.stringify({
       model,
       max_tokens: maxTokens && maxTokens > 0 ? maxTokens : 4096,
-      temperature: temperature ?? 0.8,
+      ...(effortParams.output_config ? {} : {temperature: temperature ?? 0.8}),
       system: system || undefined,
       messages: conversation,
       stream: true,
+      ...effortParams,
     }),
     signal: withTimeout(signal),
   });
@@ -693,7 +697,7 @@ export async function listProviderModels(
         const id = pickString(get(entry, "id"));
         if (!id) continue;
         const label = pickString(get(entry, "display_name")) || pickString(get(entry, "name")) || id;
-        models.push({ id, label });
+        models.push({ id, label, ...discoverModelCapabilities(entry,provider.kind) });
       }
     }
     // Gemini
@@ -706,8 +710,7 @@ export async function listProviderModels(
         if (Array.isArray(methods) && !methods.includes("generateContent")) continue;
         const id = rawName.replace(/^models\//, "");
         const label = pickString(get(entry, "displayName")) || id;
-        const contextWindow = pickNumber(get(entry, "inputTokenLimit")) || undefined;
-        models.push({ id, label, contextWindow });
+        models.push({ id, label, ...discoverModelCapabilities(entry,provider.kind) });
       }
     }
     // Ollama 原生 /api/tags

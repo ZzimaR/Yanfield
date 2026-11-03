@@ -203,6 +203,20 @@ AI 对话与所有写作任务（续写 / 润色 / 诊断 / 大纲 / 档案提�
 
 ## 思考程度
 
-聊天输入框旁的模型选择菜单会为已适配的模型显示「关闭 / 轻量 / 深入 / 尽力」，按服务商与模型分别记忆。目前适配 OpenAI 兼容通道的 `deepseek-flash`、`deepseek-v4-pro`；其他模型不展示无效控件。默认关闭，开启后思考与正文共用输出上限，等待与 token 消耗可能增加。
+模型选择菜单按「服务商 + 模型」分别记忆设置；新模型使用「默认」，不额外指定思考参数。重新拉取后若旧档位已不被支持，会回退默认，不发送失效值。已有显式设置仍在支持范围内则继续使用。
 
-思考模式工具调用会在本轮请求内传回必要的 reasoning_content，不把它显示成执行过程说明。参数依据 [DeepSeek 思考模式文档](https://api-docs.deepseek.com/guides/thinking_mode/)。
+模型列表拉取会保存能力元数据、上下文容量与输出上限。显示哪些强度取决于接口返回，不能统一套四个档位。
+
+| 接口 | 能力来源 | 请求参数与边界 |
+| --- | --- | --- |
+| DeepSeek 官方 | `effort.supported_levels/default_level` | `thinking.type` 与 `reasoning_effort`；兼容旧配置的名称兜底仅限官方地址 |
+| Anthropic Messages | `capabilities.effort`、`capabilities.thinking.types.disabled` | `output_config.effort`；只有明确支持 disabled 才显示关闭。强度调节不是通用的思考开关 |
+| OpenRouter 官方 | `reasoning.supported_efforts/default_effort/mandatory` | `reasoning.effort`；只有明确非强制时才显示关闭 |
+| Gemini | `thinking` 布尔值 | 保存是否支持；列表没声明档位时不编造等级，使用服务商默认 |
+| 其他兼容网关 | 保留可识别的能力声明与支持参数 | 未确认请求协议时使用默认，不仅凭模型同名发送 DeepSeek 参数 |
+
+接口声明不支持与接口未提供信息是两种状态，菜单会分别说明。旧服务需主动重新拉取并保存，才能补充能力信息；拉取不会自动发起生成请求或消耗生成 token。使用手动模型 ID 而没有能力信息时，默认保持未知。
+
+强度可能影响等待时间和 token 消耗，不同模型含义与默认行为由服务商决定。DeepSeek 原生工具模式在本轮内传回必要的 reasoning_content，不把它显示为执行过程说明。
+
+依据：[DeepSeek 模型列表](https://api-docs.deepseek.com/api/list-models/)、[DeepSeek 思考模式](https://api-docs.deepseek.com/guides/thinking_mode/)、[Claude 模型列表](https://platform.claude.com/docs/en/api/models/list)、[Claude effort](https://platform.claude.com/docs/en/build-with-claude/effort)、[OpenRouter reasoning](https://openrouter.ai/docs/guides/best-practices/reasoning-tokens)、[Gemini 模型元数据](https://ai.google.dev/api/models)。

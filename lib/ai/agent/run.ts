@@ -1,3 +1,4 @@
+import { thinkingProfile } from "../thinking";
 import { proposalReceipt } from "./receipt";
 import { automaticMaterialPolicy } from "./material-policy";
 import { chapterDirectoryWindow, writerMessages, candidateContext } from "./context";
@@ -45,7 +46,7 @@ export async function* runAgent(request: AgentRequest, signal?: AbortSignal): As
   if(request.chapterId && repo.getChapter(request.chapterId)?.novelId!==novel.id) throw new ApiError("章节不属于该作品",400);
   const target=resolveTarget("chat");
   const config=mergeContextConfig(request.context);
-  const deepThinking=!!target.thinkingLevel&&target.thinkingLevel!=="off";
+  const deepThinking=thinkingProfile(target.provider,target.model).adapter==="deepseek" && !!target.thinkingLevel&&target.thinkingLevel!=="off";
   let lastDecisionReasoning="";
   const decisionOverhead=usesDecisionTool(target.provider,target.model)?estimateTokens(JSON.stringify(DECISION_TOOLS)):0;
   const started=Date.now();

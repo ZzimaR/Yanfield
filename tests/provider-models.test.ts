@@ -98,6 +98,13 @@ describe("listProviderModels", () => {
     expect(result.models).toEqual([{ id: "gemini-test", label: "Gemini Test", contextWindow: 1000000 }]);
   });
 
+  it("HTTP拉取保留能力字段，序列化后仍可使用不同档位",async()=>{
+    const base=await listen((_url,res)=>{res.writeHead(200,{"Content-Type":"application/json"});res.end(JSON.stringify({data:[{id:"future-model",name:"Future",context_window:8192,max_output_tokens:2048,effort:{supported_levels:["low","max"],default_level:"low"}}]}));});
+    const result=await listProviderModels(provider("openai",base));
+    const saved=JSON.parse(JSON.stringify(result.models));
+    expect(saved[0]).toMatchObject({id:"future-model",label:"Future",contextWindow:8192,maxOutputTokens:2048,thinking:{levels:["low","max"],defaultLevel:"low"}});
+  });
+
   it("Ollama 原生：无 /v1 时走 /api/tags", async () => {
     const base = await listen((url, res) => {
       expect(url).toBe("/api/tags");

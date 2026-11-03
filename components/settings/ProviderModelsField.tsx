@@ -134,6 +134,7 @@ export function ProviderModelsField({
                 {model.label && model.label !== model.id ? (
                   <span className="hidden max-w-[45%] truncate text-[10.5px] text-ink-3 sm:block">{model.label}</span>
                 ) : null}
+                {model.thinking?<span className="shrink-0 text-[10px] text-ink-3">{model.thinking.supported?"支持思考":"无思考"}</span>:null}
                 {typeof model.contextWindow === "number" && model.contextWindow > 0 ? (
                   <span className="shrink-0 rounded-sm bg-surface-2 px-1.5 py-0.5 text-[10px] text-ink-3">
                     {Math.round(model.contextWindow / 1000)}K

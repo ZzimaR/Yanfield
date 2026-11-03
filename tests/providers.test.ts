@@ -3,7 +3,7 @@
  * 用本地 HTTP 服务模拟各家 SSE 响应，验证「真实请求/真实流解析」而不是 mock 掉适配层。
  * 覆盖：OpenAI 兼容、Anthropic Messages、Gemini generateContent、错误中文化。
  */
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import type { AddressInfo } from "node:net";
 import { ProviderError, streamCompletion, testProvider, type ProviderChunk } from "../lib/ai/provider";
@@ -68,6 +68,7 @@ type Captured = { path: string; headers: IncomingMessage["headers"]; body: strin
 
 describe("Provider 适配层", () => {
   const captured: Captured[] = [];
+  const realFetch = globalThis.fetch;
 
   it("缓存命中统计穿过流式适配层，输入总量不重复相加",async()=>{
     const chunks=await collect(provider("openai",{baseUrl:base}),"cache-model");
@@ -76,7 +77,7 @@ describe("Provider 适配层", () => {
 
   it("DeepSeek正文显式关闭混合思考，其他模型与显式推理模型不被误改",async()=>{
     for(const model of ["deepseek-flash","custom-model","deepseek-reasoner"]){
-      for await(const _chunk of streamCompletion({provider:provider("openai",{baseUrl:base}),model,messages:[{role:"user",content:"写正文"}],disableThinking:true})){}
+      for await(const _chunk of streamCompletion({provider:provider("openai",{baseUrl:"https://api.deepseek.com/v1"}),model,messages:[{role:"user",content:"写正文"}],disableThinking:true})){}
       const input=JSON.parse(captured.at(-1)!.body);
       expect(input.thinking).toEqual(model==="deepseek-flash"?{type:"disabled"}:undefined);expect(input.tools).toBeUndefined();
     }
@@ -84,18 +85,28 @@ describe("Provider 适配层", () => {
 
   it("思考轻量真实映射enabled/low与auto工具选择，推理历史不丢失",async()=>{
     const chunks:ProviderChunk[]=[];
-    for await(const chunk of streamCompletion({provider:provider("openai",{baseUrl:base}),model:"deepseek-flash",messages:[{role:"assistant",content:"前次答复",reasoning_content:"前次推理"},{role:"user",content:"继续"}],disableThinking:true,thinkingLevel:"low",decisionTools:[{name:"respond",description:"答复",parameters:{type:"object"}}]}))chunks.push(chunk);
+    for await(const chunk of streamCompletion({provider:provider("openai",{baseUrl:"https://api.deepseek.com/v1"}),model:"deepseek-flash",messages:[{role:"assistant",content:"前次答复",reasoning_content:"前次推理"},{role:"user",content:"继续"}],disableThinking:true,thinkingLevel:"low",decisionTools:[{name:"respond",description:"答复",parameters:{type:"object"}}]}))chunks.push(chunk);
     const input=JSON.parse(captured.at(-1)!.body);expect(input.thinking).toEqual({type:"enabled"});expect(input.reasoning_effort).toBe("low");expect(input.tool_choice).toBe("auto");expect(input.messages[0].reasoning_content).toBe("前次推理");
   });
 
   it("原生规划函数参数跨SSE分片组装，普通文字与工具协议分开",async()=>{
     const chunks:ProviderChunk[]=[];
-    for await(const chunk of streamCompletion({provider:provider("openai",{baseUrl:base}),model:"deepseek-flash",messages:[{role:"user",content:"规划"}],decisionTools:[{name:"respond",description:"答复",parameters:{type:"object"}}]}))chunks.push(chunk);
+    for await(const chunk of streamCompletion({provider:provider("openai",{baseUrl:"https://api.deepseek.com/v1"}),model:"deepseek-flash",messages:[{role:"user",content:"规划"}],decisionTools:[{name:"respond",description:"答复",parameters:{type:"object"}}]}))chunks.push(chunk);
     const input=JSON.parse(captured.at(-1)!.body);
     expect(input.tool_choice).toBe("required");expect(input.thinking).toEqual({type:"disabled"});expect(input.response_format).toBeUndefined();
     expect(chunks.filter(c=>c.type==="delta").map(c=>c.type==="delta"?c.text:"").join("")).toBe('{"message":"完成","calls":[],"done":true}');
     expect(chunks.find(c=>c.type==="usage")).toMatchObject({promptTokens:20,completionTokens:10});
   });
+  it("Claude按声明档位发送output_config，不夹带DeepSeek参数",async()=>{
+    for await(const _chunk of streamCompletion({provider:provider("anthropic",{baseUrl:base,models:[{id:"claude-test",label:"Claude",thinking:{supported:true,format:"anthropic",levels:["medium","xhigh"],canDisable:false}}]}),model:"claude-test",messages:[{role:"user",content:"继续"}],thinkingLevel:"xhigh"})){}
+    const input=JSON.parse(captured.at(-1)!.body);
+    expect(input.output_config).toEqual({effort:"xhigh"});expect(input.reasoning_effort).toBeUndefined();expect(input.thinking).toBeUndefined();
+  });
+  it("未知网关即使模型同名也不发送推测的思考参数",async()=>{
+    for await(const _chunk of streamCompletion({provider:provider("openai",{baseUrl:base}),model:"deepseek-flash",messages:[{role:"user",content:"继续"}],thinkingLevel:"low",disableThinking:true})){}
+    const input=JSON.parse(captured.at(-1)!.body);expect(input.thinking).toBeUndefined();expect(input.reasoning_effort).toBeUndefined();
+  });
+
   it("原生批量调用按index恢复顺序，参数只作为待校验数据",async()=>{
     const chunks:ProviderChunk[]=[];
     for await(const chunk of streamCompletion({provider:provider("openai",{baseUrl:base}),model:"batch-functions",messages:[{role:"user",content:"读资料"}],decisionTools:[{name:"read",description:"读",parameters:{type:"object"}}]}))chunks.push(chunk);
@@ -161,9 +172,14 @@ describe("Provider 适配层", () => {
     await new Promise<void>((resolve) => server.once("listening", () => resolve()));
     const address = server.address() as AddressInfo;
     base = `http://127.0.0.1:${address.port}`;
+    vi.spyOn(globalThis,"fetch").mockImplementation((input,init)=>{
+      const url = String(input);
+      return realFetch(url.startsWith("https://api.deepseek.com/") ? url.replace("https://api.deepseek.com",base) : input,init);
+    });
   });
 
   afterAll(() => {
+    vi.restoreAllMocks();
     server.closeAllConnections();
     server.close();
   });

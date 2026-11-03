@@ -451,11 +451,24 @@ export interface ChatMessage {
 
 export type ProviderKind = "openai" | "anthropic" | "gemini" | "ollama" | "demo";
 
+export type ThinkingEffort = "minimal" | "low" | "medium" | "high" | "xhigh" | "max" | "ultra";
+export interface ModelThinkingCapability {
+  supported: boolean;
+  /** 仅包含接口明确声明的档位；缺失不代表不支持。 */
+  levels?: ThinkingEffort[];
+  defaultLevel?: ThinkingEffort;
+  canDisable?: boolean;
+  /** 能力声明的格式，不代表所有兼容网关都接受相同请求参数。 */
+  format?: "deepseek" | "anthropic" | "openrouter";
+}
 export interface ModelOption {
   id: string;
   label: string;
   /** 模型上下文窗口（token），用于在 UI 里提示预算上限 */
   contextWindow?: number;
+  maxOutputTokens?: number;
+  supportedParameters?: string[];
+  thinking?: ModelThinkingCapability;
 }
 
 export interface ProviderConfig {
@@ -580,7 +593,7 @@ export interface AppSettings {
   dailyWordGoal: number;
   /** 双模型分工：对话/大纲模型 vs 正文模型 */
   models: ModelSetting;
-  modelThinking?: Record<string,"off"|"low"|"high"|"max">;
+  modelThinking?: Record<string, "default" | "off" | ThinkingEffort>;
   /** 自定义智能体人设（AGENTS 里 id=custom 时使用） */
   customAgent: { name: string; role: string; persona: string; greeting: string };
   /**

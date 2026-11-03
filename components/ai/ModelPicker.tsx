@@ -19,7 +19,7 @@ import {
   RefreshCw,
   Settings2,
 } from "lucide-react";
-import { THINKING_OPTIONS, modelThinking, supportsThinking, thinkingKey, type ThinkingLevel } from "@/lib/ai/thinking";
+import { THINKING_OPTIONS, thinkingProfile, modelThinking, supportsThinking, thinkingKey, type ThinkingLevel } from "@/lib/ai/thinking";
 import { Spinner, useToast } from "@/components/ui/kit";
 import { apiGet, apiPatch, notifyDataChanged } from "@/lib/client/api";
 import type { AppSettings, ModelOption, ProviderConfig } from "@/lib/types";
@@ -176,6 +176,7 @@ export function ModelPicker({
   }, [open]);
 
   const thinkingProvider=groups.find(p=>p.id===target?.providerId);
+  const profile=thinkingProvider?thinkingProfile(thinkingProvider,target?.model||""):undefined;
   const thinkingSupported=!!thinkingProvider&&supportsThinking(thinkingProvider,target?.model||"");
   const thinking=thinkingProvider&&settings?modelThinking(settings,thinkingProvider,target?.model||""):undefined;
   const chooseThinking=async(value:ThinkingLevel)=>{
@@ -273,7 +274,7 @@ export function ModelPicker({
           aria-hidden
         />
         <span className="truncate">{label}</span>
-        {thinkingSupported?<span className="shrink-0 text-[9px] text-ink-4">思考·{THINKING_OPTIONS.find(o=>o.value===thinking)?.label}</span>:null}
+        {thinkingSupported?<span className="shrink-0 text-[9px] text-ink-4">思考·{THINKING_OPTIONS.find(o=>o.value===(thinking||"default"))?.label}</span>:null}
         <ChevronDown className="size-2.5 shrink-0 opacity-70" />
       </button>
 
@@ -293,10 +294,11 @@ export function ModelPicker({
                 </span>
               </div>
 
+              {!thinkingSupported && thinkingProvider?<p className="border-b border-line px-3 py-2 text-[10px] leading-relaxed text-ink-4">{profile?.capability?.supported===false?"接口声明此模型不支持思考。":profile?.capability?.supported?"模型支持思考，但接口未声明可用档位或当前参数协议尚未适配，使用服务商默认。":"思考能力未知；可在模型设置中重新拉取。未确认能力时使用服务商默认。"}</p>:null}
               {thinkingSupported?<div className="border-b border-line px-3 py-3">
                 <div className="mb-2 flex items-center justify-between text-[11px]"><span className="text-ink-3">当前模型 · 思考程度</span><span className="text-ink-4">按模型记忆</span></div>
-                <div className="flex gap-1" role="group" aria-label="思考程度">{THINKING_OPTIONS.map(option=><button key={option.value} type="button" aria-pressed={thinking===option.value} disabled={busy!==null} onClick={()=>void chooseThinking(option.value)} className={cn("flex-1 rounded-md px-2 py-1.5 text-[11px]",thinking===option.value?"bg-accent/10 text-accent":"bg-surface-2 text-ink-3 hover:text-ink")}>{option.label}</button>)}</div>
-                <p className="mt-2 text-[10px] leading-relaxed text-ink-4">思考与正文共用输出上限；开启后等待和 token 消耗会增加。</p>
+                <div className="grid grid-cols-3 gap-1" role="group" aria-label="思考程度">{profile?.options.map(option=><button key={option.value} type="button" aria-pressed={(thinking||"default")===option.value} disabled={busy!==null} onClick={()=>void chooseThinking(option.value)} className={cn("flex-1 rounded-md px-2 py-1.5 text-[11px]",(thinking||"default")===option.value?"bg-accent/10 text-accent":"bg-surface-2 text-ink-3 hover:text-ink")}>{option.label}</button>)}</div>
+                <p className="mt-2 text-[10px] leading-relaxed text-ink-4">仅显示当前接口已适配的档位。默认不额外指定参数；提高强度可能增加等待与 token 消耗。</p>
               </div>:null}
               <div className="scroll-thin max-h-[min(380px,55vh)] overflow-y-auto p-1.5">
                 {realProviders.length === 0 ? (
