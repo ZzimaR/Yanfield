@@ -228,7 +228,7 @@ async function discoverIds(base) {
 /* ---------------------------------- CDP ---------------------------------- */
 
 async function launchBrowser(browserPath, timeoutMs) {
-  const profile = mkdtempSync(path.join(os.tmpdir(), "yantian-shot-"));
+  const profile = mkdtempSync(path.join(os.tmpdir(), "yanfield-shot-"));
   const child = spawn(
     browserPath,
     [

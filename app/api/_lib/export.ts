@@ -48,7 +48,7 @@ export function dateStamp(date = new Date()): string {
 /** 文件名去非法字符（保留中文）并限制长度 */
 export function safeFileName(name: string): string {
   const cleaned = name.replace(/[\\/:*?"<>|\r\n\t]/g, " ").replace(/\s+/g, " ").trim();
-  return cleaned.slice(0, 80) || "yantian";
+  return cleaned.slice(0, 80) || "yanfield";
 }
 
 function plain(html: string): string {
@@ -135,7 +135,7 @@ export function buildExport(input: ExportInput): ExportResult {
 /** 构造带 Content-Disposition 的附件下载响应（中文文件名走 RFC 5987） */
 export function buildExportResponse(result: ExportResult): Response {
   const format = result.contentType.includes("markdown") ? "md" : "txt";
-  const asciiName = `yantian-${dateStamp()}.${format}`;
+  const asciiName = `yanfield-${dateStamp()}.${format}`;
   const headers = new Headers({
     "Content-Type": result.contentType,
     "Content-Disposition": `attachment; filename="${asciiName}"; filename*=UTF-8''${encodeURIComponent(result.fileName)}`,

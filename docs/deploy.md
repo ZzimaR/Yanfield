@@ -14,6 +14,14 @@
 | **SSE 需要反向代理放行** | AI 输出是 Server-Sent Events；Nginx 默认缓冲会让「流式」变成「转圈很久然后一次性出现」。必须 `proxy_buffering off`。 |
 | **出网** | 进程需要访问你配置的模型服务（OpenAI/DeepSeek/…）或本机 Ollama；不需要访问砚田的任何服务器。 |
 
+## 从旧命名部署升级
+
+新模板统一使用 `yanfield`：systemd 文件为 `deploy/yanfield.service`，Compose 服务、镜像与容器名均为 `yanfield`。数据库路径仍为 `data/yanfield.db`，容器 UID/GID 仍为 1001，不需要重新创建书稿数据库。
+
+- **旧 systemd 部署**：已有的 `yantian.service` 可以继续使用原来的用户与工作目录。若切换为新服务名，先把新模板里的 `User`、`Group`、`WorkingDirectory`、`ExecStart`、`YANFIELD_DB_PATH` 和 `ReadWritePaths` 改为现有部署的实际值，再停止并禁用旧服务、安装和启用新服务。不要直接切到新的空目录，也不要同时运行两份服务。模板改名不会自动改动服务器上的服务或目录。
+- **旧 Compose 部署**：在原项目目录备份 `data/`，停止旧容器 `docker stop yantian`，更新后运行 `docker compose up -d --build --remove-orphans`。继续挂载同一个 `./data:/app/data`，无需重命名或清空数据目录。使用自定义命名卷的部署须继续使用原卷名。
+- 浏览器里历史偏好键与内部事件名保留兼容命名，不会因为部署名称更新而清空外观、布局等设置。
+
 ## 模型 Key 与环境变量
 
 模型服务既可以部署后在设置页里添加，也可以在**首次启动时用环境变量自动创建**。后者适合 Docker / 自托管：把 Key 写进 `.env` 或容器环境变量，不用打开界面。
@@ -67,20 +75,20 @@ Linux 用 systemd（见方式四）；Windows 可用「任务计划程序」或 
 适合：不想在宿主机装 Node、需要隔离、想一条命令升级。
 
 ```bash
-docker build -t yantian:latest .
+docker build -t yanfield:latest .
 
 # 首次：准备数据目录（Linux 上注意 uid，见下方说明）
 mkdir -p data
 
 docker run -d \
-  --name yantian \
+  --name yanfield \
   --restart unless-stopped \
   -p 3000:3000 \
   -v "$PWD/data:/app/data" \
   -e YANFIELD_DB_PATH=/app/data/yanfield.db \
   -e NEXT_TELEMETRY_DISABLED=1 \
   --add-host=host.docker.internal:host-gateway \
-  yantian:latest
+  yanfield:latest
 ```
 
 PowerShell 中绑定挂载要写成 `-v "${PWD}/data:/app/data"`。
@@ -88,14 +96,14 @@ PowerShell 中绑定挂载要写成 `-v "${PWD}/data:/app/data"`。
 打开 <http://127.0.0.1:3000>。常用操作：
 
 ```bash
-docker logs -f yantian                 # 看日志
-docker exec -it yantian node scripts/seed.mjs   # 只重置示例数据（不动你的作品）
-docker stop yantian && docker rm yantian        # 停容器（数据在 ./data 里，安全）
+docker logs -f yanfield                 # 看日志
+docker exec -it yanfield node scripts/seed.mjs   # 只重置示例数据（不动你的作品）
+docker stop yanfield && docker rm yanfield        # 停容器（数据在 ./data 里，安全）
 
 # 升级：拉代码 → 重建镜像 → 用同样的 volume 重新起
 git pull
-docker build -t yantian:latest .
-docker stop yantian && docker rm yantian
+docker build -t yanfield:latest .
+docker stop yanfield && docker rm yanfield
 docker run -d ...（同上）
 ```
 
@@ -146,39 +154,39 @@ Linux 上如遇 `permission denied`：`sudo chown -R 1001:1001 data`。
 ### 1. 创建用户与目录
 
 ```bash
-sudo useradd --system --create-home --shell /usr/sbin/nologin yantian
-sudo mkdir -p /opt/yantian
-sudo chown yantian:yantian /opt/yantian
-sudo -u yantian git clone https://github.com/ZzimaR/Yanfield.git /opt/yantian
+sudo useradd --system --create-home --shell /usr/sbin/nologin yanfield
+sudo mkdir -p /opt/yanfield
+sudo chown yanfield:yanfield /opt/yanfield
+sudo -u yanfield git clone https://github.com/ZzimaR/Yanfield.git /opt/yanfield
 ```
 
 ### 2. 安装与构建
 
 ```bash
-cd /opt/yantian
-sudo -u yantian pnpm install --frozen-lockfile
-sudo -u yantian pnpm build
+cd /opt/yanfield
+sudo -u yanfield pnpm install --frozen-lockfile
+sudo -u yanfield pnpm build
 ```
 
 ### 3. 安装服务
 
-仓库里的 [`deploy/yantian.service`](../deploy/yantian.service) 是可直接用的模板：
+仓库里的 [`deploy/yanfield.service`](../deploy/yanfield.service) 是可直接用的模板：
 
 ```bash
-sudo cp deploy/yantian.service /etc/systemd/system/yantian.service
+sudo cp deploy/yanfield.service /etc/systemd/system/yanfield.service
 # 按实际用户/目录/端口修改 Environment= 与 ExecStart=
 sudo systemctl daemon-reload
-sudo systemctl enable --now yantian
-systemctl status yantian --no-pager
-journalctl -u yantian -f
+sudo systemctl enable --now yanfield
+systemctl status yanfield --no-pager
+journalctl -u yanfield -f
 ```
 
 服务默认：
 
-- 以 `yantian` 用户运行，工作目录 `/opt/yantian`；
+- 以 `yanfield` 用户运行，工作目录 `/opt/yanfield`；
 - `HOSTNAME=127.0.0.1`（只监听本机，由反向代理对外）；
-- `YANFIELD_DB_PATH=/opt/yantian/data/yanfield.db`；
-- `ExecStart=/opt/yantian/node_modules/.bin/next start -p 3000`；
+- `YANFIELD_DB_PATH=/opt/yanfield/data/yanfield.db`；
+- `ExecStart=/opt/yanfield/node_modules/.bin/next start -H 127.0.0.1 -p 3000`；
 - 失败自动重启，并带 `ProtectSystem=strict` 等加固（只允许写 `data/`）。
 
 > 想让 systemd 直接跑 standalone 产物：把 `ExecStart` 改成 `/usr/bin/node .next/standalone/server.js`，并把 `.next/static` 与 `public/` 复制进 `.next/standalone/`（`pnpm build` 不会自动复制这两个目录）。`pnpm start` 方式更省事，推荐前者即可。
@@ -186,14 +194,14 @@ journalctl -u yantian -f
 ### 4. 升级
 
 ```bash
-cd /opt/yantian
-sudo -u yantian git pull
-sudo -u yantian pnpm install --frozen-lockfile
-sudo -u yantian pnpm build
-sudo systemctl restart yantian
+cd /opt/yanfield
+sudo -u yanfield git pull
+sudo -u yanfield pnpm install --frozen-lockfile
+sudo -u yanfield pnpm build
+sudo systemctl restart yanfield
 ```
 
-升级前备份：`sudo -u yantian cp -r data "data-backup-$(date +%Y%m%d)"`。
+升级前备份：`sudo -u yanfield cp -r data "data-backup-$(date +%Y%m%d)"`。
 
 ---
 
@@ -284,9 +292,9 @@ novel.example.com {
 
 ```bash
 # Linux / macOS
-sudo systemctl stop yantian
-cp -r /opt/yantian/data "/backup/yantian-data-$(date +%Y%m%d)"
-sudo systemctl start yantian
+sudo systemctl stop yanfield
+cp -r /opt/yanfield/data "/backup/yanfield-data-$(date +%Y%m%d)"
+sudo systemctl start yanfield
 ```
 
 ```powershell
@@ -297,7 +305,7 @@ Copy-Item -Recurse data "backup-data-$(Get-Date -Format yyyyMMdd)"
 不想停服时，用 SQLite 的在线备份（幂等、可脚本化）：
 
 ```bash
-sqlite3 /opt/yantian/data/yanfield.db ".backup '/backup/yanfield-$(date +%Y%m%d).db'"
+sqlite3 /opt/yanfield/data/yanfield.db ".backup '/backup/yanfield-$(date +%Y%m%d).db'"
 ```
 
 Docker Compose 部署同理：备份宿主机的 `./data` 目录即可。
@@ -305,10 +313,10 @@ Docker Compose 部署同理：备份宿主机的 `./data` 目录即可。
 ### 恢复
 
 ```bash
-sudo systemctl stop yantian
-rm -rf /opt/yantian/data && cp -r /backup/yantian-data-20260101 /opt/yantian/data
-sudo chown -R yantian:yantian /opt/yantian/data
-sudo systemctl start yantian
+sudo systemctl stop yanfield
+rm -rf /opt/yanfield/data && cp -r /backup/yanfield-data-20260101 /opt/yanfield/data
+sudo chown -R yanfield:yanfield /opt/yanfield/data
+sudo systemctl start yanfield
 ```
 
 迁移到新机器：停服 → 复制 `data/` → 新机器放同一位置（或改 `YANFIELD_DB_PATH`）→ 启动。

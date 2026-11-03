@@ -109,7 +109,7 @@ function detectBrowser(explicit) {
 /* -------------------------------- CDP 客户端 ------------------------------- */
 
 async function launchBrowser(executable) {
-  const profile = mkdtempSync(path.join(os.tmpdir(), "yantian-diff-"));
+  const profile = mkdtempSync(path.join(os.tmpdir(), "yanfield-diff-"));
   const child = spawn(
     executable,
     [

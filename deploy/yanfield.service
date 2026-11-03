@@ -1,23 +1,23 @@
 # 砚田 Yanfield — systemd 服务模板（VPS / 长期运行的 Linux 机器）
 #
-# 安装步骤（假设代码放在 /opt/yantian、运行用户为 yantian）：
+# 安装步骤（假设代码放在 /opt/yanfield、运行用户为 yanfield）：
 #
-#   sudo useradd --system --create-home --shell /usr/sbin/nologin yantian
-#   sudo mkdir -p /opt/yantian && sudo chown yantian:yantian /opt/yantian
-#   sudo -u yantian git clone https://github.com/ZzimaR/Yanfield.git /opt/yantian
-#   cd /opt/yantian
-#   sudo -u yantian pnpm install --frozen-lockfile
-#   sudo -u yantian pnpm build
+#   sudo useradd --system --create-home --shell /usr/sbin/nologin yanfield
+#   sudo mkdir -p /opt/yanfield && sudo chown yanfield:yanfield /opt/yanfield
+#   sudo -u yanfield git clone https://github.com/ZzimaR/Yanfield.git /opt/yanfield
+#   cd /opt/yanfield
+#   sudo -u yanfield pnpm install --frozen-lockfile
+#   sudo -u yanfield pnpm build
 #
 #   # 安装本服务文件（路径按实际用户名/目录调整）
-#   sudo cp deploy/yantian.service /etc/systemd/system/yantian.service
+#   sudo cp deploy/yanfield.service /etc/systemd/system/yanfield.service
 #   sudo systemctl daemon-reload
-#   sudo systemctl enable --now yantian
-#   systemctl status yantian --no-pager
+#   sudo systemctl enable --now yanfield
+#   systemctl status yanfield --no-pager
 #
-# 日志：journalctl -u yantian -f
-# 升级：cd /opt/yantian && sudo -u yantian git pull && sudo -u yantian pnpm install
-#       && sudo -u yantian pnpm build && sudo systemctl restart yantian
+# 日志：journalctl -u yanfield -f
+# 升级：cd /opt/yanfield && sudo -u yanfield git pull && sudo -u yanfield pnpm install
+#       && sudo -u yanfield pnpm build && sudo systemctl restart yanfield
 #
 # 更多部署细节（反向代理、HTTPS、备份恢复）见 docs/deploy.md。
 
@@ -29,9 +29,9 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-User=yantian
-Group=yantian
-WorkingDirectory=/opt/yantian
+User=yanfield
+Group=yanfield
+WorkingDirectory=/opt/yanfield
 
 # 运行环境（按需修改）
 Environment=NODE_ENV=production
@@ -39,14 +39,14 @@ Environment=PORT=3000
 # 默认只监听本机；对外提供服务请在前面放反向代理（Nginx/Caddy），
 # 不要直接把 3000 端口裸奔到公网（砚田没有登录鉴权）。
 Environment=HOSTNAME=127.0.0.1
-Environment=YANFIELD_DB_PATH=/opt/yantian/data/yanfield.db
+Environment=YANFIELD_DB_PATH=/opt/yanfield/data/yanfield.db
 Environment=NEXT_TELEMETRY_DISABLED=1
 Environment=PATH=/usr/local/bin:/usr/bin:/bin
 
 # 用 pnpm start；也可以用 standalone 产物：
 #   ExecStart=/usr/bin/node .next/standalone/server.js
 # （standalone 需要把 .next/static 与 public 复制到 .next/standalone 下，见 docs/deploy.md）
-ExecStart=/opt/yantian/node_modules/.bin/next start -p 3000
+ExecStart=/opt/yanfield/node_modules/.bin/next start -H 127.0.0.1 -p 3000
 Restart=on-failure
 RestartSec=3
 TimeoutStopSec=20
@@ -57,7 +57,7 @@ NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=strict
 ProtectHome=true
-ReadWritePaths=/opt/yantian/data
+ReadWritePaths=/opt/yanfield/data
 ProtectKernelTunables=true
 ProtectKernelModules=true
 ProtectControlGroups=true

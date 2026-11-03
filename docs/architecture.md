@@ -80,7 +80,7 @@ scripts/
   seed.mjs                   # pnpm db:seed：删除示例作品与内置预设（保留用户自建数据）
   capture-screenshots.mjs    # 用本机 Edge/Chrome 无头模式截图
 deploy/
-  yantian.service            # VPS + systemd 服务模板（见 docs/deploy.md）
+  yanfield.service            # VPS + systemd 服务模板（见 docs/deploy.md）
 Dockerfile .dockerignore     # 多阶段构建 → standalone 产物，非 root 运行
 docker-compose.yml .env.example
 .github/                     # CI、Issue 模板、PR 模板

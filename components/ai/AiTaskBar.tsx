@@ -91,5 +91,5 @@ export function AiTaskBar({chapterId,selection,className}:AiTaskBarProps) {
     const instruction=task.feature==="continue"?"承接当前章末尾续写约600字，追加到本章，不新建下一章。":task.needsSelection?`${task.label}当前选中的段落，保持其余正文和人物事实不变。`:task.instruction||task.hint;
     handToAssistant({reference:chapterId?{type:"chapter",id:chapterId,label:"当前章节"}:null,taskId:`shortcut-${task.key}`,taskLabel:task.label,prompt:instruction,selection:selected||undefined,autoSend:true});
   };
-  return <Dropdown width={236} trigger={<Button className={cn("h-7 gap-1.5 px-2 text-[11px] text-accent",className)} size="sm" variant="ghost" aria-label="AI 快捷任务" aria-haspopup="menu" disabled={!chapterId} icon={<Sparkles className="size-3.5"/>}>AI 助手<ChevronDown className="size-3"/></Button>} items={TASKS.map(task=>({label:task.label,icon:task.icon,disabled:!chapterId,onSelect:()=>run(task)}))}/>;
+  return <Dropdown align="start" width={236} trigger={<Button className={cn("h-7 gap-1.5 px-2 text-[11px] text-accent",className)} size="sm" variant="ghost" aria-label="AI 快捷任务" aria-haspopup="menu" disabled={!chapterId} icon={<Sparkles className="size-3.5"/>}>AI 助手<ChevronDown className="size-3"/></Button>} items={TASKS.map(task=>({label:task.label,icon:task.icon,disabled:!chapterId,onSelect:()=>run(task)}))}/>;
 }

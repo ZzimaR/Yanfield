@@ -1,7 +1,7 @@
-# 砚田 Yantian — 生产镜像
+# 砚田 Yanfield — 生产镜像
 #
 # 多阶段构建：deps（装依赖）→ builder（next build）→ runner（standalone 产物）
-# 运行：docker run --rm -p 3000:3000 -v yantian-data:/app/data yantian
+# 运行：docker run --rm -p 3000:3000 -v yanfield-data:/app/data yanfield
 #
 # 依赖 next.config.ts 中的 output: "standalone"；没有它 .next/standalone 不会生成。
 
@@ -36,7 +36,7 @@ ENV YANFIELD_DB_PATH=/app/data/yanfield.db
 
 # 非 root 运行
 RUN addgroup -g 1001 -S nodejs \
- && adduser -S yantian -u 1001 -G nodejs
+ && adduser -S yanfield -u 1001 -G nodejs
 
 # standalone 产物已包含裁剪后的 node_modules 与 server.js
 COPY --from=builder /app/public ./public
@@ -47,9 +47,9 @@ COPY --from=builder /app/scripts ./scripts
 
 # 数据卷：SQLite 单文件，挂载后容器重建不丢稿
 VOLUME ["/app/data"]
-RUN mkdir -p /app/data && chown -R yantian:nodejs /app && chmod 0775 /app/data
+RUN mkdir -p /app/data && chown -R yanfield:nodejs /app && chmod 0775 /app/data
 
-USER yantian
+USER yanfield
 EXPOSE 3000
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \

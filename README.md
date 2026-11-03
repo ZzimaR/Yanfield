@@ -60,7 +60,7 @@ pnpm dev
 
 - 不绑定模型厂商，OpenAI 兼容 / Anthropic / Gemini / Ollama 都能接，助手与写作任务共用默认模型，随时可换；
 - 上下文装配是可见、可调的——哪些资料进入上下文、花多少 token，都能在设置和预览里看到；
-- 助手能按需读资料、多步执行，提出正文和资料改动；正文在写作区逐处高亮审阅，资料按字段对比。确认后批量写入，也可撤回。见[正文审阅截图](docs/screenshots/18-inline-review.jpg)。
+- 助手能按需读资料、多步执行，提出正文和资料改动；正文在写作区逐处高亮审阅，资料按字段对比。新章可整篇保留，已有正文可逐处保留或还原；确认后回到普通正文继续编辑，历史对比单独查看。工具栏的「AI 助手」下拉菜单收纳快捷任务。见[正文审阅截图](docs/screenshots/22-review-light.jpg)。
 
 ## 已实现（v0.1.0 开发版）
 
@@ -109,6 +109,8 @@ pnpm build
 pnpm start
 ```
 
+systemd 模板：[deploy/yanfield.service](deploy/yanfield.service)。Docker/Compose 的默认服务、镜像与容器名统一为 `yanfield`；旧部署切换方式见[部署升级说明](docs/deploy.md#从旧命名部署升级)。
+
 Windows 上如果没有符号链接权限，构建时设置 `YANFIELD_STANDALONE=0`（或使用 Docker）。systemd / VPS / 反向代理 / 备份恢复等完整说明见 [docs/deploy.md](docs/deploy.md)。
 
 ## 项目结构
@@ -141,16 +143,21 @@ Next.js 15 · React 19 · TypeScript strict · Tailwind CSS v4 · Tiptap 3 · no
 
 介绍页也可在本地 `/intro` 预览。新版介绍页围绕本地保存、免费自托管、自带 API 和可审阅的 AI 修改展开；写作台演示直接渲染文字，支持切换正文与改动视图。
 
-资料弹窗单独展示，保留原始尺寸，不再把整屏文字挤进两栏小图。点击图片可查看原图。
+新版正文审阅：蓝色操作卡片、原文与修订稿分层显示，文字变化仍保留红删绿增。点击图片查看 1200×900 原图。
+
+[![新版正文审阅：蓝色操作卡片与逐处修订](docs/screenshots/22-review-light.jpg)](docs/screenshots/22-review-light.jpg)
+
+资料编辑窗口：
 
 [![资料编辑窗口：统一 AI 助手入口与档案排版](docs/screenshots/20-card-editor-focus.jpg)](docs/screenshots/20-card-editor-focus.jpg)
 
 其余界面保留完整原图，按需打开：
 
 - [三栏写作台与 Agent 改动回执](docs/screenshots/13-agent-workbench.jpg)
-- [正文中的逐处修改审阅](docs/screenshots/18-inline-review.jpg)
+- [正文中的逐处修改审阅](docs/screenshots/22-review-light.jpg)
 - [用量与费用来源明细](docs/screenshots/15-usage-details.jpg)
-- [深色「夜航」写作台](docs/screenshots/16-agent-dark.jpg)
+- [新版深色正文审阅](docs/screenshots/21-review-dark.jpg)
+- [工具栏 AI 助手菜单](docs/screenshots/24-ai-menu.jpg)
 - [资料自动 @ 引用](docs/screenshots/17-card-reference.jpg)
 - [介绍页](https://yanfield.com/)
 

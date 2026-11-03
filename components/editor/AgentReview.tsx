@@ -1,6 +1,6 @@
 "use client";
 import * as React from "react";
-import { ArrowDown, ArrowUp, Check, X } from "lucide-react";
+import { ArrowDown, ArrowUp, Check, FilePenLine, RotateCcw, X } from "lucide-react";
 import { Button } from "@/components/ui/kit";
 import { splitBlocks } from "@/lib/diff/blocks";
 import { reviewUnits } from "@/lib/editor/agent-review";
@@ -57,35 +57,45 @@ export function AgentReview({initial,changeId,onClose}:{initial:AgentRun;changeI
       <button type="button" disabled={busy} className="mb-1 font-sans text-[10px] text-ink-4" onClick={()=>setChoices(current=>{const next={...current};delete next[item.id];return next;})}>{decision?"已保留":"已还原"} · 重新审阅</button>
       <p className="whitespace-pre-wrap">{decision?item.afterText:item.beforeText}</p>
     </section>;
-    return <section key={item.id} data-change-index={index} className="my-6">
-      <div className={`mb-2 border-l-2 px-3 py-2 ${item.beforeText?"border-danger/40 bg-danger/[0.045]":"border-jade/40 bg-jade/[0.035]"}`}>
-        <div className="mb-2 flex flex-wrap items-center gap-2 font-sans text-[10px] text-ink-3">
-          <span>AI 修改 · 第 {index+1}/{units.length} 处</span>
-          {pending?<div className="ml-auto flex gap-1">
-            <button type="button" disabled={busy} className="inline-flex items-center gap-1 rounded border border-jade/25 px-2 py-1 text-jade hover:bg-jade/10" onClick={()=>choose(item.id,true)}><Check className="size-3"/>保留</button>
-            <button type="button" disabled={busy} className="rounded border border-line px-2 py-1 text-ink-3 hover:bg-surface-2" onClick={()=>choose(item.id,false)}>还原</button>
-          </div>:<span className="ml-auto text-ink-4">历史快照</span>}
-        </div>
-        {item.beforeText?<p className="whitespace-pre-wrap text-ink-3">{item.inline?item.inline.filter(s=>s.type!=="add").map((s,i)=><span key={i} className={s.type==="del"?"bg-danger/15 text-danger line-through":""}>{s.text}</span>):<del className="bg-danger/10 text-danger">{item.beforeText}</del>}</p>:null}
-        {!item.beforeText && item.afterText?<p className="whitespace-pre-wrap"><span className="bg-jade/15 text-jade">{item.afterText}</span></p>:null}
+    return <section key={item.id} data-change-index={index} className="my-7 border-t border-line/70 pt-3">
+      <div className="mb-4 flex flex-wrap items-center gap-2 font-sans text-[11px]">
+        <span className="mr-1 font-mono text-accent">{String(index+1).padStart(2,"0")}</span>
+        <span className="text-ink-4">{item.beforeText?(item.afterText?"文字修订":"删去段落"):"新增正文"}</span>
+        {pending?<div className="ml-auto flex items-center gap-1">
+          <button type="button" disabled={busy} className="inline-flex items-center gap-1 rounded-full bg-accent/10 px-3 py-1 text-accent transition-colors hover:bg-accent/20 disabled:opacity-40" onClick={()=>choose(item.id,true)}><Check className="size-3"/>保留</button>
+          <button type="button" disabled={busy} className="inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-ink-3 transition-colors hover:bg-surface-2 disabled:opacity-40" onClick={()=>choose(item.id,false)}><RotateCcw className="size-3"/>还原</button>
+        </div>:<span className="ml-auto text-ink-4">历史快照</span>}
       </div>
-      {item.beforeText && item.afterText?<p className="whitespace-pre-wrap">{item.inline?item.inline.filter(s=>s.type!=="del").map((s,i)=><span key={i} className={s.type==="add"?"bg-jade/15 text-jade":""}>{s.text}</span>):<span className="bg-jade/15 text-jade">{item.afterText}</span>}</p>:null}
+      {item.beforeText?<div className="mb-5 border-l border-line-strong pl-4">
+        <span className="mb-1 block font-sans text-[10px] tracking-widest text-ink-4">原文</span>
+        <p className="whitespace-pre-wrap text-ink-3">{item.inline?item.inline.filter(s=>s.type!=="add").map((s,i)=><span key={i} className={s.type==="del"?"text-danger line-through decoration-danger/60":""}>{s.text}</span>):<del className="text-danger decoration-danger/60">{item.beforeText}</del>}</p>
+      </div>:null}
+      {item.afterText?<div className="border-l-2 border-accent/30 pl-4">
+        <span className="mb-1 block font-sans text-[10px] tracking-widest text-accent/80">{item.beforeText?"修订稿":"新稿"}</span>
+        <p className="whitespace-pre-wrap">{item.inline?item.inline.filter(s=>s.type!=="del").map((s,i)=><span key={i} className={s.type==="add"?"bg-jade/10 text-jade underline decoration-jade/30 underline-offset-4":""}>{s.text}</span>):<span className="bg-jade/10 text-jade">{item.afterText}</span>}</p>
+      </div>:null}
     </section>;
   };
   const blocks=splitBlocks(before),byId=new Map(units.filter(c=>c.type!=="added").map(c=>[c.id,c]));
   const additions=(anchor:string|null)=>units.filter(c=>c.type==="added"&&c.anchorId===anchor).map(renderChange);
   return <div ref={root} data-testid="agent-inline-review" className="ai-surface pb-8">
-    <div className="sticky top-0 z-20 -mx-2 mb-6 border-y border-line bg-paper/95 px-2 py-3 backdrop-blur">
-      <div className="flex flex-wrap items-center gap-2 font-sans text-[11px]">
-        <span className="text-jade">{pending?"AI 修改待审阅":"历史改动 · 只读"}</span><span className="text-ink-2">{change?.title}</span><span className="text-ink-4">{units.length} 处</span>
-        <button type="button" className="ml-auto inline-flex items-center gap-1 text-ink-3" aria-label="返回正文编辑" disabled={busy} onClick={onClose}><X className="size-3"/>返回正文</button>
+    <div className="sticky top-2 z-20 mb-7 overflow-hidden rounded-xl border border-line/80 bg-surface/95 shadow-sm backdrop-blur">
+      <div className="flex items-start gap-3 px-4 pt-4">
+        <span className="mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-lg bg-accent/10 text-accent"><FilePenLine className="size-4"/></span>
+        <div className="min-w-0 flex-1 font-sans">
+          <div className="flex flex-wrap items-center gap-x-2 gap-y-1"><span className="text-[13px] font-medium text-ink">{pending?"审阅修订":"修订存档"}</span><span className="text-[10px] tabular-nums text-ink-4">{pending?`${Object.keys(choices).length} / ${units.length} 已审阅`:`${units.length} 处改动`}</span></div>
+          <p className="mt-1 truncate text-[11px] text-ink-3">{change?.title}</p>
+        </div>
+        <button type="button" className="flex size-7 shrink-0 items-center justify-center rounded-full text-ink-4 transition-colors hover:bg-surface-2 hover:text-ink" aria-label="返回正文编辑" disabled={busy} onClick={onClose}><X className="size-3.5"/></button>
       </div>
-      <div className="mt-2 flex flex-wrap gap-1.5">
-        {units.length>1?<><Button size="sm" variant="ghost" icon={<ArrowUp className="size-3"/>} onClick={()=>jump(active-1)}>上一处</Button><Button size="sm" variant="ghost" icon={<ArrowDown className="size-3"/>} onClick={()=>jump(active+1)}>下一处</Button></>:null}
-        {pending?<><Button size="sm" variant="ghost" disabled={busy} onClick={()=>void finish(Object.fromEntries(units.map(unit=>[unit.id,false])))}>全部还原</Button><Button size="sm" variant="primary" className="ml-auto" loading={busy} disabled={!units.length} icon={<Check className="size-3"/>} onClick={()=>void finish(choices)}>{Object.keys(choices).length?"确认剩余改动":"全部保留"}</Button></>:null}
+      <div className="flex flex-wrap items-center gap-1 px-3 pb-3 pt-3">
+        {units.length>1?<div className="mr-auto flex items-center gap-1"><Button size="sm" variant="ghost" className="h-7 px-2 text-[11px]" icon={<ArrowUp className="size-3"/>} onClick={()=>jump(active-1)}>上一处</Button><span className="px-1 font-mono text-[10px] tabular-nums text-ink-4">{active+1}/{units.length}</span><Button size="sm" variant="ghost" className="h-7 px-2 text-[11px]" icon={<ArrowDown className="size-3"/>} onClick={()=>jump(active+1)}>下一处</Button></div>:null}
+        {pending?<><Button size="sm" variant="ghost" className="h-7 px-2 text-[11px]" disabled={busy} onClick={()=>void finish(Object.fromEntries(units.map(unit=>[unit.id,false])))}>全部还原</Button><Button size="sm" variant="secondary" className="ml-auto h-7 border-accent/20 bg-accent/10 px-3 text-[11px] text-accent shadow-none hover:bg-accent/20" loading={busy} disabled={!units.length} icon={<Check className="size-3"/>} onClick={()=>void finish(choices)}>{Object.keys(choices).length?"确认剩余":"全部保留"}</Button></>:null}
       </div>
-      <p className="mt-2 text-[10px] leading-relaxed text-ink-4">{pending?"红色为删除，绿色为新增。逐处保留或还原；审阅完成后自动回到正文，也可一次全部保留。":"这里保留本次修改前后的记录。关闭后即可继续编辑当前正文。"}</p>
-      {error?<p role="alert" className="mt-2 text-[11px] text-danger">{error}</p>:null}
+      <div className="border-t border-line/60 bg-paper/40 px-4 py-2">
+        <p className="text-[10px] leading-relaxed text-ink-4">{pending?"绿色标出新增，删除处以划线标记。审阅完成，即可继续写作。":"本轮修改的历史快照，关闭即可返回当前正文。"}</p>
+        {error?<p role="alert" className="mt-2 text-[11px] text-danger">{error}</p>:null}
+      </div>
     </div>
     <div className="font-serif text-[17px] leading-[2.1] text-ink-2">{additions(null)}{blocks.map(b=><React.Fragment key={b.id}>{byId.has(b.id)?renderChange(byId.get(b.id)!):<p className="my-5 whitespace-pre-wrap">{b.text}</p>}{additions(b.id)}</React.Fragment>)}{!units.length?<p>内容没有变化。</p>:null}</div>
   </div>;

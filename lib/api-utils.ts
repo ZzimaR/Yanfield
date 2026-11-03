@@ -54,7 +54,7 @@ export function handle<P extends Record<string, string> = Record<string, string>
       return await fn(req, { params });
     } catch (err) {
       if (err instanceof ApiError) return bad(err.message, err.status);
-      console.error("[yantian] route error:", err);
+      console.error("[yanfield] route error:", err);
       return bad(err instanceof Error ? err.message : "服务器内部错误", 500);
     }
   };

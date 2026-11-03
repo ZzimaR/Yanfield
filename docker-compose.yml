@@ -11,12 +11,12 @@
 # 详见 docs/deploy.md
 
 services:
-  yantian:
+  yanfield:
     build:
       context: .
       dockerfile: Dockerfile
-    image: yantian:latest
-    container_name: yantian
+    image: yanfield:latest
+    container_name: yanfield
     restart: unless-stopped
 
     ports:
