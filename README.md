@@ -1,57 +1,102 @@
+<div align="center">
+
 # 砚田 Yanfield
 
-本地部署、隐私优先的长篇小说创作工作台。书稿、设定与灵感都保存在你自己的电脑或服务器上，不依赖账号和云端平台；在此基础上接入 AI，辅助大纲、写作与资料管理，每一处 AI 改动都由你点头才落笔。
+**为长篇故事留一方安静的书桌。**
 
-[![License: Noncommercial](https://img.shields.io/badge/License-Noncommercial-a97f2b)](LICENSE)
-[![Node](https://img.shields.io/badge/Node-%E2%89%A522.13-3c873a)](https://nodejs.org)
-[![Next.js](https://img.shields.io/badge/Next.js-15-000000)](https://nextjs.org)
-[![TypeScript](https://img.shields.io/badge/TypeScript-strict-3178c6)](https://www.typescriptlang.org)
-[![Tests](https://img.shields.io/badge/tests-Vitest-2f5d62)](tests)
-[![Docker](https://img.shields.io/badge/Docker-ready-2496ed)](Dockerfile)
+本地优先的小说创作工作台，让正文、设定与 AI 助手在同一处相伴。<br>
+书稿由你自己保管，模型按需接入，AI 改动由你审阅。
 
-> **状态：v0.1.0 开发中，尚未发布正式版本。** 核心流程可试用，多步 Agent 需配置实际模型；接口和界面仍可能调整，欢迎试用与反馈。
+[![开发状态](https://img.shields.io/badge/status-v0.1.0%20dev-a97f2b?style=flat-square)](#贡献)
+[![Node.js 版本](https://img.shields.io/badge/Node.js-%E2%89%A5%2022.13-4f7864?style=flat-square)](https://nodejs.org)
+[![Docker 支持](https://img.shields.io/badge/Docker-ready-4d7f9b?style=flat-square)](Dockerfile)
+[![非商业许可](https://img.shields.io/badge/license-PolyForm%20Noncommercial-a97f2b?style=flat-square)](LICENSE)
+
+[快速开始](#快速开始) · [功能亮点](#功能亮点) · [界面截图](#截图) · [文档](#文档) · [反馈与贡献](#贡献)
+
+</div>
+
+> [!NOTE]
+> **砚田仍在开发中，尚未发布正式版本。** 功能和界面还在持续打磨，使用时难免有不完善的地方，恳请多多包涵。
+>
+> 遇到 [Bug](https://github.com/ZzimaR/Yanfield/issues/new?template=bug_report.md)、有 [功能建议](https://github.com/ZzimaR/Yanfield/issues/new?template=feature_request.md)，或想分享写作体验，都欢迎通过 [Issue](https://github.com/ZzimaR/Yanfield/issues/new/choose) 告诉我们。感谢你的耐心与支持！
+
+[![砚田三栏写作台：左侧资料、中间正文、右侧 AI 助手](docs/screenshots/25-workspace.png)](docs/screenshots/25-workspace.png)
+
+<p align="center"><sub>三栏写作台 · 示例书稿 · 点击图片查看原图</sub></p>
+
+## 功能亮点
+
+| 专注写作 | 管好长篇资料 |
+| --- | --- |
+| 作品、分卷与章节清晰排列，自动保存、排版调整和专注模式陪你安心写作。 | 总纲、章纲、角色、设定与故事档案放在手边，方便随写随查。 |
+| **AI 协作，作者做主** | **本地优先，数据自主** |
+| 按需续写、改稿或整理资料；AI 提出的修改先展示，再由你决定是否采纳。 | 书稿与配置保存在自己的电脑或服务器上；可自行备份，也可选择本地模型。 |
 
 ## 快速开始
 
-需要 Node.js ≥ 22.13（自带 `node:sqlite`，不用开实验标志）和 pnpm ≥ 9。不需要 Docker、MongoDB 或 Redis。
+日常使用建议运行**生产模式**。需要 Git、Node.js ≥ 22.13 和 pnpm ≥ 9；不需要 Docker、MongoDB 或 Redis。
 
-如果还没有 Node.js，先按系统安装：
+<details>
+<summary>还没有安装 Node.js 或 pnpm？</summary>
 
-- **Windows**：从 [Node.js 官网](https://nodejs.org) 下载 24 LTS 的 Windows Installer（`.msi`）并安装，保持默认选项即可。安装完成后打开 PowerShell，运行 `node --version` 和 `npm.cmd --version` 检查是否成功。
-- **macOS**：从 [Node.js 官网](https://nodejs.org) 下载 24 LTS 的 macOS Installer（`.pkg`）并安装。安装完成后打开「终端」，运行 `node --version` 和 `npm --version` 检查是否成功。也可以使用 Homebrew：`brew install node@24`。
+- **Windows**：从 [Node.js 官网](https://nodejs.org) 下载 24 LTS 的 Windows Installer（`.msi`）并安装。打开 PowerShell，运行 `node --version` 和 `npm.cmd --version` 检查是否成功。
+- **macOS**：从 [Node.js 官网](https://nodejs.org) 下载 24 LTS 的 macOS Installer（`.pkg`）并安装，或使用 Homebrew：`brew install node@24`。安装后运行 `node --version` 和 `npm --version`。
+- npm 随 Node.js 一起安装。确认 npm 可用后，运行 `npm install --global pnpm@9` 安装 pnpm；Windows PowerShell 可使用 `npm.cmd install --global pnpm@9`。
 
-npm 会随 Node.js 一起安装，不需要单独下载。确认 npm 可用后，再安装 pnpm：
+项目使用 pnpm 和锁文件管理依赖，不建议混用 npm 或 yarn。Windows 使用 `npm.cmd`、`pnpm.cmd` 也可以避开 PowerShell 的脚本执行策略限制，无需修改全局策略。
 
-```bash
-npm install --global pnpm@9
-```
+</details>
 
-项目使用 pnpm 管理依赖并锁定版本；虽然 npm/yarn 在部分情况下也能安装，但不建议混用。
-
-> Windows PowerShell 若提示禁止运行 `npm.ps1` 或 `pnpm.ps1`，可使用 `npm.cmd` 和 `pnpm.cmd`，例如 `npm.cmd install --global pnpm@9`、`pnpm.cmd install`、`pnpm.cmd dev`，无需修改全局执行策略。
+### 1. 获取源码
 
 ```bash
 git clone https://github.com/ZzimaR/Yanfield.git
 cd Yanfield
-pnpm install
-pnpm dev
 ```
 
-打开 http://127.0.0.1:3000 。第一次启动会自己建数据库，并放进示例作品《潮信》，可以直接写。
+### 2. 安装、构建并启动
 
-接模型可以等写完再做。左下角齿轮打开设置，选 DeepSeek（或其他 OpenAI 兼容服务），粘贴 API Key，主动拉取并选择可用模型。也可以把 `.env.example` 复制成 `.env`，填一个 `*_API_KEY`，下次启动会自动建好服务。细节见 [docs/ai-providers.md](docs/ai-providers.md)。
+**Windows（PowerShell）**
 
-[![写作台功能示意：资料、正文与可审阅的 AI 修改](docs/screenshots/workspace-overview.svg)](docs/screenshots/workspace-overview.svg)
+```powershell
+pnpm.cmd install --frozen-lockfile
+$env:YANFIELD_STANDALONE = "0"
+$env:NEXT_TELEMETRY_DISABLED = "1"
+pnpm.cmd build
+pnpm.cmd start --hostname 127.0.0.1
+```
 
-主图为可缩放的矢量功能示意，放大仍可清楚阅读；真实界面见下方[截图](#截图)。
+**macOS / Linux**
+
+```bash
+pnpm install --frozen-lockfile
+export YANFIELD_STANDALONE=0
+export NEXT_TELEMETRY_DISABLED=1
+pnpm build
+pnpm start --hostname 127.0.0.1
+```
+
+打开 [http://127.0.0.1:3000](http://127.0.0.1:3000)。首次使用时会创建本地数据库和示例作品《潮信》。
+
+`YANFIELD_STANDALONE=0` 使用适合本机运行的普通构建，也能避免 Windows 的符号链接权限问题；`NEXT_TELEMETRY_DISABLED=1` 关闭 Next.js 自带的匿名遥测。**每次新开终端启动时，都需要重新设置这两个变量**。
+
+首次安装或更新代码后需要构建。日后进入 `Yanfield` 目录，重新设置变量并运行 `pnpm start --hostname 127.0.0.1`（Windows 使用 `pnpm.cmd`），不必每次重新构建。保持终端运行，按 `Ctrl + C` 停止。
+
+`pnpm dev` 是开发调试模式，首次访问页面时可能需要即时编译；日常写作请使用上面的生产模式。上述启动命令只监听本机；砚田没有登录鉴权，不要直接暴露到公网，远程访问请参考[部署指南](docs/deploy.md)。
+
+### 3. 按需接入 AI
+
+不接模型也能写作。需要 AI 时，打开左下角设置，选择 DeepSeek 或其他兼容服务，填写 API Key，再拉取并选择可用模型。也可以将 `.env.example` 复制为 `.env`，填写 `*_API_KEY` 后重启；详见[模型服务与接入](docs/ai-providers.md)。多步 Agent 需要配置实际模型，离线演示模型只提供模板功能。
 
 ## 本地部署，隐私优先
 
 砚田首先是一个本地运行的写作工具，其次才是 AI 创作助手。你可以把它部署在自己的电脑、家庭服务器或自有 VPS 上，作品数据和配置由你自己掌控。
 
 - 书稿、设定、AI 对话与 API Key 都保存在本地 SQLite 中，不需要注册、登录或订阅；
-- 没有遥测、云同步或砚田自有服务器，只有你主动配置的模型服务会收到请求；
-- 支持离线模板演示；多步 Agent 需配置实际模型。也可以连接本机 Ollama，让内容不离开自己的设备；
+- 砚田本身不提供用户遥测、云同步或自有服务器；上面的启动命令也关闭了 Next.js 自带的匿名遥测；
+- 使用云模型时，实际请求中的书稿和上下文会发送给你配置的模型服务；也可以连接本机 Ollama，让模型请求留在自己的设备上；
+- 支持离线模板演示；多步 Agent 需配置实际模型；
 - 源码公开、部署方式透明，数据文件可以自行备份、迁移和检查。
 
 ## 为什么加入 AI
@@ -65,6 +110,9 @@ pnpm dev
 - 助手能按需读资料、多步执行，提出正文和资料改动；正文在写作区逐处高亮审阅，资料按字段对比。新章可整篇保留，已有正文可逐处保留或还原；确认后回到普通正文继续编辑，历史对比单独查看。工具栏的「AI 助手」下拉菜单收纳快捷任务。见[正文审阅截图](docs/screenshots/22-review-light.jpg)。
 
 ## 已实现（v0.1.0 开发版）
+
+<details>
+<summary>展开查看写作、AI 和资料功能</summary>
 
 **写作**
 - 作品 / 卷 / 章三级结构，三栏沉浸写作台（目录 · 正文 · AI），自动保存、字数统计、专注模式
@@ -99,21 +147,19 @@ pnpm dev
 - 故事档案：本章摘要、人物状态、设定变动、总账、时间线、待确认冲突；正文更改后标记过期，重新提取时保留人工校订内容
 - TXT 导入（正则拆章、预览后落库）、Markdown / TXT 导出
 
+</details>
+
 ## 部署
 
 ```bash
 # Docker Compose（数据持久化到 ./data；先建目录，避免容器以 root 创建后无写权限）
 mkdir -p data
 docker compose up -d --build
-
-# 或 Node 直接跑
-pnpm build
-pnpm start
 ```
 
-systemd 模板：[deploy/yanfield.service](deploy/yanfield.service)。Docker/Compose 的默认服务、镜像与容器名统一为 `yanfield`；旧部署切换方式见[部署升级说明](docs/deploy.md#从旧命名部署升级)。
+Node 直接运行见[快速开始](#快速开始)。systemd 模板：[deploy/yanfield.service](deploy/yanfield.service)。Docker/Compose 的默认服务、镜像与容器名统一为 `yanfield`；旧部署切换方式见[部署升级说明](docs/deploy.md#从旧命名部署升级)。
 
-Windows 上如果没有符号链接权限，构建时设置 `YANFIELD_STANDALONE=0`（或使用 Docker）。systemd / VPS / 反向代理 / 备份恢复等完整说明见 [docs/deploy.md](docs/deploy.md)。
+systemd / VPS / 反向代理 / 备份恢复等完整说明见[部署指南](docs/deploy.md)。
 
 ## 项目结构
 
@@ -129,9 +175,10 @@ docs/         功能、架构、模型服务、部署、常见问题、路线图
 ## 开发与测试
 
 ```bash
+pnpm dev         # 开发模式，支持热更新
 pnpm typecheck   # tsc --noEmit
 pnpm test        # Vitest 测试
-pnpm build       # 生产构建
+pnpm build       # 生产构建；本机运行前按快速开始设置环境变量
 ```
 
 需要新增示例作品时，可用「设置 → 数据 → 重新生成示例作品」。**谨慎使用 `pnpm db:seed`**：它会删除作者为「砚田示例」或标题为《潮信》《长夜行》的所有作品（包括同名自建作品），并删除内置提示词预设；其中的修改可能丢失。运行前请先停服并备份数据库。重启后仅当数据库没有任何作品时才自动创建示例。
@@ -144,43 +191,33 @@ Next.js 15 · React 19 · TypeScript strict · Tailwind CSS v4 · Tiptap 3 · no
 
 ## 截图
 
-介绍页也可在本地 `/intro` 预览。新版介绍页围绕本地保存、免费自托管、自带 API 和可审阅的 AI 修改展开；写作台演示直接渲染文字，支持切换正文与改动视图。
+点击图片查看原图。介绍页也可在本地 `/intro` 预览。
 
-新版正文审阅：蓝色操作卡片、原文与修订稿分层显示，文字变化仍保留红删绿增。点击图片查看原图。
+| 正文逐处审阅 | 随写随查章纲 |
+| --- | --- |
+| [![正文审阅：原文与修订稿逐处对照](docs/screenshots/22-review-light.jpg)](docs/screenshots/22-review-light.jpg) | [![章纲与正文并排显示](docs/screenshots/05-outline-blue.png)](docs/screenshots/05-outline-blue.png) |
 
-[![新版正文审阅：蓝色操作卡片与逐处修订](docs/screenshots/22-review-light.jpg)](docs/screenshots/22-review-light.jpg)
+更多界面：
 
-资料编辑窗口：
-
-[![资料编辑窗口：统一 AI 助手入口与档案排版](docs/screenshots/20-card-editor-focus.jpg)](docs/screenshots/20-card-editor-focus.jpg)
-
-其余界面保留完整原图，按需打开：
-
-- [三栏写作台与 Agent 改动回执](docs/screenshots/13-agent-workbench.jpg)
-- [三栏写作台](docs/screenshots/25-workspace.png)
-- [章纲与故事档案](docs/screenshots/05-outline-blue.png) · [档案冲突提示](docs/screenshots/07-archives.png)
+- [Agent 改动回执](docs/screenshots/13-agent-workbench.jpg) · [资料编辑窗口](docs/screenshots/20-card-editor-focus.jpg)
+- [故事档案与冲突提示](docs/screenshots/07-archives.png)
 - [模型服务设置](docs/screenshots/10-provider-settings.png) · [上下文预览](docs/screenshots/11-context-drawer.png)
-- [正文中的逐处修改审阅](docs/screenshots/22-review-light.jpg)
 - [用量与费用来源明细](docs/screenshots/15-usage-details.jpg)
-- [新版深色正文审阅](docs/screenshots/21-review-dark.jpg)
+- [深色主题正文审阅](docs/screenshots/21-review-dark.jpg)
 - [工具栏 AI 助手菜单](docs/screenshots/24-ai-menu.jpg)
 - [资料自动 @ 引用](docs/screenshots/17-card-reference.jpg)
-- [介绍页](https://yanfield.com/)
+- [写作台功能示意图](docs/screenshots/workspace-overview.svg) · [在线介绍页](https://yanfield.com/)
 
-界面截图使用独立示例书稿；Agent 候选与用量明细使用本地构造的模拟响应和数据，不代表真实模型效果或服务商价格。主图为功能示意，不是运行截图。历史界面见 [docs/screenshots](docs/screenshots/)。
+界面截图使用独立示例书稿；Agent 候选与用量明细使用本地构造的模拟响应和数据，不代表真实模型效果或服务商价格。历史界面见[截图说明](docs/screenshots/README.md)。
 
 ## 文档
 
-- [Agent 工作流、改动审阅与用量说明](docs/agent-workflow.md)
-- [真实模型连续任务回归记录](docs/agent-protocol-validation.md)
-
-- [功能说明](docs/features.md)
-- [架构与数据模型](docs/architecture.md)
-- [长篇性能检查与当前边界](docs/performance-audit.md)
-- [模型服务与接入](docs/ai-providers.md)
-- [部署指南](docs/deploy.md)
-- [常见问题](docs/faq.md)
-- [路线图](docs/roadmap.md)
+| 想了解什么 | 参考文档 |
+| --- | --- |
+| 使用与功能 | [功能说明](docs/features.md) · [常见问题](docs/faq.md) |
+| 模型与 AI | [模型服务与接入](docs/ai-providers.md) · [Agent 工作流、审阅与用量](docs/agent-workflow.md) |
+| 部署与规划 | [部署指南](docs/deploy.md) · [路线图](docs/roadmap.md) |
+| 架构与验证 | [架构与数据模型](docs/architecture.md) · [长篇性能检查](docs/performance-audit.md) · [真实模型回归记录](docs/agent-protocol-validation.md) |
 
 ## 路线图
 
@@ -190,7 +227,13 @@ Next.js 15 · React 19 · TypeScript strict · Tailwind CSS v4 · Tiptap 3 · no
 
 ## 贡献
 
-见 [CONTRIBUTING.md](CONTRIBUTING.md)。Issue 与 PR 都欢迎；较大的改动请先开 issue 讨论。
+无论是使用中遇到的 Bug、觉得不够顺手的地方，还是新的功能想法，都欢迎告诉我们。不必会写代码，你的使用反馈同样能帮助砚田变得更好。
+
+[报告 Bug](https://github.com/ZzimaR/Yanfield/issues/new?template=bug_report.md) · [提出功能建议](https://github.com/ZzimaR/Yanfield/issues/new?template=feature_request.md) · [查看已有 Issue](https://github.com/ZzimaR/Yanfield/issues)
+
+反馈问题时，如能附上复现步骤、运行环境和截图，会更容易定位。请先遮去 API Key、私人书稿等敏感信息；安全漏洞请通过[私密安全报告](https://github.com/ZzimaR/Yanfield/security/advisories/new)提交。
+
+也欢迎提交 PR，开发与提交流程见[贡献指南](CONTRIBUTING.md)；较大的改动建议先开 Issue 讨论。
 
 ## 许可
 

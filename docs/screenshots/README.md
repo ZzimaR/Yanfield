@@ -1,6 +1,6 @@
 # 产品截图
 
-本目录包含运行界面截图和历史图片。[README](../../README.md) 顶部使用的 `workspace-overview.svg` 是功能示意图，不是应用截图。
+本目录包含运行界面截图和历史图片。[README](../../README.md) 顶部使用三栏写作台截图；`workspace-overview.svg` 是功能示意图，不是应用截图。
 
 当前截图使用独立示例数据库中的虚构书稿与资料。Agent 候选、正文审阅和用量明细使用本地构造的模拟响应和数据，只展示交互，不代表真实模型效果或服务商价格；没有向真实模型发送书稿。浅色为「宣纸」，深色为「夜航」。图片按实际视口或窗口截取，尺寸不统一。
 
@@ -8,7 +8,7 @@
 
 | 图片 | 展示内容 |
 | --- | --- |
-| [25-workspace.png](./25-workspace.png) | 三栏写作台、章节目录与统一 AI 助手 |
+| [25-workspace.png](./25-workspace.png) | 三栏写作台、章节目录与统一 AI 助手；README 顶部展示图 |
 | [05-outline-blue.png](./05-outline-blue.png) | 写作台「章纲」页签、总纲与分卷章节 |
 | [07-archives.png](./07-archives.png) | 故事档案、过期状态与待确认冲突 |
 | [10-provider-settings.png](./10-provider-settings.png) | 模型服务设置：协议/地址预设、离线演示服务与统一默认模型 |

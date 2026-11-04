@@ -54,19 +54,32 @@
 git clone https://github.com/ZzimaR/Yanfield.git
 cd Yanfield
 pnpm install --frozen-lockfile
+export YANFIELD_STANDALONE=0
+export NEXT_TELEMETRY_DISABLED=1
 pnpm build
-pnpm start            # 生产模式，监听 http://127.0.0.1:3000
+pnpm start --hostname 127.0.0.1
 ```
 
-- 监听地址 / 端口：`HOSTNAME=0.0.0.0 PORT=8080 pnpm start`（bash）或 PowerShell 里先 `$env:PORT=8080`。`pnpm dev` 的端口固定为 3000。
-- 数据库位置：默认 `./data/yanfield.db`；用 `YANFIELD_DB_PATH` 指定绝对路径更适合长期部署。
-- 升级：`git pull && pnpm install --frozen-lockfile && pnpm build`，重启进程即可（数据库自动兼容，升级前仍建议先备份）。
+Windows PowerShell 在获取源码后使用：
 
-> **Windows 构建注意**：`next build` 默认产出 Docker 用的 standalone 目录，这一步需要创建符号链接。没开「开发者模式」会报 `EPERM: operation not permitted, symlink`。此时用 `$env:YANFIELD_STANDALONE='0'; pnpm build`，再 `pnpm start` 即可（只影响 Docker 产物，不影响生产运行）。
+```powershell
+pnpm.cmd install --frozen-lockfile
+$env:YANFIELD_STANDALONE = "0"
+$env:NEXT_TELEMETRY_DISABLED = "1"
+pnpm.cmd build
+pnpm.cmd start --hostname 127.0.0.1
+```
+
+- 上述命令使用生产模式并只监听本机。`pnpm dev` 用于开发调试，不建议日常使用。
+- 监听地址 / 端口：例如 `pnpm start --hostname 127.0.0.1 --port 8080`。脚本默认显式传入 3000，不要只靠 `PORT` 环境变量改端口。若需监听其他地址，请先配置访问保护，不要直接暴露到公网。
+- 数据库位置：默认 `./data/yanfield.db`；用 `YANFIELD_DB_PATH` 指定绝对路径更适合长期部署。
+- 升级：备份数据库后，拉取代码、运行 `pnpm install --frozen-lockfile` 和 `pnpm build`，再重启进程。
+
+> 本机直接运行时，`YANFIELD_STANDALONE=0` 在**构建和启动时都要设置**：它关闭 Docker 所需的 standalone 产物，避免 Windows 符号链接权限问题以及 `next start` 与 standalone 配置不匹配的警告。新开终端时请重新设置；Docker 仍使用默认的 standalone 构建。`NEXT_TELEMETRY_DISABLED=1` 用于关闭 Next.js 自带的匿名遥测。
 
 ### 3. 自动重启
 
-Linux 用 systemd（见方式四）；Windows 可用「任务计划程序」或 [NSSM](https://nssm.cc/) 把 `pnpm start` 注册为服务；macOS 用 `launchd`。核心只有两点：工作目录指向仓库根、进程环境里带 `YANFIELD_DB_PATH`。
+Linux 用 systemd（见方式四）；Windows 可用「任务计划程序」或 [NSSM](https://nssm.cc/) 把 `pnpm start --hostname 127.0.0.1` 注册为服务；macOS 用 `launchd`。工作目录应指向仓库根，进程环境中设置 `YANFIELD_STANDALONE=0`、`NEXT_TELEMETRY_DISABLED=1` 和按需设置的 `YANFIELD_DB_PATH`。
 
 ---
 
@@ -166,7 +179,7 @@ sudo -u yanfield git clone https://github.com/ZzimaR/Yanfield.git /opt/yanfield
 ```bash
 cd /opt/yanfield
 sudo -u yanfield pnpm install --frozen-lockfile
-sudo -u yanfield pnpm build
+sudo -u yanfield env YANFIELD_STANDALONE=0 NEXT_TELEMETRY_DISABLED=1 pnpm build
 ```
 
 ### 3. 安装服务
@@ -187,18 +200,21 @@ journalctl -u yanfield -f
 - 以 `yanfield` 用户运行，工作目录 `/opt/yanfield`；
 - `HOSTNAME=127.0.0.1`（只监听本机，由反向代理对外）；
 - `YANFIELD_DB_PATH=/opt/yanfield/data/yanfield.db`；
+- `YANFIELD_STANDALONE=0`，与上面的普通生产构建一致；
 - `ExecStart=/opt/yanfield/node_modules/.bin/next start -H 127.0.0.1 -p 3000`；
 - 失败自动重启，并带 `ProtectSystem=strict` 等加固（只允许写 `data/`）。
 
-> 想让 systemd 直接跑 standalone 产物：把 `ExecStart` 改成 `/usr/bin/node .next/standalone/server.js`，并把 `.next/static` 与 `public/` 复制进 `.next/standalone/`（`pnpm build` 不会自动复制这两个目录）。`pnpm start` 方式更省事，推荐前者即可。
+> 想让 systemd 直接跑 standalone 产物：移除 `YANFIELD_STANDALONE=0` 并重新构建，把 `ExecStart` 改成 `/usr/bin/node .next/standalone/server.js`，再把 `.next/static` 与 `public/` 复制进 `.next/standalone/`（构建不会自动复制这两个目录）。普通生产构建配合 `next start` 更省事。
 
 ### 4. 升级
+
+如果此前已安装 systemd 服务，`git pull` 不会更新 `/etc/systemd/system/` 中的服务配置。请在现有服务或 drop-in 中加入 `Environment=YANFIELD_STANDALONE=0`，保留原有路径、用户和其他自定义设置，并执行 `systemctl daemon-reload`；不要直接覆盖已有配置。
 
 ```bash
 cd /opt/yanfield
 sudo -u yanfield git pull
 sudo -u yanfield pnpm install --frozen-lockfile
-sudo -u yanfield pnpm build
+sudo -u yanfield env YANFIELD_STANDALONE=0 NEXT_TELEMETRY_DISABLED=1 pnpm build
 sudo systemctl restart yanfield
 ```
 
@@ -335,7 +351,7 @@ sudo systemctl start yanfield
 | `docker compose` 提示 `.env` 不存在 | 新版 Compose 已把 `.env` 设为可选；若你的 Compose 较旧，先 `cp .env.example .env`（可以留空）。 |
 | 反向代理后 AI 不流式 / 转圈很久 | Nginx 加 `proxy_buffering off; proxy_cache off; proxy_read_timeout 600s;`；Caddy 用 `flush_interval -1`。 |
 | 容器里连不上 Ollama | 用 `host.docker.internal` / `172.17.0.1`，见方式二。 |
-| 页面白屏 / 升级后样式错乱 | 旧 `.next` 残留：`rm -rf .next && pnpm build`；Docker 则重新构建镜像。 |
+| 页面白屏 / 升级后样式错乱 | 先停服务，清理项目内的旧 `.next`，按上方的环境变量重新构建；Docker 则重新构建镜像。 |
 | 磁盘越来越大 | 数据库 + 日志。WAL 文件会在 checkpoint 后回落；Docker 日志按 compose 里的轮转配置清理；`data/` 以外基本不增长。 |
 | 1 G 内存服务器构建失败（OOM） | 构建需要 1.5–2 G：加 swap，或在别的机器上 build 后把 `.next` + `node_modules` 打包过去；用 Docker 同理。 |
 | 忘记密码 / 想换 key | 砚田没有账号密码；模型 Key 在「设置 → 模型服务」里改，或删掉数据库里对应 provider 行（不推荐，直接改更安全）。 |
