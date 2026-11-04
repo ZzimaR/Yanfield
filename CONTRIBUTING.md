@@ -33,34 +33,33 @@ pnpm dev        # http://127.0.0.1:3000
 # Windows PowerShell
 git clone <你的 fork 地址> yanfield
 Set-Location yanfield
-pnpm install
+pnpm.cmd install
+pnpm.cmd dev
+```
+
+PowerShell 若禁止运行脚本，可使用上面的 `pnpm.cmd`（安装 pnpm 时使用 `npm.cmd`），无需修改全局执行策略。首次启动会自动创建 `data/yanfield.db`；库中没有作品时会写入示例《潮信》，并初始化离线演示模型。
+
+> **想接真实模型**：`cp .env.example .env`，填上某个 `*_API_KEY` 后重启，初始化会按内置预设自动创建 Provider；品牌服务还需主动拉取或手动添加模型，再选择默认模型。也可以在「设置 → 模型服务」里添加。部署与备份见 [docs/deploy.md](./docs/deploy.md)。`.env` 已在 `.gitignore` 中，不要提交。
+
+**A. 新增示例，或重置匹配的示例数据**
+
+「设置 → 数据 → 重新生成示例作品」只新增一部，不删除已有内容。
+
+`pnpm db:seed` 是另一条有破坏性的路径：它删除作者为「砚田示例」或标题为《潮信》《长夜行》的所有作品，即使是同名自建作品也会删除；同时删除全部内置提示词预设，相关修改可能丢失。运行前先停服并备份数据库。重启后内置预设会重建，但只有库里没有任何作品时才自动创建示例。
+
+**B. 使用全新的隔离数据库**
+
+```bash
+export YANFIELD_DB_PATH="$(mktemp "${TMPDIR:-/tmp}/yanfield-dev-XXXXXX")"
 pnpm dev
 ```
 
-首次启动会自动创建 `data/yanfield.db` 并写入示例作品《潮信》与离线演示模型。
-
-> **想接真实模型**：`cp .env.example .env`，填上某个 `*_API_KEY` 后重启，首次初始化会按内置预设自动创建 Provider（也可以什么都不填，直接在「设置 → 模型服务」里加）。部署相关（Docker / Compose / systemd / 反向代理 / 备份）见 [docs/deploy.md](./docs/deploy.md)。`.env` 已在 `.gitignore` 中，不要提交。两种「重来」方式，按需要选：
-
-**A. 只重置示例数据（保留你自己的作品、Provider 与设置）**
-
-```bash
-pnpm db:seed    # 删除示例作品《潮信》与内置提示词预设，不会清空数据库
-pnpm dev        # 重启后由 lib/seed.ts 的 ensureReady() 自动重建
-```
-
-**B. 彻底清空（连你的作品与密钥一起删掉，慎用）**
-
-先 `Ctrl+C` 停掉 dev server，再删掉数据目录：
-
-```bash
-rm -rf data            # macOS / Linux
-```
-
 ```powershell
-Remove-Item -Recurse -Force data   # Windows PowerShell
+$env:YANFIELD_DB_PATH = Join-Path $env:TEMP ("yanfield-dev-" + [guid]::NewGuid().ToString() + ".sqlite")
+pnpm.cmd dev
 ```
 
-重新 `pnpm dev` 即可得到全新数据库与示例数据。
+应用会在新路径初始化数据库和示例，不影响原数据库。使用完毕后先停服，再按需清理这个明确指定的临时数据库及其 WAL 文件。
 
 ### 改完后必须自检
 
@@ -218,12 +217,12 @@ async function* streamYourKind(req: CompletionRequest): AsyncGenerator<ProviderC
 
 - 设置页的 Provider 类型下拉（`app/settings/**`）加一项中文标签与默认 baseUrl 占位。
 - 「测试连接」复用 `testProvider()`，无需改逻辑。
-- 顺手在 `lib/defaults.ts` 的 `PROVIDER_PRESETS` 里加一项预设（名称、类型、baseUrl、推荐模型与 contextWindow、环境变量键），设置页「快速添加」就会多一个品牌入口；不想要预设入口可以跳过。
+- 顺手在 `lib/defaults.ts` 的 `PROVIDER_PRESETS` 里加一项预设（名称、类型、baseUrl、环境变量键；模型列表留空），设置页「快速添加」就会多一个品牌入口；模型由用户主动拉取或填写。
 
 ### 第四步：文档与测试
 
 - 在 `docs/ai-providers.md` 增加「样例：你的服务」一节（baseUrl、模型名、鉴权、已知坑）。
-- 如果解析逻辑能抽成纯函数，在 `tests/` 补单测；协议解析可参考 `tests/providers.test.ts`（用 `node:http` 起本地假上游模拟 SSE，覆盖三种协议解析与 401 / 缺 Key 的中文错误），环境变量建 Provider 参考 `tests/seed-env.test.ts`（临时 SQLite）。目前全套 100 个用例，`pnpm test` 全绿是 PR 的硬要求。
+- 如果解析逻辑能抽成纯函数，在 `tests/` 补单测；协议解析可参考 `tests/providers.test.ts`（用 `node:http` 起本地假上游模拟 SSE，覆盖三种协议解析与 401 / 缺 Key 的中文错误），环境变量建 Provider 参考 `tests/seed-env.test.ts`（临时 SQLite）。`pnpm test` 全绿是 PR 的硬要求。
 - 本地用真实服务验证一遍流式输出与错误分支，PR 里贴 `ai_logs` 里的耗时截图。
 
 ---

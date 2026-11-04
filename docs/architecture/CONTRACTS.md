@@ -173,7 +173,7 @@ Markdown({ text, className? })   // 安全轻量 markdown 渲染（AI 消息用�
 | `POST /api/novels` | body `{ title, genre?, synopsis?, ... }` → Novel |
 | `GET/PATCH/DELETE /api/novels/[id]` | 作品详/改/删（删含级联） |
 | `GET /api/novels/[id]/tree` | `{ novel, volumes: [...chapters], looseChapters }` |
-| `POST /api/demo` | 创建示例作品（含 2 卷 8 章 + 资料卡 + 大纲），返回 Novel |
+| `POST /api/demo` | 新增示例作品（含 2 卷 5 章 + 资料卡 + 大纲），返回 Novel |
 | `GET/POST /api/volumes` | query `novelId`；POST body `{ novelId, title }` |
 | `PATCH/DELETE /api/volumes/[id]` | |
 | `GET/POST /api/chapters` | query `novelId`；POST `{ novelId, volumeId?, title }` |
@@ -187,10 +187,13 @@ Markdown({ text, className? })   // 安全轻量 markdown 渲染（AI 消息用�
 | `GET /api/archives?novelId=&chapterId=` | 列表或单章 |
 | `POST /api/archives` | upsert（body 同 StoryArchive 字段） |
 | `DELETE /api/archives/[id]` | |
-| `POST /api/ai/chat` | SSE：body `{ novelId, chapterId?, agentId, providerId?, model?, messages: {role,content}[], contextConfig?, mode }`，事件 `AiStreamEvent` 逐行 `data: {json}\n\n` |
-| `POST /api/ai/task` | SSE：body `{ feature: AiFeature, novelId, chapterId?, payload?, providerId?, model? }`；先生成 `meta`，再 `delta`，最后 `done`/`error`；正文类任务产出以 `action`（`replace-chapter`/`insert`）附在 done 前 |
+| `POST /api/ai/chat` | 传统对话 SSE：body `{ novelId, message, chapterId?, sessionId?, agentId?, mode?, context?, selection?, presetId?, mentions? }`；事件为 `data: {json}\n\n` |
+| `POST /api/ai/task` | 传统单点任务 SSE：body `{ feature, novelId, chapterId?, message?, selection?, context?, presetId?, targetWords?, instruction? }`；返回 `meta`、`delta`、可选 `action` 及 `done`/`error` |
+| `GET/POST /api/ai/agent` | GET 按作品列出运行记录；POST 接收消息、章节、引用、选区及上下文配置，返回 Agent SSE |
+| `GET/PATCH /api/ai/agent/[id]` | GET 按作品读取持久化运行记录与候选；PATCH 可丢弃待确认候选 |
+| `POST /api/ai/agent/[id]/apply` | 选择候选、字段或正文块并事务应用；`op: "undo"` 校验后撤回 |
 | `POST /api/ai/context` | body `{ novelId, chapterId?, context?: Partial<ContextConfig>, selection?, mentions? }` → `AssembledContext`：`{ text, sections: { id, label, text, tokens, included, truncated, priority }[], tokens, budget, chapterIndex, dropped }`（上下文预览抽屉用，见 §8.1） |
-| `POST /api/ai/archives/extract` | `{ novelId, chapterId, providerId?, model? }` → `{ archive: StoryArchive }`（严格 JSON schema，带正文引用区间；失败返回错误） |
+| `POST /api/ai/archives/extract` | `{ novelId, chapterId }` → SSE；按当前默认模型提取并保存档案，返回 `save-archive` 动作，失败时返回错误事件 |
 | `GET/POST /api/chat/sessions` | query `novelId=`；POST `{ novelId, agentId?, chapterId?, title? }` |
 | `PATCH/DELETE /api/chat/sessions/[id]` | |
 | `GET/POST /api/chat/sessions/[id]/messages` | 取历史 / 追加消息（流式结束后写库） |
@@ -201,7 +204,7 @@ Markdown({ text, className? })   // 安全轻量 markdown 渲染（AI 消息用�
 | `GET /api/search?q=` | `{ items: SearchResult[] }` |
 | `POST /api/import/txt` | `multipart/form-data: file`+`regex?` → `{ chapters: { title, content }[] }`（仅解析预览） |
 | `POST /api/import/apply` | `{ novelId, chapters, volumeTitle? }` |
-| `GET /api/export/[novelId]?format=md|txt&scope=chapter|volume|book&id=` | 文件下载 |
+| `GET /api/export/[novelId]` | 文件下载；`format` 可选 `md`、`txt`，`scope` 可选 `chapter`、`volume`、`book`，可附带 `id` |
 
 ## 5. 数据与约定
 
@@ -209,7 +212,7 @@ Markdown({ text, className? })   // 安全轻量 markdown 渲染（AI 消息用�
 - 正文存储为 **Tiptap HTML**（`<p>...</p>`），空章 `""`；字数用 `countWords(html)` 计算后写入 `wordCount`。
 - 自动保存：停止输入 `settings.autoSaveDelayMs`（默认 1200ms）后 `PATCH /api/chapters/[id]`；`Ctrl/Cmd+S` 立即保存；保存状态显示「保存中/已保存 hh:mm」。
 - AI 一切正文产出必须走 diff 或显式「插入」，禁止静默覆盖正文。
-- 上下文预算 `contextBudget`（默认 12000，`0` 表示不限）与单次输出上限 `maxTokens`（默认 0 = 用模型默认值）是两个概念，详见 §8.1；`/api/ai/context` 返回装配结果（`sections` / `tokens` / `budget` / `dropped`）供 UI 展示，真实请求与展示必须同源。
+- 上下文预算 `contextBudget`（默认 12000，`0` 关闭应用侧限制）与单次输出上限 `maxTokens`（默认 0 = 自动）是两个概念，详见 §8.1；`/api/ai/context` 返回作品资料装配预览，不是 Agent 实际请求的逐字清单。模型窗口已知时完整请求仍会检查，未知时无法硬性检查。
 - 禁止在代码里写死 API Key；provider 配置落本地 DB，README 注明「本地明文存储，仅限个人机器」。
 - 所有 AI 请求写 `ai_logs`（token/延迟/状态），统计页用。
 
@@ -244,17 +247,18 @@ Markdown({ text, className? })   // 安全轻量 markdown 渲染（AI 消息用�
 interface ContextConfig {
   // …原有各 include* 开关、customInstruction 等字段不变
 
-  /** 上下文预算（token）：装配器把大纲/档案/角色/设定等块按优先级装进这个预算 */
+  /** 上下文预算（token）：统计完整作品上下文文本（作品信息、分节标题与内容）；不含系统提示/聊天历史/任务正文 */
   contextBudget: number;   // 默认 12000（DEFAULT_CONTEXT_CONFIG.contextBudget）
   /** 单次输出上限（token）：只限制模型这次回答的长度 */
-  maxTokens: number;       // 默认 0 = 用模型默认值
+  maxTokens: number;       // 默认 0 = 自动，通常用服务商默认值
 }
 ```
 
 - **取值优先级**（`lib/ai/context.ts`）：`contextBudget > 0` 用它；`contextBudget === 0` 表示不限；未给或非法值时回退旧的 `maxTokens`（若 >0），再回退装配器兜底常量 `DEFAULT_CONTEXT_BUDGET = 6000`。默认配置下实际预算 **12000**。
-- **超预算行为**：先按 `priority < 90` 从低到高丢弃整块（记进 `dropped`）；仍超则按比例截断最长的块（`truncated = true`，截断比例下限 0.25）。UI 的上下文抽屉必须如实展示 `sections[].tokens / included / truncated` 与 `budget`。
-- **输出上限**：`maxTokens` 只在 `lib/ai/engine.ts` 调 Provider 时作为 `max_tokens` / `maxOutputTokens` 传入（仅 `> 0` 时传，Anthropic 默认 4096）。
-- **建议**：`contextBudget` 不要超过所选模型的 `contextWindow`（UI 会展示）；Ollama 默认 `num_ctx` 通常只有 2K–4K，预算开太大反而会报错，先 `ollama show <model>` 确认。
+- **超预算行为**：先按 `priority < 90` 从低到高处理分节。档案与前情先逐条省略较早记录；角色、设定和伏笔先省略排序靠后的条目（相关性按名称、别名等文本匹配估算，并非语义检索）。仍超时丢弃该分节并记入 `dropped`。低优先级分节处理后仍超预算，就从低优先级开始截断剩余内容，必要时也会截断或移除高优先级块。`tokens` 是完整装配文本（含分节标题）的估算量；UI 的上下文抽屉展示 `sections[].tokens / included / truncated` 与 `budget`。系统提示、聊天历史、作者消息与任务正文不计入此预算。
+- **Agent**：不直接把预览当作完整输入；规划、写作和资料整理分别检查任务材料，超限可直接报错。完整请求检查包含系统消息、历史、工具定义及输出预留；模型窗口元数据未知时无法执行该检查。
+- **输出上限**：普通请求和 Agent 将配置用于 Provider；0 通常使用服务商默认值，Anthropic 兜底 4096，并非无限。档案提取有独立的输出预算与重试策略，部分推理模型会省略不兼容参数。
+- **建议**：为系统提示、历史、任务与输出预留空间；模型或本地 Ollama 的窗口容量应以当前服务和配置为准，未返回容量时界面显示未知。
 
 ### 8.2 `ModelOption.contextWindow`
 
@@ -262,12 +266,12 @@ interface ContextConfig {
 interface ModelOption {
   id: string;
   label: string;
-  /** 模型上下文窗口（token），用于 UI 提示预算上限；未知时省略 */
+  /** 模型上下文窗口（token），用于 UI 提示及完整请求检查；未知时省略 */
   contextWindow?: number;
 }
 ```
 
-`lib/defaults.ts` 的内置预设已为常用模型填好（DeepSeek 64K、GPT-4o 128K、Claude 200K、Gemini 1M 等）。新增模型时能填就填；设置页与上下文抽屉用它提示「预算不应超过该值」。
+品牌预设不内置模型或窗口容量；主动拉取时若服务商返回窗口元数据会保存并显示，否则保持未知，不根据旧推荐值猜测。完整请求检查仅在已知窗口时执行，使用近似 token 估算，并为输出预留空间。
 
 ### 8.3 服务商预设 `ProviderPreset` / `PROVIDER_PRESETS` / `getProviderPreset`
 
@@ -280,7 +284,7 @@ export interface ProviderPreset {
   baseUrl: string;          // 已填好的默认 Base URL（custom 为空串）
   keyUrl?: string;          // 申请 Key 的控制台
   envKeys: string[];        // 服务启动时自动建 Provider 用的环境变量（按顺序取第一个非空）
-  models: ModelOption[];    // 推荐模型 + contextWindow
+  models: ModelOption[];    // 品牌预设为空；模型由用户拉取或填写
   note?: string;            // 额外提示（custom / ollama 用）
 }
 
@@ -289,21 +293,21 @@ export const ENV_PROVIDER_BINDINGS: { preset: string; envKeys: string[] }[]; // 
 export function getProviderPreset(key: string): ProviderPreset | undefined;
 ```
 
-| key | 名称 | kind | 默认 baseUrl | 代表模型（contextWindow） | envKeys |
-|---|---|---|---|---|---|
-| `openai` | OpenAI | openai | `https://api.openai.com/v1` | gpt-4o 128K / gpt-4.1 1M / o4-mini 200K | `OPENAI_API_KEY` `YANFIELD_OPENAI_API_KEY` |
-| `deepseek` | DeepSeek | openai | `https://api.deepseek.com/v1` | deepseek-chat / deepseek-reasoner（64K） | `DEEPSEEK_API_KEY` |
-| `dashscope` | 通义千问 | openai | `https://dashscope.aliyuncs.com/compatible-mode/v1` | qwen-plus 128K / qwen-long 10M | `DASHSCOPE_API_KEY` `QWEN_API_KEY` |
-| `moonshot` | Moonshot / Kimi | openai | `https://api.moonshot.cn/v1` | moonshot-v1-128k / kimi-latest | `MOONSHOT_API_KEY` `KIMI_API_KEY` |
-| `zhipu` | 智谱 GLM | openai | `https://open.bigmodel.cn/api/paas/v4` | glm-4.5 / glm-4-flash（128K） | `ZHIPU_API_KEY` `GLM_API_KEY` `BIGMODEL_API_KEY` |
-| `anthropic` | Anthropic Claude | anthropic | `https://api.anthropic.com` | claude-sonnet-4-5 / opus-4-1（200K） | `ANTHROPIC_API_KEY` |
-| `gemini` | Google Gemini | gemini | `https://generativelanguage.googleapis.com` | gemini-2.5-pro / flash（1M） | `GEMINI_API_KEY` `GOOGLE_API_KEY` |
-| `openrouter` | OpenRouter | openai | `https://openrouter.ai/api/v1` | openai/gpt-4o-mini、deepseek/deepseek-chat 等 | `OPENROUTER_API_KEY` |
-| `siliconflow` | 硅基流动 | openai | `https://api.siliconflow.cn/v1` | deepseek-ai/DeepSeek-V3、Qwen2.5 等 | `SILICONFLOW_API_KEY` |
-| `ollama` | Ollama（本地） | ollama | `http://127.0.0.1:11434/v1` | qwen2.5:7b / 14b、llama3.1:8b、deepseek-r1:7b | `OLLAMA_BASE_URL` `YANFIELD_OLLAMA_BASE_URL` |
-| `custom` | 自定义（OpenAI 兼容） | openai | （空串，用户填） | 用户自填 | — |
+| key | 名称 | kind | 默认 baseUrl | envKeys |
+|---|---|---|---|---|
+| `openai` | OpenAI | openai | `https://api.openai.com/v1` | `OPENAI_API_KEY` `YANFIELD_OPENAI_API_KEY` |
+| `deepseek` | DeepSeek | openai | `https://api.deepseek.com/v1` | `DEEPSEEK_API_KEY` |
+| `dashscope` | 通义千问 | openai | `https://dashscope.aliyuncs.com/compatible-mode/v1` | `DASHSCOPE_API_KEY` `QWEN_API_KEY` |
+| `moonshot` | Moonshot / Kimi | openai | `https://api.moonshot.cn/v1` | `MOONSHOT_API_KEY` `KIMI_API_KEY` |
+| `zhipu` | 智谱 GLM | openai | `https://open.bigmodel.cn/api/paas/v4` | `ZHIPU_API_KEY` `GLM_API_KEY` `BIGMODEL_API_KEY` |
+| `anthropic` | Anthropic Claude | anthropic | `https://api.anthropic.com` | `ANTHROPIC_API_KEY` |
+| `gemini` | Google Gemini | gemini | `https://generativelanguage.googleapis.com` | `GEMINI_API_KEY` `GOOGLE_API_KEY` |
+| `openrouter` | OpenRouter | openai | `https://openrouter.ai/api/v1` | `OPENROUTER_API_KEY` |
+| `siliconflow` | 硅基流动 | openai | `https://api.siliconflow.cn/v1` | `SILICONFLOW_API_KEY` |
+| `ollama` | Ollama（本地） | ollama | `http://127.0.0.1:11434/v1` | `OLLAMA_BASE_URL` `YANFIELD_OLLAMA_BASE_URL` |
+| `custom` | 自定义（OpenAI 兼容） | openai | （空串，用户填） | — |
 
-- 设置页「添加模型服务」直接消费预设：**选品牌 → 自动带出 baseUrl / 协议 / 推荐模型 → 粘贴 Key → 测试连接**。新增一个品牌只需往 `PROVIDER_PRESETS` 加数据，**不用改 UI**。
+- 设置页直接消费预设：**选品牌 → 填写 Key → 主动拉取或手动添加模型 → 保存并选择默认模型**。新增品牌通常只需往 `PROVIDER_PRESETS` 加数据。
 - `getProviderPreset(key)` 找不到时返回 `undefined`，调用方（设置页、seed）必须兜底（设置页退回自定义表单）。
 - 预设只是**配置模板**，`ProviderConfig` 落库后仍可手改 baseUrl 与模型 id，所以任何 OpenAI 兼容服务都能接。
 
@@ -315,7 +319,7 @@ export function getProviderPreset(key: string): ProviderPreset | undefined;
 - **特殊变量**：
   - `YANFIELD_OPENAI_COMPAT_BASE_URL` + `YANFIELD_OPENAI_COMPAT_API_KEY` + `YANFIELD_OPENAI_COMPAT_MODEL` → 创建「自定义（OpenAI 兼容）」；`_MODEL` 为空时默认 `gpt-4o-mini`（需用户改成实际模型）。
   - `OLLAMA_BASE_URL` / `YANFIELD_OLLAMA_BASE_URL` → 创建 kind `ollama` 的 Provider，免 Key。
-- **默认模型切换**：仅当本次新建了 Provider、且当前 `settings.models.chat.providerId` 为空或指向 demo 时，才把 chat / prose 切到**第一个新建服务**的第一个模型；已有真实默认模型时不动。
+- **默认模型切换**：仅当本次新建了 Provider、且当前 `settings.models.chat.providerId` 为空或指向 demo 时，才把 chat / prose 切到第一个新建服务及其第一个模型；品牌服务的模型列表为空时模型 ID 也为空，须由用户拉取并选择。已有真实默认模型时不动；实际调用统一读取 `settings.models.chat`，界面选择会同时更新两个字段。
 - **返回值**：`ProviderConfig[]`（本次新建的列表，可能为空）。启动日志与测试（`tests/seed-env.test.ts`）依赖这一语义。
 
 ### 8.5 Provider 错误、超时与推理模型参数（`lib/ai/provider.ts`）
@@ -330,4 +334,4 @@ export function getProviderPreset(key: string): ProviderPreset | undefined;
 
 - 旧客户端若仍只传 `maxTokens` 作为预算，装配器会回退兼容（见 8.1），不会报错；新代码应改用 `contextBudget`。
 - `/api/ai/context` 的响应结构已在 §4 更新为 `AssembledContext`，字段名是 `id`/`text`（旧文档里的 `key`/`content`/`mode` 已废弃）。
-- `tests/providers.test.ts`（协议解析：OpenAI 兼容 / Anthropic / Gemini SSE、401 中文错误、未填 Key）、`tests/provider-models.test.ts`（/models 拉取模型列表：四类协议、去重、401 中文错误）与 `tests/seed-env.test.ts`（环境变量建 Provider、demo 兜底、默认预算）是这两块的回归测试，改 Provider/seed 时必须保持通过；`pnpm test` 总计 153 例。
+- `tests/providers.test.ts`（协议解析：OpenAI 兼容 / Anthropic / Gemini SSE、401 中文错误、未填 Key）、`tests/provider-models.test.ts`（/models 拉取模型列表：四类协议、去重、401 中文错误）与 `tests/seed-env.test.ts`（环境变量建 Provider、demo 兜底、默认预算）是这两块的回归测试，改 Provider/seed 时必须保持通过。

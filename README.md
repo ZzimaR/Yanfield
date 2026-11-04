@@ -6,7 +6,7 @@
 [![Node](https://img.shields.io/badge/Node-%E2%89%A522.13-3c873a)](https://nodejs.org)
 [![Next.js](https://img.shields.io/badge/Next.js-15-000000)](https://nextjs.org)
 [![TypeScript](https://img.shields.io/badge/TypeScript-strict-3178c6)](https://www.typescriptlang.org)
-[![Tests](https://img.shields.io/badge/tests-321%20passing-2f5d62)](tests)
+[![Tests](https://img.shields.io/badge/tests-Vitest-2f5d62)](tests)
 [![Docker](https://img.shields.io/badge/Docker-ready-2496ed)](Dockerfile)
 
 > **状态：v0.1.0 开发中，尚未发布正式版本。** 核心流程可试用，多步 Agent 需配置实际模型；接口和界面仍可能调整，欢迎试用与反馈。
@@ -17,7 +17,7 @@
 
 如果还没有 Node.js，先按系统安装：
 
-- **Windows**：从 [Node.js 官网](https://nodejs.org) 下载 24 LTS 的 Windows Installer（`.msi`）并安装，保持默认选项即可。安装完成后打开 PowerShell，运行 `node --version` 和 `npm --version` 检查是否成功。
+- **Windows**：从 [Node.js 官网](https://nodejs.org) 下载 24 LTS 的 Windows Installer（`.msi`）并安装，保持默认选项即可。安装完成后打开 PowerShell，运行 `node --version` 和 `npm.cmd --version` 检查是否成功。
 - **macOS**：从 [Node.js 官网](https://nodejs.org) 下载 24 LTS 的 macOS Installer（`.pkg`）并安装。安装完成后打开「终端」，运行 `node --version` 和 `npm --version` 检查是否成功。也可以使用 Homebrew：`brew install node@24`。
 
 npm 会随 Node.js 一起安装，不需要单独下载。确认 npm 可用后，再安装 pnpm：
@@ -27,6 +27,8 @@ npm install --global pnpm@9
 ```
 
 项目使用 pnpm 管理依赖并锁定版本；虽然 npm/yarn 在部分情况下也能安装，但不建议混用。
+
+> Windows PowerShell 若提示禁止运行 `npm.ps1` 或 `pnpm.ps1`，可使用 `npm.cmd` 和 `pnpm.cmd`，例如 `npm.cmd install --global pnpm@9`、`pnpm.cmd install`、`pnpm.cmd dev`，无需修改全局执行策略。
 
 ```bash
 git clone https://github.com/ZzimaR/Yanfield.git
@@ -59,7 +61,7 @@ pnpm dev
 在本地数据掌控的前提下，砚田提供 AI 辅助：
 
 - 不绑定模型厂商，OpenAI 兼容 / Anthropic / Gemini / Ollama 都能接，助手与写作任务共用默认模型，随时可换；
-- 上下文装配是可见、可调的——哪些资料进入上下文、花多少 token，都能在设置和预览里看到；
+- 上下文范围与预算可调，预览显示作品资料的分节和 token 估算；Agent 实际按需读取，预览不是完整请求清单；
 - 助手能按需读资料、多步执行，提出正文和资料改动；正文在写作区逐处高亮审阅，资料按字段对比。新章可整篇保留，已有正文可逐处保留或还原；确认后回到普通正文继续编辑，历史对比单独查看。工具栏的「AI 助手」下拉菜单收纳快捷任务。见[正文审阅截图](docs/screenshots/22-review-light.jpg)。
 
 ## 已实现（v0.1.0 开发版）
@@ -84,7 +86,7 @@ pnpm dev
 - 用量收进输入框底部的小状态行与消息明细图标。可识别的接口费用保留原币种；未返回费用时按配置单价明确标为预估，未设单价显示未知。今日汇总是预估，不是账户账单
 - 内置提示词预设：续写、扩写、润色、去 AI 味、章节诊断、章纲、人物卡、世界观卡、故事档案提取等
 - 兼容 OpenAI（含 DeepSeek / 通义 / Kimi / GLM / OpenRouter / SiliconFlow 等 OpenAI 兼容服务）、Anthropic、Gemini、Ollama，以及任意自定义 OpenAI 兼容网关
-- 设置页内置 11 家主流服务商预设（选品牌只填好 Base URL 与协议，不内置过时模型）；可用 API Key 从服务商**拉取真实模型列表**，也可以手动添加任意模型 id；拉取时保存能力信息，思考档位按接口与模型适配
+- 设置页内置 11 个服务商快捷预设（选品牌只填好 Base URL 与协议，不内置过时模型）；可从服务商**拉取模型列表**，也可以手动添加模型 ID；拉取时保存能力信息，思考档位按接口与模型适配
 - **统一模型配置**：在设置或 AI 面板切换默认模型；规划、正文写作与资料整理分别调用并计入本轮用量
 - 也支持环境变量自动接入
 - 没有 API Key 时可使用离线模板功能；多步 Agent 需要配置实际模型，演示模型不会假装执行任务
@@ -93,8 +95,8 @@ pnpm dev
 - 三级大纲：总纲 / 卷纲 / 章纲（目标、POV、冲突、场景、钩子）
 - 设定库：角色、世界观、伏笔；卡片展示身份、性格、目标和标签，资料弹窗使用档案排版与分类页签
 - 弹窗左上角只保留一个「AI 助手」入口：打开写作台助手并自动 @ 当前卡片，带上未保存草稿，不自动发送；不再为每个字段重复放 AI 按钮
-- 资料可标记「尚未揭示」提醒助手避免提前泄露，也可关闭「AI 可见性」禁止工具读取
-- 故事档案：本章摘要、人物状态、设定变动、总账、时间线、待确认冲突，改章自动标记过期
+- 角色与设定在揭示章节前默认隐藏，本轮明确 `@` 引用可例外读取；关闭「AI 可见性」后，即使引用也不能读取
+- 故事档案：本章摘要、人物状态、设定变动、总账、时间线、待确认冲突；正文更改后标记过期，重新提取时保留人工校订内容
 - TXT 导入（正则拆章、预览后落库）、Markdown / TXT 导出
 
 ## 部署
@@ -128,12 +130,13 @@ docs/         功能、架构、模型服务、部署、常见问题、路线图
 
 ```bash
 pnpm typecheck   # tsc --noEmit
-pnpm test        # vitest（321 个用例）
+pnpm test        # Vitest 测试
 pnpm build       # 生产构建
-pnpm db:seed     # 重新生成示例作品（不删用户数据）
 ```
 
-旧版页面截图脚本：`node scripts/capture-screenshots.mjs`（自动探测本机 Edge / Chrome）。真实界面原图与资料窗口近景保存在 `docs/screenshots/`；重新截图时优先截取需要说明的区域，按原尺寸展示，不把整屏文字缩成两栏。
+需要新增示例作品时，可用「设置 → 数据 → 重新生成示例作品」。**谨慎使用 `pnpm db:seed`**：它会删除作者为「砚田示例」或标题为《潮信》《长夜行》的所有作品（包括同名自建作品），并删除内置提示词预设；其中的修改可能丢失。运行前请先停服并备份数据库。重启后仅当数据库没有任何作品时才自动创建示例。
+
+当前界面截图和历史截图见 [截图说明](docs/screenshots/README.md)；旧版自动截图脚本不能可靠重现新版 Agent 与审阅流程。
 
 ## 技术栈
 
@@ -143,7 +146,7 @@ Next.js 15 · React 19 · TypeScript strict · Tailwind CSS v4 · Tiptap 3 · no
 
 介绍页也可在本地 `/intro` 预览。新版介绍页围绕本地保存、免费自托管、自带 API 和可审阅的 AI 修改展开；写作台演示直接渲染文字，支持切换正文与改动视图。
 
-新版正文审阅：蓝色操作卡片、原文与修订稿分层显示，文字变化仍保留红删绿增。点击图片查看 1200×900 原图。
+新版正文审阅：蓝色操作卡片、原文与修订稿分层显示，文字变化仍保留红删绿增。点击图片查看原图。
 
 [![新版正文审阅：蓝色操作卡片与逐处修订](docs/screenshots/22-review-light.jpg)](docs/screenshots/22-review-light.jpg)
 
@@ -154,6 +157,9 @@ Next.js 15 · React 19 · TypeScript strict · Tailwind CSS v4 · Tiptap 3 · no
 其余界面保留完整原图，按需打开：
 
 - [三栏写作台与 Agent 改动回执](docs/screenshots/13-agent-workbench.jpg)
+- [三栏写作台](docs/screenshots/25-workspace.png)
+- [章纲与故事档案](docs/screenshots/05-outline-blue.png) · [档案冲突提示](docs/screenshots/07-archives.png)
+- [模型服务设置](docs/screenshots/10-provider-settings.png) · [上下文预览](docs/screenshots/11-context-drawer.png)
 - [正文中的逐处修改审阅](docs/screenshots/22-review-light.jpg)
 - [用量与费用来源明细](docs/screenshots/15-usage-details.jpg)
 - [新版深色正文审阅](docs/screenshots/21-review-dark.jpg)
@@ -161,7 +167,7 @@ Next.js 15 · React 19 · TypeScript strict · Tailwind CSS v4 · Tiptap 3 · no
 - [资料自动 @ 引用](docs/screenshots/17-card-reference.jpg)
 - [介绍页](https://yanfield.com/)
 
-真实截图使用独立示例书稿与本地模拟模型，费用不代表真实服务商价格。主图为简化的功能示意，不是运行截图。历史界面原图见 [docs/screenshots](docs/screenshots/)。
+界面截图使用独立示例书稿；Agent 候选与用量明细使用本地构造的模拟响应和数据，不代表真实模型效果或服务商价格。主图为功能示意，不是运行截图。历史界面见 [docs/screenshots](docs/screenshots/)。
 
 ## 文档
 

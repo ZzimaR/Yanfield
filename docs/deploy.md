@@ -28,11 +28,11 @@
 
 | 变量 | 作用 |
 | --- | --- |
-| `OPENAI_API_KEY` / `DEEPSEEK_API_KEY` / `DASHSCOPE_API_KEY` / `MOONSHOT_API_KEY` / `ZHIPU_API_KEY` / `ANTHROPIC_API_KEY` / `GEMINI_API_KEY` / `OPENROUTER_API_KEY` / `SILICONFLOW_API_KEY` | 按内置 11 家预设各创建一个 Provider |
+| `OPENAI_API_KEY` / `DEEPSEEK_API_KEY` / `DASHSCOPE_API_KEY` / `MOONSHOT_API_KEY` / `ZHIPU_API_KEY` / `ANTHROPIC_API_KEY` / `GEMINI_API_KEY` / `OPENROUTER_API_KEY` / `SILICONFLOW_API_KEY` | 根据已填写的品牌变量各创建一个 Provider |
 | `OLLAMA_BASE_URL` | 本地 Ollama 地址（免 Key），默认 `http://127.0.0.1:11434/v1` |
 | `YANFIELD_OPENAI_COMPAT_BASE_URL` + `_API_KEY` + `_MODEL` | 任意 OpenAI 兼容服务（vLLM / LM Studio / one-api / 自建网关） |
 
-规则：已有同名 Provider 会跳过（**不会覆盖**你在设置页里手改过的 baseUrl / 模型）；当前默认模型若仍是「离线演示模式」，会切到第一个创建成功的真实服务。完整模板见 [`.env.example`](../.env.example)，各服务商样例见 [ai-providers.md](./ai-providers.md)。
+规则：已有同名 Provider 会跳过（**不会覆盖**你在设置页里手改过的 baseUrl / 模型）；当前默认模型若仍是「离线演示模式」，会切到第一个新建的真实服务。品牌服务没有预置模型，须拉取或手动添加后选择；自定义兼容服务未填 `_MODEL` 时的 `gpt-4o-mini` 是占位，需要核对实际模型。完整模板见 [`.env.example`](../.env.example)，各服务商样例见 [ai-providers.md](./ai-providers.md)。
 
 ---
 
@@ -97,7 +97,6 @@ PowerShell 中绑定挂载要写成 `-v "${PWD}/data:/app/data"`。
 
 ```bash
 docker logs -f yanfield                 # 看日志
-docker exec -it yanfield node scripts/seed.mjs   # 只重置示例数据（不动你的作品）
 docker stop yanfield && docker rm yanfield        # 停容器（数据在 ./data 里，安全）
 
 # 升级：拉代码 → 重建镜像 → 用同样的 volume 重新起
@@ -106,6 +105,8 @@ docker build -t yanfield:latest .
 docker stop yanfield && docker rm yanfield
 docker run -d ...（同上）
 ```
+
+如需新增示例，使用「设置 → 数据 → 重新生成示例作品」。不要把 `scripts/seed.mjs` 当作无风险重置：它会删除作者为「砚田示例」或标题为《潮信》《长夜行》的作品（包括同名自建作品），以及内置提示词预设。执行前请停服并备份；重启后仅在数据库没有任何作品时自动创建示例。
 
 要点：
 
@@ -338,7 +339,7 @@ sudo systemctl start yanfield
 | 磁盘越来越大 | 数据库 + 日志。WAL 文件会在 checkpoint 后回落；Docker 日志按 compose 里的轮转配置清理；`data/` 以外基本不增长。 |
 | 1 G 内存服务器构建失败（OOM） | 构建需要 1.5–2 G：加 swap，或在别的机器上 build 后把 `.next` + `node_modules` 打包过去；用 Docker 同理。 |
 | 忘记密码 / 想换 key | 砚田没有账号密码；模型 Key 在「设置 → 模型服务」里改，或删掉数据库里对应 provider 行（不推荐，直接改更安全）。 |
-| 想彻底重来 | 停服 → 删除 `data/` → 启动，得到全新库 + 示例作品。只想重置示例数据用 `pnpm db:seed`（不会删你的作品）。 |
+| 想新建空库或示例 | 停服并备份后使用新的数据库路径；只新增示例可用设置页。「`pnpm db:seed`」会删除匹配示例作者或标题的作品（包括同名自建作品）及内置预设，不是安全的全库重置。 |
 
 ---
 

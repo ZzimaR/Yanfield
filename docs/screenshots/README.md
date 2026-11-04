@@ -1,66 +1,42 @@
 # 产品截图
 
-本目录存放 README 与发布页使用的产品截图，均从真实运行的界面截取。书稿与 AI 候选可使用独立测试数据和本地模拟输出，用于展示交互，截图中的费用不代表实际服务商价格。
+本目录包含运行界面截图和历史图片。[README](../../README.md) 顶部使用的 `workspace-overview.svg` 是功能示意图，不是应用截图。
 
-## 清单
+当前截图使用独立示例数据库中的虚构书稿与资料。Agent 候选、正文审阅和用量明细使用本地构造的模拟响应和数据，只展示交互，不代表真实模型效果或服务商价格；没有向真实模型发送书稿。浅色为「宣纸」，深色为「夜航」。图片按实际视口或窗口截取，尺寸不统一。
 
-默认浅色「宣纸」主题；深色图为「夜航」主题。早期桌面图为 1440×900；新版审阅图与菜单图为 1200×900，保留浏览器返回的原图尺寸，不放大或锐化。
+## 当前界面
 
-| 文件 | 页面 | 要点 |
-| --- | --- | --- |
-| `21-review-dark.jpg` | 写作台正文审阅 | 深色主题、蓝色审阅卡片、原文与修订稿分层展示 |
-| `22-review-light.jpg` | 写作台正文审阅 | 浅色主题、逐处保留/还原、红删绿增；README 当前展示图 |
-| `24-ai-menu.jpg` | 写作台格式工具栏 | AI 助手下拉菜单，收纳七项快捷任务 |
-| `01-home.png` | `/` | 本机首页：开始写作、使用帮助、常见问题。强调色为浅蓝 |
-| `02-library.png` | `/library` | 书架：示例作品卡片、新建作品、观看进度 |
-| `03-editor-blue.png` | `/editor/<novelId>?chapterId=<chapterId>` | 三栏写作工作台：目录树 + 正文 + AI 助手。选中项与按钮为浅蓝 |
-| `04-ai-diff.png` | 同上 | AI 建议的逐块 diff 审阅态（最能体现差异化的一张） |
-| `05-outline-blue.png` | `/novel/<novelId>/outline` | 三级大纲：总纲 / 卷纲 / 章纲。强调色为浅蓝 |
-| `06-bible.png` | `/novel/<novelId>/bible` | 资料卡：角色、设定、伏笔，含 AI 可见性开关 |
-| `07-archives.png` | `/novel/<novelId>/archives` | 故事档案：摘要、角色状态、资源总账、时间线 |
-| `08-settings.png` | `/settings` | 设置页：模型、提示词、外观、数据 |
-| `09-editor-dark.png` | 同 `03-editor-blue` | 深色「夜航」主题下的三栏工作台，强调色为浅蓝 |
-| `10-provider-settings.png` | `/settings`（滚动到「模型服务」） | 快捷添加主流服务商：11 家预设、对话与写作分别配置模型、密钥掩码与「测试连接」 |
-| `11-context-drawer.png` | 同 `03`（打开 AI 面板的「上下文」抽屉） | 上下文装配面板：分节 token 估算、上下文预算滑杆、超出预算被裁掉的维度 |
-| `12-settings.png` | 书架页（点左下角齿轮） | 设置悬浮窗：左侧分区导航、模型服务 11 家预设。按钮为浅蓝 |
+| 图片 | 展示内容 |
+| --- | --- |
+| [25-workspace.png](./25-workspace.png) | 三栏写作台、章节目录与统一 AI 助手 |
+| [05-outline-blue.png](./05-outline-blue.png) | 写作台「章纲」页签、总纲与分卷章节 |
+| [07-archives.png](./07-archives.png) | 故事档案、过期状态与待确认冲突 |
+| [10-provider-settings.png](./10-provider-settings.png) | 模型服务设置：协议/地址预设、离线演示服务与统一默认模型 |
+| [11-context-drawer.png](./11-context-drawer.png) | 上下文预览、分节开关、预算与输出上限 |
+| [12-settings.png](./12-settings.png) | 设置悬浮窗与模型服务入口 |
+| [13-agent-workbench.jpg](./13-agent-workbench.jpg) | Agent 任务卡与待确认正文候选 |
+| [15-usage-details.jpg](./15-usage-details.jpg) | 模拟的 token、缓存和费用来源明细 |
+| [17-card-reference.jpg](./17-card-reference.jpg) | 从资料编辑窗口引用当前角色 |
+| [20-card-editor-focus.jpg](./20-card-editor-focus.jpg) | 角色编辑窗口与统一 AI 助手入口 |
+| [21-review-dark.jpg](./21-review-dark.jpg) | 深色主题正文审阅 |
+| [22-review-light.jpg](./22-review-light.jpg) | 浅色主题正文审阅；README 展示图 |
+| [24-ai-menu.jpg](./24-ai-menu.jpg) | 正文工具栏的 AI 快捷任务菜单 |
 
-> 截图里的作品、角色与对话均为示例内容；仓库首次启动会自动生成，可随时用 `pnpm db:seed` 重置示例数据（不会删除你自建的作品）。
+## 历史截图
 
-## 生成方式
+`01-home.png`、`02-library.png`、`03-editor-blue.png`、`04-ai-diff.png`、`06-bible.png`、`08-settings.png`、`09-editor-dark.png`、`14-card-editor.jpg`、`16-agent-dark.jpg`、`18-inline-review.jpg`、`19-public-intro.jpg` 保留为早期界面记录，不作为当前操作指南。特别是旧设置图可能显示已废弃的推荐模型或双模型配置。
 
-截图脚本不会启动服务器，先在另一个终端把应用跑起来：
+## 重拍方式与注意事项
 
-```bash
-pnpm dev
-```
+1. 在**没有真实 API Key 的独立项目副本**中，设置一个全新的 `YANFIELD_DB_PATH` 并启动应用；确认使用离线演示服务，避免连接真实服务或把真实书稿、密钥拍入图片。可参考 [贡献指南的隔离数据库步骤](../../CONTRIBUTING.md)。
+2. 等待页面、资料和统计加载完成，再手动打开需要展示的面板、窗口或主题后截图。检查文字清晰、没有加载骨架、遮挡或多余留白。
+3. 多步 Agent 不支持离线演示模型。如需展示 Agent 候选，使用独立的本地模拟响应和示例书稿，并在说明中注明是模拟数据；不要把它描述成真实模型效果。
+4. 截图完成后停服，再按需清理明确指定的临时数据库及其 WAL 文件。不要使用正式数据库生成截图。
 
-再在仓库根目录执行：
+> **示例数据警告**：设置页的「重新生成示例作品」只新增示例；`pnpm db:seed` 会删除作者为「砚田示例」或标题为《潮信》《长夜行》的作品，包括同名自建作品，并删除内置提示词预设。执行前必须停服并备份；只有库中没有任何作品时才自动创建示例。
 
-```bash
-# 01–09（含深色编辑器），默认 1440×900、浅色主题
-node scripts/capture-screenshots.mjs
+## 旧脚本的限制
 
-# 只补某几页 / 指定尺寸 / 追加深色图
-node scripts/capture-screenshots.mjs --only library,settings
-node scripts/capture-screenshots.mjs --dark
-node scripts/capture-screenshots.mjs --width 390 --height 844 --only editor
-```
+`scripts/capture-screenshots.mjs` 与 `scripts/capture-diff-screenshot.mjs` 是旧版截图脚本，不保证适配现在的路由、上下文按钮或 Agent 审阅流程；可能截到加载骨架或找不到旧按钮。演示模型也不能替代多步 Agent。不要依赖它们直接重建上表的当前截图；如果用于探索旧界面，务必使用隔离数据库并逐张检查结果。
 
-`04-ai-diff.png` 依赖一次真实的 AI 任务：`scripts/capture-diff-screenshot.mjs` 会在编辑器里发起「续写」、打开逐块审阅后截图（不会把结果写进正文，可安全对示例数据运行）：
-
-```bash
-node scripts/capture-diff-screenshot.mjs
-node scripts/capture-diff-screenshot.mjs --novel nov_xxx --chapter chp_yyy
-```
-
-`10-provider-settings.png`、`11-context-drawer.png` 与 `12-settings.png` 同样由脚本自动完成交互后截取（滚动到「快速添加主流服务商」网格 / 打开 AI 面板的「上下文」抽屉 / 点齿轮打开设置悬浮窗），可单独重截：
-
-```bash
-node scripts/capture-screenshots.mjs --only provider-settings,context-drawer,settings-dialog
-```
-
-## 替换到 README
-
-[`README.md`](../../README.md) 引用 `03-editor-blue.png` 等当前文件名。重新截图后覆盖同名文件；如果 GitHub 页面仍显示旧图，换一个文件名再改 README 里的链接。
-
-注意：截图里不要出现真实 API Key（设置页会掩码显示，但仍建议用示例 Key 或离线演示模式截图）。
+替换图片后检查 [README](../../README.md) 等引用是否仍有效，并确保说明与截图内容一致。

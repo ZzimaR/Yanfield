@@ -1,13 +1,13 @@
 #!/usr/bin/env node
 /**
- * pnpm db:seed —— 重置示例数据（不删除你自己的作品）
+ * pnpm db:seed —— 删除匹配示例标识的作品与内置预设
  *
  * 做的事：
- *  1. 删除示例作品（按 author = 砚田示例，或旧标题《长夜行》、现标题《潮信》识别）；
+ *  1. 删除作者为「砚田示例」或标题为《长夜行》《潮信》的作品（同名自建作品也会删除）；
  *  2. 删除内置提示词预设（is_builtin = 1），下次启动会由 ensureBuiltinPresets() 重建；
- *  3. 保留你的自建作品、自建预设、Provider 与设置。
+ *  3. 保留不符合上述条件的作品、自建预设、Provider 与设置；内置预设中的改动可能丢失。
  *
- * 之后重启 `pnpm dev`（或首次 API 请求）时，lib/seed.ts 的 ensureReady() 会重新写入示例作品。
+ * 重新启动后只有数据库没有任何作品时才自动写入示例作品。执行前请停服并备份数据库。
  * 数据库路径与运行时一致：YANFIELD_DB_PATH，默认 <cwd>/data/yanfield.db
  */
 import { DatabaseSync } from "node:sqlite";
@@ -40,8 +40,8 @@ try {
 
   const deleted = novels.length;
   const presets = db.prepare("DELETE FROM prompt_presets WHERE is_builtin = 1").run();
-  console.log(`[seed] 已删除示例作品 ${deleted} 部；重置内置预设 ${presets.changes} 条。`);
-  console.log("[seed] 重启 pnpm dev（或任意一次 API 请求）后会自动重建示例作品与内置预设。");
+  console.log(`[seed] 已删除符合示例作者或标题的作品 ${deleted} 部；重置内置预设 ${presets.changes} 条。`);
+  console.log("[seed] 启动后会重建内置预设；仅当数据库没有任何作品时才自动创建示例作品。");
 } catch (err) {
   console.error("[seed] 失败：", err instanceof Error ? err.message : err);
   process.exitCode = 1;
