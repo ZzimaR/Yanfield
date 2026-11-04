@@ -3,9 +3,7 @@
  *
  * 目标：把「作品大纲 / 卷纲 / 章纲 / 前文章节摘要 / 故事档案 / 角色 / 世界观 / 伏笔 / 文风」
  * 装配成一段给模型看的上下文，并满足两件事：
- * 1. 全知但标注：AI 能看到全部设定卡（只有 aiVisible 关闭的不进上下文）；
- *    revealAtChapter 没到的卡照常进上下文，只在行尾标注「（尚未揭示，第 N 章后）」，
- *    由提示词约束「知道不等于写出」，这样 AI 既不会前后矛盾，也不会提前点破。
+ * 1. 可见性：aiVisible 关闭或当前章节尚未揭示的卡不自动进入上下文；
  * 2. 预算裁剪：按 token 预算给每块打分，超预算时先丢低优先级块，再截断最长的块。
  *
  * UI 的「上下文抽屉」直接消费 ContextSectionMeta[]，做到所见即所发。
@@ -34,6 +32,7 @@ export interface ChapterRef {
 }
 
 export type ContextSectionId =
+  | "work-info"
   | "instruction"
   | "style"
   | "novel-outline"
@@ -159,15 +158,21 @@ function firstSentences(text: string, count: number): string {
   return sentences.slice(0, count).join("").slice(0, 220);
 }
 
+function relevanceScore(values: string[], relevanceText: string, pinned = false, explicit = false): number {
+  const score = (explicit ? 1000 : 0) + (pinned ? 10 : 0);
+  return score + values.reduce((total, value) => {
+    const needle = value.trim().toLocaleLowerCase();
+    return needle.length > 1 && relevanceText.includes(needle) ? total + 50 : total;
+  }, 0);
+}
+
 function characterLine(
   character: Character,
   detail: "brief" | "standard" | "full",
   nameOf: (targetId: string) => string,
-  note = "",
 ): string {
-  const suffix = note ? ` ${note}` : "";
   if (detail === "brief") {
-    return `- ${character.name}${character.identity ? `（${character.identity}）` : ""}：${preview(character.currentState || character.personality, 60)}${suffix}`;
+    return `- ${character.name}${character.identity ? `（${character.identity}）` : ""}：${preview(character.currentState || character.personality, 60)}`;
   }
   const parts: string[] = [];
   if (character.identity) parts.push(character.identity);
@@ -189,45 +194,127 @@ function characterLine(
       .join("；");
     parts.push(`关系：${relations}`);
   }
-  return `- ${character.name}：${parts.join("；")}${suffix}`;
+  return `- ${character.name}：${parts.join("；")}`;
 }
 
-function worldLine(setting: WorldSetting, detail: "brief" | "standard" | "full", note = ""): string {
+function worldLine(setting: WorldSetting, detail: "brief" | "standard" | "full"): string {
   const content = setting.content.replace(/\s+/g, " ").trim();
   const limit = detail === "brief" ? 60 : detail === "standard" ? 140 : 260;
   const body = content || setting.summary;
-  return `- ${setting.title}：${preview(body, limit)}${note ? ` ${note}` : ""}`;
+  return `- ${setting.title}：${preview(body, limit)}`;
 }
 
 function buildSection(id: ContextSectionId, label: string, text: string, priority: number): ContextSectionMeta {
-  const tokens = estimateTokens(text);
+  const tokens = estimateTokens(`【${label}】\n${text.trim()}`);
   return { id, label, text, tokens, included: text.trim().length > 0, truncated: false, priority };
 }
 
-/**
- * 「对 AI 可见」是唯一硬开关：关闭的卡完全不进上下文（作者明确不想让 AI 读）。
- * 其余卡全部进入上下文，保证 AI 对全书设定「全知」，避免前后矛盾。
- */
+function renderContextSections(sections: ContextSectionMeta[]): string {
+  return sections
+    .filter((section) => section.included && section.text.trim())
+    .map((section) => `【${section.label}】\n${section.text.trim()}`)
+    .join("\n\n");
+}
+
+function removeLeastRelevantItem(section: ContextSectionMeta): boolean {
+  const removableSections: ContextSectionId[] = [
+    "archives",
+    "chapter-summaries",
+    "characters",
+    "world",
+    "foreshadows",
+  ];
+  if (!removableSections.includes(section.id)) return false;
+
+  const separator = section.id === "archives" ? "\n\n" : "\n";
+  const marker = "\n…（其余资料已按相关性省略）";
+  const content = section.text.replace(/\n…（其余资料已按相关性省略）$/, "");
+  const items = content.split(separator).filter(Boolean);
+  if (items.length <= 1) return false;
+
+  const removeIndex = section.id === "archives" || section.id === "chapter-summaries" ? 0 : items.length - 1;
+  items.splice(removeIndex, 1);
+  section.text = `${items.join(separator)}${marker}`;
+  section.tokens = estimateTokens(`【${section.label}】\n${section.text.trim()}`);
+  section.truncated = true;
+  return true;
+}
+
+export function trimContextSections(
+  sections: ContextSectionMeta[],
+  budget: number,
+): { tokens: number; dropped: ContextSectionId[] } {
+  const dropped: ContextSectionId[] = [];
+  const measure = () => estimateTokens(renderContextSections(sections));
+  let total = measure();
+
+  if (budget <= 0 || total <= budget) return { tokens: total, dropped };
+
+  const droppable = sections
+    .filter((section) => section.included && section.priority < 90)
+    .sort((left, right) => left.priority - right.priority);
+  for (const section of droppable) {
+    if (total <= budget) break;
+    while (total > budget && removeLeastRelevantItem(section)) total = measure();
+    if (total <= budget) break;
+    section.included = false;
+    total = measure();
+    dropped.push(section.id);
+  }
+
+  const toTrim = sections
+    .filter((section) => section.included)
+    .sort((left, right) => left.priority - right.priority || right.tokens - left.tokens);
+  for (const section of toTrim) {
+    if (total <= budget) break;
+    const original = section.text;
+    const marker = "\n…（已按上下文预算截断）";
+    let low = 0;
+    let high = Math.max(0, original.length - 1);
+    let best = -1;
+
+    while (low <= high) {
+      const middle = Math.floor((low + high) / 2);
+      section.text = `${original.slice(0, middle).trimEnd()}${marker}`;
+      if (measure() <= budget) {
+        best = middle;
+        low = middle + 1;
+      } else {
+        high = middle - 1;
+      }
+    }
+
+    if (best >= 0) {
+      section.text = `${original.slice(0, best).trimEnd()}${marker}`;
+      section.tokens = estimateTokens(`【${section.label}】\n${section.text.trim()}`);
+      section.truncated = true;
+      total = measure();
+    } else {
+      section.text = original;
+      section.included = false;
+      dropped.push(section.id);
+      total = measure();
+    }
+  }
+
+  return { tokens: total, dropped };
+}
+
+/** The card-level visibility toggle is applied before chapter-aware filtering. */
 export function filterAiVisible<T extends { aiVisible: boolean }>(items: T[]): T[] {
   return items.filter((item) => item.aiVisible);
 }
 
-/**
- * 未揭示标注：卡照常进上下文，只在这条资料的行尾加一句「（尚未揭示，第 N 章后）」，
- * 提示词据此约束 AI「知道但不能写出来」。
- * - aiVisible 关闭的卡根本不会进上下文 → 不标注，返回空串；
- * - revealAtChapter 为 null（不标注）或当前没有章节上下文 → 返回空串；
- * - 当前章节已到揭示章节 → 返回空串。
- * （原 isDisclosed 的双重判断拆开：aiVisible 决定卡的去留，revealAtChapter 只决定标注。）
- */
-export function disclosureNote(
+export function isAiVisibleAtChapter(
   item: { aiVisible: boolean; revealAtChapter: number | null },
   chapterIndex: number | null,
-): string {
-  if (!item.aiVisible) return "";
-  const revealAt = item.revealAtChapter;
-  if (revealAt === null || chapterIndex === null || revealAt <= chapterIndex) return "";
-  return `（尚未揭示，第 ${revealAt} 章后）`;
+  explicitlyReferenced = false,
+): boolean {
+  return item.aiVisible && (
+    item.revealAtChapter === null ||
+    (chapterIndex !== null && item.revealAtChapter <= chapterIndex) ||
+    explicitlyReferenced
+  );
 }
 
 /**
@@ -244,30 +331,43 @@ export function assembleContext(input: AssembledContextInput): AssembledContext 
   const chapterIndex = currentRef ? currentRef.index : null;
   const currentChapter = currentRef?.chapter ?? null;
   const volume = currentChapter?.volumeId ? getVolume(currentChapter.volumeId) : undefined;
+  const chapterBlueprint = currentChapter && config.includeChapterBlueprint
+    ? formatBlueprint(currentChapter.id)
+    : "";
+  const currentTail = currentChapter
+    ? stripTags(getChapter(currentChapter.id)?.content ?? "").slice(-4000)
+    : "";
+  const relevanceParts = [
+    input.selection ?? "",
+    currentChapter?.title ?? "",
+    currentChapter?.summary ?? "",
+    chapterBlueprint,
+    currentTail,
+  ];
 
   const sections: ContextSectionMeta[] = [];
 
   // 1. 作者指令 / 文风
   if (config.customInstruction.trim()) {
-    sections.push(buildSection("instruction", "作者补充指令", config.customInstruction.trim(), 4));
+    sections.push(buildSection("instruction", "作者补充指令", config.customInstruction.trim(), 80));
   }
   if (config.includeStyleGuide) {
     const styleLines: string[] = [];
     if (novel.pov) styleLines.push(`叙述视角：${novel.pov}`);
     if (novel.styleGuide) styleLines.push(`文风要求：${novel.styleGuide}`);
     if (novel.forbiddenWords.length) styleLines.push(`禁用词：${novel.forbiddenWords.join("、")}`);
-    if (styleLines.length) sections.push(buildSection("style", "文风指南", bulletList(styleLines), 8));
+    if (styleLines.length) sections.push(buildSection("style", "文风指南", bulletList(styleLines), 35));
   }
 
   // 2. 三级大纲
   if (config.includeNovelOutline) {
-    sections.push(buildSection("novel-outline", "作品总纲", formatNovelOutline(novelId), 3));
+    sections.push(buildSection("novel-outline", "作品总纲", formatNovelOutline(novelId), 50));
   }
   if (config.includeVolumeOutline && volume) {
-    sections.push(buildSection("volume-outline", `卷纲（${volume.title}）`, formatVolumeOutline(volume.id), 2));
+    sections.push(buildSection("volume-outline", `卷纲（${volume.title}）`, formatVolumeOutline(volume.id), 55));
   }
   if (config.includeChapterBlueprint && currentChapter) {
-    sections.push(buildSection("chapter-blueprint", "本章章纲", formatBlueprint(currentChapter.id), 1));
+    sections.push(buildSection("chapter-blueprint", "本章章纲", chapterBlueprint, 95));
   }
 
   // 3. 前文章节摘要
@@ -281,7 +381,8 @@ export function assembleContext(input: AssembledContextInput): AssembledContext 
         : ref.chapter.summary || firstSentences(stripTags(content), 3);
       return `第${ref.index}章《${ref.chapter.title}》：${chapterText || "（暂无摘要）"}`;
     });
-    sections.push(buildSection("chapter-summaries", "前情摘要", lines.join("\n"), 5));
+    relevanceParts.push(...lines);
+    sections.push(buildSection("chapter-summaries", "前情摘要", lines.join("\n"), 30));
   }
 
   // 4. 故事档案（按章抽取的事实）
@@ -306,35 +407,67 @@ export function assembleContext(input: AssembledContextInput): AssembledContext 
       }
       return lines.join("\n");
     });
-    sections.push(buildSection("archives", "故事档案", blocks.join("\n\n"), 6));
+    relevanceParts.push(...blocks);
+    sections.push(buildSection("archives", "故事档案", blocks.join("\n\n"), 40));
   }
 
-  // 5. 角色 / 世界观 / 伏笔（全知：只过滤「对 AI 不可见」，未揭示的卡加标注而不是丢掉）
+  // 5. 角色 / 世界观 / 伏笔；先给当前剧情相关的资料留预算。
   const characters = listCharacters(novelId);
   const nameOf = (targetId: string): string => characters.find((character) => character.id === targetId)?.name ?? "";
+  const relevanceText = relevanceParts.join("\n").toLocaleLowerCase();
+  const explicitCharacterIds = new Set(input.mentions?.filter((item) => item.type === "character").map((item) => item.id) ?? []);
+  const explicitWorldIds = new Set(input.mentions?.filter((item) => item.type === "world").map((item) => item.id) ?? []);
   if (config.includeCharacters) {
     const visible = filterAiVisible(characters)
-      .slice(0, 14)
-      .map((character) =>
-        characterLine(character, config.characterDetail, nameOf, disclosureNote(character, chapterIndex)),
-      );
-    sections.push(buildSection("characters", "角色资料", visible.join("\n"), 7));
+      .filter((character) => isAiVisibleAtChapter(character, chapterIndex) || explicitCharacterIds.has(character.id))
+      .map((character, index) => ({
+        character,
+        index,
+        score: relevanceScore(
+          [character.name, ...character.aliases],
+          relevanceText,
+          character.pinned,
+          explicitCharacterIds.has(character.id),
+        ),
+      }))
+      .sort((left, right) => right.score - left.score || left.index - right.index)
+      .map(({ character }) => characterLine(character, config.characterDetail, nameOf));
+    sections.push(buildSection("characters", "角色资料", visible.join("\n"), 25));
   }
   if (config.includeWorld) {
     const settings = filterAiVisible(listWorld(novelId))
-      .slice(0, 16)
-      .map((setting) =>
-        worldLine(setting, config.characterDetail, disclosureNote(setting, chapterIndex)),
-      );
-    sections.push(buildSection("world", "世界观设定", settings.join("\n"), 8));
+      .filter((setting) => isAiVisibleAtChapter(setting, chapterIndex) || explicitWorldIds.has(setting.id))
+      .map((setting) => ({
+        setting,
+        score: relevanceScore(
+          [setting.title, ...setting.tags],
+          relevanceText,
+          setting.pinned,
+          explicitWorldIds.has(setting.id),
+        ),
+      }))
+      .sort((left, right) => right.score - left.score || left.setting.orderIndex - right.setting.orderIndex)
+      .map(({ setting }) => worldLine(setting, config.characterDetail));
+    sections.push(buildSection("world", "世界观设定", settings.join("\n"), 20));
   }
   if (config.includeForeshadows) {
-    const foreshadows = listForeshadows(novelId).filter((foreshadow) => foreshadow.status === "planted" || foreshadow.status === "advanced");
+    const foreshadows = listForeshadows(novelId)
+      .filter((foreshadow) => foreshadow.status === "planted" || foreshadow.status === "advanced")
+      .map((foreshadow, index) => ({
+        foreshadow,
+        index,
+        score: relevanceScore(
+          [foreshadow.title, foreshadow.description],
+          relevanceText,
+        ),
+      }))
+      .sort((left, right) => right.score - left.score || left.index - right.index)
+      .map(({ foreshadow }) => foreshadow);
     const lines = foreshadows.map((foreshadow) => {
       const payoff = foreshadow.payoffChapterId ? chapters.find((ref) => ref.chapter.id === foreshadow.payoffChapterId) : undefined;
       return `- ${foreshadow.title}：${foreshadow.description}${payoff ? `（计划第${payoff.index}章回收）` : ""}［${foreshadow.status}］`;
     });
-    sections.push(buildSection("foreshadows", "伏笔清单", lines.join("\n"), 9));
+    sections.push(buildSection("foreshadows", "伏笔清单", lines.join("\n"), 10));
   }
 
   // 6. 选中片段 / @ 引用（最高优先级：这是用户明确要求处理的内容）
@@ -342,12 +475,19 @@ export function assembleContext(input: AssembledContextInput): AssembledContext 
     sections.push(buildSection("selection", "选中片段", input.selection.trim(), 100));
   }
   if (input.mentions?.length) {
+    const mentionLookups: MentionLookups = {
+      characters: new Map(listCharacters(novelId).map((item) => [item.id, item])),
+      worlds: new Map(listWorld(novelId).map((item) => [item.id, item])),
+      archives: new Map(listArchives(novelId).map((item) => [item.id, item])),
+      foreshadows: new Map(listForeshadows(novelId).map((item) => [item.id, item])),
+      chapterContents: new Map(),
+    };
     const mentionLines: string[] = [];
     for (const mention of input.mentions) {
-      const resolved = resolveMention(mention, novelId, chapters);
+      const resolved = resolveMention(mention, chapters, mentionLookups, chapterIndex);
       if (resolved) mentionLines.push(resolved);
     }
-    if (mentionLines.length) sections.push(buildSection("mentions", "引用资料", mentionLines.join("\n"), 99));
+    if (mentionLines.length) sections.push(buildSection("mentions", "引用资料", mentionLines.join("\n"), 100));
   }
 
   // 预算裁剪：contextBudget 是显式的上下文预算；0 = 不限制（不裁剪）。
@@ -360,63 +500,20 @@ export function assembleContext(input: AssembledContextInput): AssembledContext 
       : config.maxTokens > 0
         ? config.maxTokens
         : DEFAULT_CONTEXT_BUDGET;
-  const dropped: ContextSectionId[] = [];
-  let total = sections.reduce((sum, section) => (section.included ? sum + section.tokens : sum), 0);
-
-  if (budget > 0 && total > budget) {
-    const droppable = sections
-      .filter((section) => section.included && section.priority < 90)
-      .sort((left, right) => left.priority - right.priority);
-    for (const section of droppable) {
-      if (total <= budget) break;
-      section.included = false;
-      total -= section.tokens;
-      dropped.push(section.id);
-    }
-  }
-  if (budget > 0 && total > budget) {
-    // 仍超预算：先截断最长的块，再截断其余
-    const included = sections
-      .filter((section) => section.included)
-      .sort((left, right) => right.tokens - left.tokens);
-    for (const section of included) {
-      if (total <= budget) break;
-      const ratio = Math.max(0.25, (budget / Math.max(total, 1)) * 0.9);
-      const limit = Math.max(120, Math.floor(section.text.length * ratio));
-      if (limit < section.text.length) {
-        section.text = `${section.text.slice(0, limit).trimEnd()}\n…（已按上下文预算截断）`;
-        const newTokens = estimateTokens(section.text);
-        total += newTokens - section.tokens;
-        section.tokens = newTokens;
-        section.truncated = true;
-        section.included = true;
-      }
-    }
-  }
-
-  const includedSections = sections.filter((section) => section.included && section.text.trim());
   const headerLines: string[] = [`【作品】${novel.title}${novel.genre ? `（${novel.genre}）` : ""}`];
   if (novel.synopsis) headerLines.push(`【简介】${preview(novel.synopsis, 200)}`);
-  const hasUnrevealed = includedSections.some(
-    (section) =>
-      (section.id === "characters" || section.id === "world") && section.text.includes("尚未揭示"),
-  );
-  if (hasUnrevealed) {
-    headerLines.push("【资料说明】标有「尚未揭示」的设定读者还不知道：可以拿来埋伏笔、铺线索，但不要提前点破或替读者揭晓。");
-  }
   if (currentChapter) {
     headerLines.push(`【当前章节】第${chapterIndex ?? "?"}章《${currentChapter.title}》${volume ? `（${volume.title}）` : ""}`);
     if (currentChapter.summary) headerLines.push(`【本章已有摘要】${currentChapter.summary}`);
   }
-  const body = includedSections
-    .map((section) => `【${section.label}】\n${section.text.trim()}`)
-    .join("\n\n");
-  const text = [headerLines.join("\n"), body].filter(Boolean).join("\n\n");
+  sections.unshift(buildSection("work-info", "作品信息", headerLines.join("\n"), 91));
+  const { tokens, dropped } = trimContextSections(sections, budget);
+  const text = renderContextSections(sections);
 
   return {
     text,
     sections,
-    tokens: includedSections.reduce((sum, section) => sum + section.tokens, 0),
+    tokens,
     budget,
     chapterIndex,
     dropped,
@@ -433,34 +530,46 @@ function stripTags(html: string): string {
     .trim();
 }
 
+type MentionLookups = {
+  characters: Map<ID, ReturnType<typeof listCharacters>[number]>;
+  worlds: Map<ID, ReturnType<typeof listWorld>[number]>;
+  archives: Map<ID, ReturnType<typeof listArchives>[number]>;
+  foreshadows: Map<ID, ReturnType<typeof listForeshadows>[number]>;
+  chapterContents: Map<ID, string>;
+};
+
 function resolveMention(
   mention: { type: "character" | "world" | "chapter" | "archive" | "foreshadow"; id: ID; label: string },
-  novelId: ID,
   chapters: ChapterRef[],
+  lookups: MentionLookups,
+  chapterIndex: number | null,
 ): string {
   switch (mention.type) {
     case "character": {
-      const character = listCharacters(novelId).find((item) => item.id === mention.id);
-      if (!character) return "";
+      const character = lookups.characters.get(mention.id);
+      if (!character || !isAiVisibleAtChapter(character, chapterIndex, true)) return "";
       return `- 角色「${character.name}」：${character.identity} ${preview(character.personality, 100)} ${character.currentState ? `当前：${preview(character.currentState, 100)}` : ""}`.trim();
     }
     case "world": {
-      const setting = listWorld(novelId).find((item) => item.id === mention.id);
-      if (!setting) return "";
+      const setting = lookups.worlds.get(mention.id);
+      if (!setting || !isAiVisibleAtChapter(setting, chapterIndex, true)) return "";
       return `- 设定「${setting.title}」：${preview(setting.content || setting.summary, 200)}`;
     }
     case "chapter": {
       const ref = chapters.find((item) => item.chapter.id === mention.id);
       if (!ref) return "";
-      return `- 第${ref.index}章《${ref.chapter.title}》：${ref.chapter.summary || preview(stripTags(getChapter(ref.chapter.id)?.content ?? ""), 200)}`;
+      if (!lookups.chapterContents.has(ref.chapter.id)) {
+        lookups.chapterContents.set(ref.chapter.id, getChapter(ref.chapter.id)?.content ?? "");
+      }
+      return `- 第${ref.index}章《${ref.chapter.title}》：${ref.chapter.summary || preview(stripTags(lookups.chapterContents.get(ref.chapter.id) ?? ""), 200)}`;
     }
     case "archive": {
-      const archive = listArchives(novelId).find((item) => item.id === mention.id);
+      const archive = lookups.archives.get(mention.id);
       if (!archive) return "";
       return `- 第${archive.orderIndex}章《${archive.chapterTitle}》档案：${preview(archive.chapterSummary, 200)}`;
     }
     case "foreshadow": {
-      const foreshadow = listForeshadows(novelId).find((item) => item.id === mention.id);
+      const foreshadow = lookups.foreshadows.get(mention.id);
       if (!foreshadow) return "";
       return `- 伏笔「${foreshadow.title}」：${foreshadow.description}［${foreshadow.status}］`;
     }

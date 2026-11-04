@@ -60,6 +60,7 @@ export interface ModelTargetInfo {
   modelLabel: string;
   /** 模型上下文窗口（tokens），模型目录提供时才有 */
   contextWindow: number | null;
+  maxOutputTokens: number | null;
   /** 是否有可用的 Provider + 模型 */
   ready: boolean;
 }
@@ -100,6 +101,7 @@ export function describeModelTarget(
       model: "",
       modelLabel: "",
       contextWindow: null,
+      maxOutputTokens: null,
       ready: false,
     };
   }
@@ -111,8 +113,22 @@ export function describeModelTarget(
     model: chosen.id,
     modelLabel: chosen.label || chosen.id,
     contextWindow: readContextWindow(chosen),
+    maxOutputTokens: typeof chosen.maxOutputTokens === "number" && chosen.maxOutputTokens > 0
+      ? Math.round(chosen.maxOutputTokens)
+      : null,
     ready: true,
   };
+}
+
+export function recommendedContextBudget(
+  contextWindow: number | null | undefined,
+  maxOutputTokens: number | null | undefined,
+): number | null {
+  if (!contextWindow || contextWindow <= 0) return null;
+  const outputReserve = maxOutputTokens && maxOutputTokens > 0
+    ? Math.min(maxOutputTokens, contextWindow)
+    : Math.min(4096, Math.floor(contextWindow * 0.25));
+  return Math.max(1000, Math.floor((contextWindow - outputReserve) * 0.4));
 }
 
 /** 顶部展示用的模型标识，如「OpenAI / gpt-4o-mini」 */

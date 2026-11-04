@@ -1,6 +1,7 @@
 import { discoverModelCapabilities } from "./model-capabilities";
 import { thinkingProfile, thinkingParameters, type ThinkingLevel } from "./thinking";
 import { openAiCachedTokens } from "./cache-usage";
+import { estimateTokens } from "@/lib/ui/cn";
 /**
  * Provider 适配层（服务端专用）
  * 支持：OpenAI 兼容协议 / Anthropic Messages / Gemini generateContent / Ollama / 离线演示（demo）
@@ -15,6 +16,10 @@ export class ProviderError extends Error {
     this.name = "ProviderError";
     this.status = status;
   }
+}
+
+export function redactProviderEndpoint(endpoint: string): string {
+  return endpoint.replace(/([?&](?:key|api_key|token)=)[^&]*/gi, "$1[redacted]");
 }
 
 export interface AiMessage {
@@ -38,6 +43,29 @@ export interface CompletionRequest {
   signal?: AbortSignal;
 }
 
+export function assertCompletionWithinWindow(request: CompletionRequest): void {
+  if (request.purpose === "connection-test") return;
+  const model = request.provider.models?.find((item) => item.id === request.model);
+  const contextWindow = model?.contextWindow;
+  if (!contextWindow || contextWindow <= 0) return;
+
+  const inputTokens = request.messages.reduce(
+    (sum, message) => sum + estimateTokens(message.content) + estimateTokens(message.reasoning_content ?? "") + 4,
+    0,
+  ) + (request.decisionTools?.length ? estimateTokens(JSON.stringify(request.decisionTools)) : 0);
+  const outputReserve = request.maxTokens && request.maxTokens > 0
+    ? request.maxTokens
+    : model.maxOutputTokens ?? 4096;
+  const requiredTokens = inputTokens + outputReserve;
+
+  if (requiredTokens > contextWindow) {
+    throw new ProviderError(
+      `本次请求预计需要约 ${requiredTokens.toLocaleString()} tokens（输入约 ${inputTokens.toLocaleString()}，为输出预留 ${outputReserve.toLocaleString()}），超过模型「${model.label || model.id}」的 ${contextWindow.toLocaleString()} token 上下文窗口。请减少作品上下文或聊天历史、降低单次输出上限，或选择更大窗口的模型。`,
+      413,
+    );
+  }
+}
+
 export type ProviderChunk =
   | { type: "delta"; text: string }
   | { type: "reasoning"; text: string }
@@ -45,6 +73,10 @@ export type ProviderChunk =
   | { type: "done" };
 
 const OUTPUT_LIMIT_MESSAGE="模型输出因长度限制被截断，内容尚未完成。输出设为 0 时使用服务商默认额度，仍可能达到限制；无需为测试连接修改此设置。长篇写作可在聊天上下文或设置中提高「单次输出上限」，并检查模型的输出与上下文容量；长篇也可分章生成。已接收的内容仍保留在预览中。";
+
+export function isOutputLimitError(error: unknown): boolean {
+  return error instanceof ProviderError && error.message === OUTPUT_LIMIT_MESSAGE;
+}
 
 const DEFAULT_BASE: Record<ProviderConfig["kind"], string> = {
   openai: "https://api.openai.com/v1",
@@ -157,7 +189,9 @@ function friendlyHttpMessage(status: number, raw: string, providerName: string):
 }
 
 async function httpError(response: Response, provider: ProviderConfig): Promise<ProviderError> {
-  const raw = await safeErrorText(response);
+  let raw = redactProviderEndpoint(await safeErrorText(response));
+  const key = provider.apiKey?.trim();
+  if (key) raw = raw.replaceAll(key, "[redacted]").replaceAll(encodeURIComponent(key), "[redacted]");
   return new ProviderError(friendlyHttpMessage(response.status, raw, provider.name || provider.kind), response.status);
 }
 
@@ -573,6 +607,7 @@ async function* streamDemo(request: CompletionRequest): AsyncGenerator<ProviderC
 /* ------------------------------ 统一入口 ------------------------------ */
 
 export async function* streamCompletion(request: CompletionRequest): AsyncGenerator<ProviderChunk> {
+  assertCompletionWithinWindow(request);
   switch (request.provider.kind) {
     case "anthropic":
       yield* streamAnthropic(request);

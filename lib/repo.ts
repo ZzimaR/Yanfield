@@ -905,6 +905,42 @@ export function listMessages(sessionId: ID): ChatMessage[] {
   return all<Row>("SELECT * FROM chat_messages WHERE session_id = ? ORDER BY created_at, rowid", [sessionId]).map(messageFromRow);
 }
 
+export function listMessagesPage(
+  sessionId: ID,
+  beforeId: ID | null,
+  limit: number,
+): { items: ChatMessage[]; hasMore: boolean; beforeId: ID | null } | null {
+  const cursor = beforeId
+    ? get<{ rowid: number }>("SELECT rowid FROM chat_messages WHERE session_id = ? AND id = ?", [sessionId, beforeId])
+    : undefined;
+  if (beforeId && !cursor) return null;
+
+  const rows = cursor
+    ? all<Row>(
+        "SELECT * FROM chat_messages WHERE session_id = ? AND rowid < ? ORDER BY rowid DESC LIMIT ?",
+        [sessionId, cursor.rowid, limit + 1],
+      )
+    : all<Row>(
+        "SELECT * FROM chat_messages WHERE session_id = ? ORDER BY rowid DESC LIMIT ?",
+        [sessionId, limit + 1],
+      );
+  const hasMore = rows.length > limit;
+  const items = rows.slice(0, limit).map(messageFromRow).reverse();
+  return { items, hasMore, beforeId: items[0]?.id ?? null };
+}
+
+export function listChatHistoryPage(
+  sessionId: ID,
+  limit: number,
+): { items: ChatMessage[]; hasMore: boolean } {
+  const rows = all<Row>(
+    "SELECT * FROM chat_messages WHERE session_id = ? AND role IN ('user','assistant') AND status IN ('complete','streaming') AND trim(content) <> '' ORDER BY rowid DESC LIMIT ?",
+    [sessionId, limit + 1],
+  );
+  const hasMore = rows.length > limit;
+  return { items: rows.slice(0, limit).map(messageFromRow).reverse(), hasMore };
+}
+
 export function addMessage(
   sessionId: ID,
   input: { role: "user" | "assistant"; content?: string; actions?: ChatMessage["actions"]; status?: ChatMessage["status"]; provider?: string; model?: string; usage?: AiUsage | null; error?: string },
@@ -940,8 +976,11 @@ export function updateMessage(id: ID, data: Partial<ChatMessage>): ChatMessage {
   return messageFromRow(row);
 }
 
-export function deleteMessage(id: ID): void {
-  run("DELETE FROM chat_messages WHERE id = ?", [id]);
+export function deleteMessage(sessionId: ID, id: ID): boolean {
+  const row = get<{ id: string }>("SELECT id FROM chat_messages WHERE session_id = ? AND id = ?", [sessionId, id]);
+  if (!row) return false;
+  run("DELETE FROM chat_messages WHERE session_id = ? AND id = ?", [sessionId, id]);
+  return true;
 }
 
 /* ============================== 模型 Provider ============================== */

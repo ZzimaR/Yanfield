@@ -4,7 +4,7 @@
  */
 import { afterEach, describe, expect, it } from "vitest";
 import { createServer, type Server } from "node:http";
-import { listProviderModels, ProviderError } from "../lib/ai/provider";
+import { listProviderModels, ProviderError, redactProviderEndpoint } from "../lib/ai/provider";
 import type { ProviderConfig, ProviderKind } from "../lib/types";
 
 let server: Server | null = null;
@@ -43,6 +43,13 @@ function provider(kind: ProviderKind, baseUrl: string, overrides: Partial<Provid
 }
 
 describe("listProviderModels", () => {
+  it("redacts API credentials from endpoints returned to the browser", () => {
+    expect(redactProviderEndpoint("https://example.test/v1beta/models?key=secret&alt=sse"))
+      .toBe("https://example.test/v1beta/models?key=[redacted]&alt=sse");
+    expect(redactProviderEndpoint("https://example.test/models?token=secret"))
+      .toBe("https://example.test/models?token=[redacted]");
+  });
+
   it("demo 返回内置模型且不发请求", async () => {
     const result = await listProviderModels(provider("demo", ""));
     expect(result.endpoint).toBe("demo");

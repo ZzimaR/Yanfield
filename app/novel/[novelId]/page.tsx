@@ -9,7 +9,7 @@ import { Badge, Button, Card, Progress, Skeleton } from "@/components/ui/kit";
 import { useApi, useDataChanged } from "@/lib/client/api";
 import {
   NOVEL_STATUS_LABEL,
-  type Chapter,
+  type ChapterSummary,
   type DashboardStats,
   type Novel,
   type StoryArchive,
@@ -31,8 +31,8 @@ import {
 
 interface NovelTreeResponse {
   novel: Novel;
-  volumes: (Volume & { chapters: Chapter[] })[];
-  looseChapters: Chapter[];
+  volumes: (Volume & { chapters: ChapterSummary[] })[];
+  looseChapters: ChapterSummary[];
 }
 
 interface ArchivesResponse {
@@ -44,12 +44,13 @@ export default function NovelOverviewPage() {
   const novelId = params?.novelId ?? "";
 
   const novelApi = useApi<Novel>(novelId ? `/api/novels/${novelId}` : null);
-  const treeApi = useApi<NovelTreeResponse>(novelId ? `/api/novels/${novelId}/tree` : null);
+  const treeApi = useApi<NovelTreeResponse>(novelId ? `/api/novels/${novelId}/tree?view=summary` : null);
   const archivesApi = useApi<ArchivesResponse>(
     novelId ? `/api/archives?novelId=${encodeURIComponent(novelId)}` : null,
   );
   const statsApi = useApi<DashboardStats>("/api/stats");
   const [editOpen, setEditOpen] = React.useState(false);
+  const [focusWordGoal, setFocusWordGoal] = React.useState(false);
 
   useDataChanged(
     () => {
@@ -178,7 +179,15 @@ export default function NovelOverviewPage() {
               {novel.synopsis || "还没有写简介。点右侧「编辑信息」补上一句话，让书架更有存在感。"}
             </p>
             <div className="mt-3 flex flex-wrap items-center gap-2">
-              <Button variant="secondary" size="sm" icon={<Pencil className="size-3.5" />} onClick={() => setEditOpen(true)}>
+              <Button
+                variant="secondary"
+                size="sm"
+                icon={<Pencil className="size-3.5" />}
+                onClick={() => {
+                  setFocusWordGoal(false);
+                  setEditOpen(true);
+                }}
+              >
                 编辑信息
               </Button>
               <Button
@@ -249,7 +258,20 @@ export default function NovelOverviewPage() {
                   <Target className="size-3.5 text-ink-3" aria-hidden />
                   写作目标
                 </h3>
-                <span className="font-mono text-[10.5px] text-ink-3">{goalPercent}%</span>
+                <div className="flex items-center gap-2">
+                  <span className="font-mono text-[10.5px] text-ink-3">{goalPercent}%</span>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-6 px-1.5 text-[10.5px]"
+                    onClick={() => {
+                      setFocusWordGoal(true);
+                      setEditOpen(true);
+                    }}
+                  >
+                    调整
+                  </Button>
+                </div>
               </div>
               <Progress value={goalPercent} max={100} tone="gold" className="mt-2.5" />
               <p className="mt-2 text-[10.5px] text-ink-3">
@@ -311,6 +333,7 @@ export default function NovelOverviewPage() {
       <EditNovelDialog
         open={editOpen}
         novel={novel}
+        focusField={focusWordGoal ? "wordGoal" : "title"}
         onClose={() => setEditOpen(false)}
         onSaved={(updated) => {
           novelApi.setData(updated);

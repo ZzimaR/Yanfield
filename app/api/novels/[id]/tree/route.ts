@@ -5,7 +5,19 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export const GET = handle<{ id: string }>(async (_request, { params }) => {
-  const tree = repo.getNovelTree(params.id, new URL(_request.url).searchParams.get("view") !== "summary");
+  const search = new URL(_request.url).searchParams;
+  const tree = repo.getNovelTree(params.id, search.get("view") !== "summary");
   if (!tree) return notFound("作品不存在");
+  const chapterId = search.get("chapterId");
+  if (chapterId) {
+    const containsChapter =
+      tree.volumes.some((volume) => volume.chapters.some((chapter) => chapter.id === chapterId)) ||
+      tree.looseChapters.some((chapter) => chapter.id === chapterId);
+    const selectedChapter = containsChapter ? repo.getChapter(chapterId) : undefined;
+    return ok({
+      ...tree,
+      selectedChapter: selectedChapter?.novelId === params.id ? selectedChapter : null,
+    });
+  }
   return ok(tree);
 });

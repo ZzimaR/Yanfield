@@ -27,6 +27,7 @@ import { AgentRunCard } from "./AgentRunCard";
 import { UsageIndicator } from "./UsageIndicator";
 
 export interface ChatMessageViewProps {
+  novelId: string;
   message: UIMessage;
   agent: AgentDef;
   /** 该消息是否正在接收流式内容（显示打字光标） */
@@ -44,7 +45,8 @@ export interface ChatMessageViewProps {
   className?: string;
 }
 
-export function ChatMessageView({
+export const ChatMessageView = React.memo(function ChatMessageView({
+  novelId,
   message,
   agent,
   streaming = false,
@@ -73,7 +75,7 @@ export function ChatMessageView({
             <IconButton label="复制提问" size="sm" onClick={() => onCopy?.(message)}>
               <Copy className="size-3" />
             </IconButton>
-            <IconButton label="删除这条提问" size="sm" onClick={() => onDelete?.(message)}>
+            <IconButton label="删除这条提问" size="sm" disabled={disableActions} onClick={() => onDelete?.(message)}>
               <Trash className="size-3" />
             </IconButton>
           </div>
@@ -83,7 +85,7 @@ export function ChatMessageView({
   }
 
   /* ---------------- 助手消息 ---------------- */
-  const isStreaming = streaming || message.status === "streaming";
+  const isStreaming = streaming;
   const reasoningLength = (message.reasoning ?? "").trim().length;
 
   return (
@@ -167,7 +169,7 @@ export function ChatMessageView({
 
         {message.actions.filter(a=>a.type==="agent-run").map(action=>{
           const runId=(action.payload as {runId?:string})?.runId;
-          return runId?<AgentRunCard key={runId} runId={runId} initial={message.agentRun} disabled={disableActions} onContinue={onContinue}/>:null;
+          return runId?<AgentRunCard key={runId} runId={runId} novelId={novelId} initial={message.agentRun} disabled={disableActions} onContinue={onContinue}/>:null;
         })}
         {message.actions.some(a=>a.type!=="agent-run") ? (
           <div className="mt-2 flex flex-wrap items-center gap-1.5">
@@ -207,11 +209,11 @@ export function ChatMessageView({
               <RotateCcw className="size-3.5" />
             </IconButton>
           ) : null}
-          <IconButton label="删除这条回复" size="sm" onClick={() => onDelete?.(message)}>
+          <IconButton label="删除这条回复" size="sm" disabled={disableActions} onClick={() => onDelete?.(message)}>
             <Trash className="size-3.5" />
           </IconButton>
         </div>
       </div>
     </div>
   );
-}
+});

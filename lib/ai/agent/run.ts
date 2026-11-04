@@ -17,6 +17,7 @@ import { patchSchemas, proseHtml, sameFields } from "./schema";
 import { ENTITY_LABEL, type AgentRequest, type AgentRun, type AgentStep, type EntityKind, type Fields } from "./types";
 import type { AiStreamEvent } from "@/lib/types";
 import { MATERIAL_PROMPT, materialResultSchema, prepareMaterial, type ExistingMaterial, type MaterialSource } from "./materials";
+import { flattenChapters, isAiVisibleAtChapter } from "@/lib/ai/context";
 
 const kinds=z.enum(["chapter","blueprint","character","world","foreshadow","outline","volume-outline"]);
 const decisionSchema=z.object({message:z.string(),calls:z.array(z.object({name:z.enum(["workspace","list","read","propose","write_chapter","reject_change","read_archive"]),args:z.record(z.string(),z.unknown())})).max(12).default([]),done:z.boolean().default(false)});
@@ -25,7 +26,7 @@ const SYSTEM=`你是砚田写作台的执行助手。理解作者的目标，按
 工具：
 workspace {}：作品基本资料、文风、卷章目录和资料目录。建议先读一次。长篇仅列最近12章、当前章邻近章和明确引用章节；chapterCount是总章数，资料目录仅前40项，更多用list分页或搜索。目录章号index为全书号，orderIndex只在卷内排序。
 list {kind,query?,offset?,limit?}：offset默认0，limit默认30、最多60；返回数量达到limit时可增加offset继续读取。搜索角色/设定/伏笔/正文/章纲目录，kind为chapter|blueprint|character|world|foreshadow。
-read {kind,id,offset?,limit?}：读指定对象。kind还可为outline（id=novelId）、volume-outline（id=volumeId）。长正文按contentOffset/contentLimit分页（默认12000字符），不要把摘要当全文。读取优先返回本轮候选。隐藏资料不可读取。尚未揭示的资料可知但不可提前写出。
+read {kind,id,offset?,limit?}：读指定对象。kind还可为outline（id=novelId）、volume-outline（id=volumeId）。长正文按contentOffset/contentLimit分页（默认12000字符），不要把摘要当全文。读取优先返回本轮候选。AI 隐藏的资料不可读取；未揭示资料仅在作者本轮明确引用时可读，且不能提前写入正文。
 propose {kind,id?,fields,reason,title?}：暂存新建/修改，只填要改的字段，空串表示明确清空。修改前必须read，不能伪造id。新章的章纲id可填write_chapter返回的changeId。新建角色用name、role、identity、appearance、personality、goals、secrets、arc、speechStyle、currentState、gender、age、aliases、tags；设定用title、category(power/geography/faction/item/rule/history/custom)、summary、content、parentId、tags；伏笔用title、description、notes、status(planted/advanced/paid/dropped)。
 章纲字段goal,pov,conflict,emotionalArc,scenes[{id,title,summary,purpose,characters:[],location,emotion}],plotPoints:[],hooks:[],targetWords,notes。总纲字段premise,theme,tone,mainPlot,subplots:[],characterArcs:[{character,arc}],worldRules:[],ending,hooks:[]。卷纲summary,arcGoal,keyEvents:[],foreshadowPlan:[]。
 write_chapter {id?,title?,volumeId?,instruction,words?,mode?}：调用写手流式生成正文，自动暂存，返回changeId、实际字数。新章不传id；改现有章必须先read。mode为rewrite（默认）、append、selection。selection仅改作者当前选中段落。沿用作者要求和指定文风，不要擅自默认追加600字。
@@ -44,8 +45,12 @@ export async function* runAgent(request: AgentRequest, signal?: AbortSignal): As
   const novel=repo.getNovel(request.novelId);
   if (!novel) throw new ApiError("作品不存在",404);
   if(request.chapterId && repo.getChapter(request.chapterId)?.novelId!==novel.id) throw new ApiError("章节不属于该作品",400);
+  const chapterIndex = request.chapterId
+    ? flattenChapters(novel.id, false).find((ref) => ref.chapter.id === request.chapterId)?.index ?? null
+    : null;
   const target=resolveTarget("chat");
   const config=mergeContextConfig(request.context);
+  const selection=config.includeSelection?request.selection:undefined;
   const deepThinking=thinkingProfile(target.provider,target.model).adapter==="deepseek" && !!target.thinkingLevel&&target.thinkingLevel!=="off";
   let lastDecisionReasoning="";
   const decisionOverhead=usesDecisionTool(target.provider,target.model)?estimateTokens(JSON.stringify(DECISION_TOOLS)):0;
@@ -55,14 +60,14 @@ export async function* runAgent(request: AgentRequest, signal?: AbortSignal): As
   const material=new Map<string,unknown>();
   const appendBases=new Map<string,string>();
   const history=trimChatHistory(request.history??[],{maxChars:12000,maxMessages:10});
-  const messages:AiMessage[]=[{role:"system",content:(usesDecisionTool(target.provider,target.model)?nativeDecisionSystem(SYSTEM):SYSTEM)+"\n"+agentPreamble(request.agentId,repo.getSettings())+`\n作品id=${novel.id}。作者文风与约束：${config.includeStyleGuide?novel.styleGuide:""}\n${config.customInstruction||""}\n禁用词：${novel.forbiddenWords.join("、")}`} ,...history.kept.map(m=>m.role==="assistant"?{...m,content:JSON.stringify({message:m.content,calls:[],done:true}),...(deepThinking?{reasoning_content:""}:{})}:m),{role:"user",content:JSON.stringify({request:request.message,currentChapterId:request.chapterId||null,mentions:request.mentions,selection:request.selection,snapshot:request.snapshot,historyOmitted:history.trimmed})}];
+  const messages:AiMessage[]=[{role:"system",content:(usesDecisionTool(target.provider,target.model)?nativeDecisionSystem(SYSTEM):SYSTEM)+"\n"+agentPreamble(request.agentId,repo.getSettings())+`\n作品id=${novel.id}。作者文风与约束：${config.includeStyleGuide?novel.styleGuide:""}\n${config.customInstruction||""}\n禁用词：${novel.forbiddenWords.join("、")}\n尚未揭示的资料默认不可读取；只有作者本轮明确引用的卡片可例外读取，且不得提前写入正文。`} ,...history.kept.map(m=>m.role==="assistant"?{...m,content:JSON.stringify({message:m.content,calls:[],done:true}),...(deepThinking?{reasoning_content:""}:{})}:m),{role:"user",content:JSON.stringify({request:request.message,currentChapterId:request.chapterId||null,mentions:request.mentions,selection,snapshot:request.snapshot,historyOmitted:history.trimmed})}];
   let previous:AgentRun|undefined;
   if(request.previousRunId) {
     previous=getRun(request.previousRunId);
     if(previous.novelId!==novel.id) throw new ApiError("任务不属于该作品",400);
     messages.push({role:"user",content:JSON.stringify({previousRun:{id:previous.id,summary:previous.summary,changes:previous.changes.map(c=>({id:c.id,kind:c.kind,targetId:c.appliedId||c.targetId,title:c.title,state:c.state,changedFields:Object.keys(c.after)}))}})});
   }
-  run.materialPolicy=automaticMaterialPolicy(request.message,previous,request.selection);
+  run.materialPolicy=automaticMaterialPolicy(request.message,previous,selection);
   if(previous)messages.push({role:"user",content:JSON.stringify({automaticMaterialExtraction:run.materialPolicy,restriction:"skip表示本轮不自动回填资料；继续遵守作者明确限制，不擅自恢复整理"})});
   if(request.sessionId) {
     if(repo.getChatSession(request.sessionId)?.novelId!==novel.id) throw new ApiError("会话不属于该作品",400);
@@ -120,7 +125,8 @@ export async function* runAgent(request: AgentRequest, signal?: AbortSignal): As
     permitted(kind,id);
     const candidate=run.changes.find(c=>c.kind===kind && c.state==="pending" && (c.id===id || c.targetId===id)) || previous?.changes.find(c=>c.id===id&&c.kind===kind&&c.state==="pending");
     if(candidate) return candidateContext(candidate);
-    let row=visibleEntity(kind,id,novel.id);observed.set(`${kind}:${id}`,row);
+    const explicitlyReferenced=request.mentions?.some(mention=>mention.type===kind&&mention.id===id)??false;
+    let row=visibleEntity(kind,id,novel.id,chapterIndex,explicitlyReferenced);observed.set(`${kind}:${id}`,row);
     if(row&&request.snapshot?.id===id&&request.snapshot.kind===kind) {
       const allowed=Object.keys(patchSchemas[kind].shape);
       const draft=Object.fromEntries(Object.entries(request.snapshot.fields).filter(([k])=>allowed.includes(k)));
@@ -138,9 +144,11 @@ export async function* runAgent(request: AgentRequest, signal?: AbortSignal): As
     for(let round=0;round<12;round++) {
       if(signal?.aborted) throw new DOMException("已停止","AbortError");
       // Pin the instruction and latest task state; evict old observations, never tool-result pairs from native protocols.
-      const budget=config.contextBudget>0 ? config.contextBudget : 24000;
-      while(messages.length>baseMessages+2 && messages.reduce((n,m)=>n+estimateTokens(m.content+(m.reasoning_content||"")),0)+decisionOverhead>budget) messages.splice(baseMessages,1);
-      if(messages.reduce((n,m)=>n+estimateTokens(m.content+(m.reasoning_content||"")),0)+decisionOverhead>budget) throw new Error("任务材料超过上下文预算，请提高预算或缩小任务范围");
+      const budget=config.contextBudget;
+      if (budget > 0) {
+        while(messages.length>baseMessages+2 && messages.reduce((n,m)=>n+estimateTokens(m.content+(m.reasoning_content||"")),0)+decisionOverhead>budget) messages.splice(baseMessages,1);
+        if(messages.reduce((n,m)=>n+estimateTokens(m.content+(m.reasoning_content||"")),0)+decisionOverhead>budget) throw new Error("任务材料超过上下文预算，请提高预算或缩小任务范围");
+      }
       let raw="",decision: z.infer<typeof decisionSchema>|undefined;
       for(let attempt=0;attempt<2;attempt++) {
         raw="";
@@ -180,22 +188,37 @@ export async function* runAgent(request: AgentRequest, signal?: AbortSignal): As
             const tree=repo.getNovelTree(novel.id,false)!;
             const ordered=[...tree.volumes.flatMap(v=>v.chapters),...tree.looseChapters];
             const directory=chapterDirectoryWindow(ordered,request.chapterId,request.mentions?.filter(m=>m.type==="chapter").map(m=>m.id));
-            const characters=(config.includeCharacters?repo.listCharacters(novel.id):[]).filter(c=>c.aiVisible);
-            const worlds=(config.includeWorld?repo.listWorld(novel.id):[]).filter(c=>c.aiVisible);
+            const mentionedCharacters=new Set(request.mentions?.filter(m=>m.type==="character").map(m=>m.id)??[]);
+            const mentionedWorld=new Set(request.mentions?.filter(m=>m.type==="world").map(m=>m.id)??[]);
+            const characters=(config.includeCharacters?repo.listCharacters(novel.id):[]).filter(c=>isAiVisibleAtChapter(c,chapterIndex,mentionedCharacters.has(c.id)));
+            const worlds=(config.includeWorld?repo.listWorld(novel.id):[]).filter(c=>isAiVisibleAtChapter(c,chapterIndex,mentionedWorld.has(c.id)));
             const foreshadows=config.includeForeshadows?repo.listForeshadows(novel.id):[];
-            result={novel:{id:novel.id,title:novel.title,synopsis:novel.synopsis,pov:novel.pov},volumes:tree.volumes.map(v=>({id:v.id,title:v.title})),chapterCount:ordered.length,chapterListPartial:directory.length<ordered.length,chapters:directory,characterCount:characters.length,characters:characters.slice(0,40).map(c=>({id:c.id,name:c.name})),worldCount:worlds.length,world:worlds.slice(0,40).map(c=>({id:c.id,title:c.title})),foreshadowCount:foreshadows.length,foreshadows:foreshadows.slice(0,40).map(c=>({id:c.id,title:c.title})),recentArchives:(config.includeArchives?repo.listArchives(novel.id):[]).slice(-3).map(a=>({chapterId:a.chapterId,status:a.status,summary:a.chapterSummary}))};
+            const recentArchives=config.includeArchives&&chapterIndex!==null
+              ?repo.listArchives(novel.id).filter(a=>a.orderIndex<chapterIndex).slice(-Math.max(1,config.archiveDepth))
+              :[];
+            result={novel:{id:novel.id,title:novel.title,synopsis:novel.synopsis,pov:novel.pov},volumes:tree.volumes.map(v=>({id:v.id,title:v.title})),chapterCount:ordered.length,chapterListPartial:directory.length<ordered.length,chapters:directory,characterCount:characters.length,characters:characters.slice(0,40).map(c=>({id:c.id,name:c.name})),worldCount:worlds.length,world:worlds.slice(0,40).map(c=>({id:c.id,title:c.title})),foreshadowCount:foreshadows.length,foreshadows:foreshadows.slice(0,40).map(c=>({id:c.id,title:c.title})),recentArchives:recentArchives.map(a=>({chapterId:a.chapterId,status:a.status,summary:a.chapterSummary}))};
           } else if(call.name==="list") {
             const kind=kinds.parse(args.kind),query=String(args.query||"");
             const offset=z.number().int().min(0).max(100000).parse(args.offset??0);
             const limit=z.number().int().min(1).max(60).parse(args.limit??30);
             permitted(kind);
             const rows=kind==="character"?repo.listCharacters(novel.id):kind==="world"?repo.listWorld(novel.id):kind==="foreshadow"?repo.listForeshadows(novel.id):repo.listChapters(novel.id);
-            result=rows.filter(r=>(!("aiVisible" in r)||r.aiVisible)&&JSON.stringify(r).includes(query)).slice(offset,offset+limit).map(r=>({id:r.id,title:"name" in r?r.name:r.title,summary:String("identity" in r?r.identity:"summary" in r?r.summary:"description" in r?r.description:"").slice(0,200)}));
+            const explicitlyMentioned=new Set(request.mentions?.filter(m=>m.type===kind).map(m=>m.id)??[]);
+            result=rows.filter(r=>{
+              if("aiVisible" in r&&!r.aiVisible)return false;
+              if("revealAtChapter" in r&&typeof r.revealAtChapter==="number"&&chapterIndex!==null&&r.revealAtChapter>chapterIndex&&!explicitlyMentioned.has(r.id))return false;
+              if("revealAtChapter" in r&&typeof r.revealAtChapter==="number"&&chapterIndex===null&&!explicitlyMentioned.has(r.id))return false;
+              return JSON.stringify(r).includes(query);
+            }).slice(offset,offset+limit).map(r=>({id:r.id,title:"name" in r?r.name:r.title,summary:String("identity" in r?r.identity:"summary" in r?r.summary:"description" in r?r.description:"").slice(0,200)}));
           } else if(call.name==="read_archive") {
             if(!config.includeArchives)throw new Error("故事档案已在上下文设置中关闭");
             const chapterId=z.string().parse(args.chapterId);
-            if(repo.getChapter(chapterId)?.novelId!==novel.id)throw new Error("章节不属于该作品");
-            result=repo.getArchiveByChapter(chapterId)||{missing:true};
+            const archiveChapter=flattenChapters(novel.id,false).find(ref=>ref.chapter.id===chapterId);
+            if(!archiveChapter)throw new Error("章节不属于该作品");
+            const archive=repo.getArchiveByChapter(chapterId);
+            const explicitlyMentioned=request.mentions?.some(mention=>mention.type==="archive"&&(mention.id===chapterId||mention.id===archive?.id))??false;
+            if((chapterIndex===null||archiveChapter.index>=chapterIndex)&&!explicitlyMentioned)throw new Error("不能读取当前章节之后的故事档案");
+            result=archive||{missing:true};
             material.set(`archive:${chapterId}`,result);
           } else if(call.name==="read") {
             const kind=kinds.parse(args.kind),id=z.string().parse(args.id);
@@ -218,7 +241,8 @@ export async function* runAgent(request: AgentRequest, signal?: AbortSignal): As
             }
             if(kind==="chapter") throw new Error("正文请使用write_chapter，避免JSON正文丢失或截断");
             if(id&&!observed.has(`${kind}:${id}`)&&!run.changes.some(c=>c.id===id||c.kind===kind&&c.targetId===id)) throw new Error("修改前请先读取目标对象");
-            const c=propose(run,kind,id,args.fields,String(args.reason||"按作者要求修改"),typeof args.title==="string"?args.title:prior?.title);
+            const explicitlyReferenced=request.mentions?.some(mention=>mention.type===kind&&mention.id===id)??false;
+            const c=propose(run,kind,id,args.fields,String(args.reason||"按作者要求修改"),typeof args.title==="string"?args.title:prior?.title,{chapterIndex,explicitlyReferenced});
             if(id&&observed.has(`${kind}:${id}`)) c.before=observed.get(`${kind}:${id}`)!;
             if(request.snapshot?.id===id&&request.snapshot.kind===kind&&c.before) {
               for(const [key,value] of Object.entries(request.snapshot.fields)) {
@@ -241,30 +265,30 @@ export async function* runAgent(request: AgentRequest, signal?: AbortSignal): As
             if(id&&!candidate&&!observed.has(`chapter:${id}`)) throw new Error("改正文前请先读取目标章节");
             const source=candidate?candidateContext(candidate):id?read("chapter",id):null;
             const mode=z.enum(["rewrite","append","selection"]).parse(args.mode??"rewrite");
-            const words=z.number().int().min(mode==="selection"?1:100).max(8000).parse(args.words??(mode==="selection"?Math.max(1,countWords(request.selection||"")):2000));
+            const words=z.number().int().min(mode==="selection"?1:100).max(8000).parse(args.words??(mode==="selection"?Math.max(1,countWords(selection||"")):2000));
             const instruction=z.string().min(1).parse(args.instruction);
-            if(mode==="selection"&&(!request.selection||actualId!==request.chapterId)) throw new Error("当前没有对应章节的选区，请选择后重试");
+            if(mode==="selection"&&(!selection||actualId!==request.chapterId)) throw new Error("当前没有对应章节的选区，请选择后重试");
             if(mode==="selection") {
-              const html=String(source?.content||""),selection=request.selection!;
-              if(!html.includes(selection)||html.indexOf(selection)!==html.lastIndexOf(selection))throw new Error("选区跨格式或在章内重复，请改为整章修改或选取唯一完整段落");
+              const html=String(source?.content||""),selectedText=selection!;
+              if(!html.includes(selectedText)||html.indexOf(selectedText)!==html.lastIndexOf(selectedText))throw new Error("选区跨格式或在章内重复，请改为整章修改或选取唯一完整段落");
             }
             const appendBase=mode==="append"?(appendBases.get(candidate?.id||"")??String(source?.content||"")):"";
             const appendDraft=mode==="append"&&candidate&&appendBases.has(candidate.id)?String(candidate.after.content||"").slice(appendBase.length):undefined;
             const writerSource=mode==="append"?{...source,content:appendBase,wordCount:countWords(appendBase)}:source;
             run.preview="";
-            const writer=writerMessages({style:config.includeStyleGuide?novel.styleGuide:"",customInstruction:config.customInstruction,forbiddenWords:novel.forbiddenWords,materials:[...material.entries()],currentKey:actualId?`chapter:${actualId}`:undefined,current:writerSource,request:request.message,instruction,words,mode,appendDraft,selection:request.selection,changes:run.changes.filter(c=>c.kind!=="chapter"&&c.state==="pending").map(c=>({kind:c.kind,...c.after}))});
-            if(writer.reduce((n,m)=>n+estimateTokens(m.content+(m.reasoning_content||"")),0)>budget) throw new Error("写作材料超过上下文预算，请提高预算或缩小范围");
+            const writer=writerMessages({style:config.includeStyleGuide?novel.styleGuide:"",customInstruction:config.customInstruction,forbiddenWords:novel.forbiddenWords,materials:[...material.entries()],currentKey:actualId?`chapter:${actualId}`:undefined,current:writerSource,request:request.message,instruction,words,mode,appendDraft,selection,changes:run.changes.filter(c=>c.kind!=="chapter"&&c.state==="pending").map(c=>({kind:c.kind,...c.after}))});
+            if(budget>0&&writer.reduce((n,m)=>n+estimateTokens(m.content+(m.reasoning_content||"")),0)>budget) throw new Error("写作材料超过上下文预算，请提高预算或缩小范围");
             for await(const delta of complete(writer)) {run.preview+=delta;yield {type:"agent-preview",runId:run.id,text:delta};}
             if(signal?.aborted) throw new DOMException("已停止","AbortError");
             let content=proseHtml(run.preview);
             if(mode==="append") content=appendBase+content;
             if(mode==="selection") {
               const html=String(source?.content||"");
-              const selection=request.selection!;
+              const selectedText=selection!;
               // Refuse ambiguous or formatted spans rather than replacing the current cursor selection.
-              if(!html.includes(selection)||html.indexOf(selection)!==html.lastIndexOf(selection)) throw new Error("选区跨格式或在章内重复，请改为整章修改或选取唯一完整段落");
+              if(!html.includes(selectedText)||html.indexOf(selectedText)!==html.lastIndexOf(selectedText)) throw new Error("选区跨格式或在章内重复，请改为整章修改或选取唯一完整段落");
               const escaped=run.preview.trim().replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/\n+/g,"<br>");
-              content=html.replace(selection,escaped);
+              content=html.replace(selectedText,escaped);
             }
             if(candidate&&appendBases.has(candidate.id)&&!content.startsWith(appendBases.get(candidate.id)!))throw new Error("本轮为追加任务，不能改动原文，请只修订新增段落");
             const proposedNewCount=run.changes.filter(c=>c.kind==="chapter"&&!c.targetId&&c.state==="pending"&&c.id!==candidate?.id).length;
@@ -325,7 +349,7 @@ export async function* runAgent(request: AgentRequest, signal?: AbortSignal): As
     if(!finished) run.summary="已达到执行轮次上限，已完成的候选在下方，可审阅后继续。";
     const drafts=run.changes.filter(c=>c.kind==="chapter"&&c.state==="pending"&&typeof c.after.content==="string");
     const optedOut=run.materialPolicy==="skip";
-    if(drafts.length&&!optedOut&&!request.selection&&(config.includeCharacters||config.includeWorld||config.includeForeshadows)) {
+    if(drafts.length&&!optedOut&&!selection&&(config.includeCharacters||config.includeWorld||config.includeForeshadows)) {
       const step:AgentStep={id:uid("step"),tool:"organize_materials",label:"整理正文资料",detail:"核对人物、设定和伏笔，已有资料只补空白；所有卡片仍待确认。",status:"running" as "running"|"complete"|"error"};
       run.steps.push(step);checkpoint();yield {type:"agent",run};
       try {
@@ -336,8 +360,10 @@ export async function* runAgent(request: AgentRequest, signal?: AbortSignal): As
           }
         }
         const existing:ExistingMaterial[]=[];
-        if(config.includeCharacters)for(const c of repo.listCharacters(novel.id).filter(c=>c.aiVisible))existing.push({kind:"character",id:c.id,fields:c as unknown as Fields});
-        if(config.includeWorld)for(const c of repo.listWorld(novel.id).filter(c=>c.aiVisible))existing.push({kind:"world",id:c.id,fields:c as unknown as Fields});
+        const mentionedCharacters=new Set(request.mentions?.filter(m=>m.type==="character").map(m=>m.id)??[]);
+        const mentionedWorld=new Set(request.mentions?.filter(m=>m.type==="world").map(m=>m.id)??[]);
+        if(config.includeCharacters)for(const c of repo.listCharacters(novel.id).filter(c=>isAiVisibleAtChapter(c,chapterIndex,mentionedCharacters.has(c.id))))existing.push({kind:"character",id:c.id,fields:c as unknown as Fields});
+        if(config.includeWorld)for(const c of repo.listWorld(novel.id).filter(c=>isAiVisibleAtChapter(c,chapterIndex,mentionedWorld.has(c.id))))existing.push({kind:"world",id:c.id,fields:c as unknown as Fields});
         if(config.includeForeshadows)for(const c of repo.listForeshadows(novel.id))existing.push({kind:"foreshadow",id:c.id,fields:c as unknown as Fields});
         for(const c of run.changes.filter(c=>c.state==="pending"&&["character","world","foreshadow"].includes(c.kind))) {
           const row=existing.find(x=>x.kind===c.kind&&x.id===c.targetId&&c.targetId);
@@ -345,8 +371,8 @@ export async function* runAgent(request: AgentRequest, signal?: AbortSignal): As
           else existing.push({kind:c.kind as ExistingMaterial["kind"],id:c.targetId,fields:{...c.before,...c.after}});
         }
         const input:AiMessage[]=[{role:"system",content:MATERIAL_PROMPT},{role:"user",content:JSON.stringify({sources,existing,allowedKinds:[...(config.includeCharacters?["character"]:[]),...(config.includeWorld?["world"]:[]),...(config.includeForeshadows?["foreshadow"]:[])]})}];
-        const budget=config.contextBudget>0?config.contextBudget:24000;
-        if(input.reduce((n,m)=>n+estimateTokens(m.content+(m.reasoning_content||"")),0)>budget)throw new Error("资料整理材料超过预算，本轮正文已保留，可引用单章继续整理");
+        const budget=config.contextBudget;
+        if(budget>0&&input.reduce((n,m)=>n+estimateTokens(m.content+(m.reasoning_content||"")),0)>budget)throw new Error("资料整理材料超过预算，本轮正文已保留，可引用单章继续整理");
         let parsed:z.infer<typeof materialResultSchema>|undefined;
         for(let attempt=0;attempt<2;attempt++) {
           let raw="";for await(const delta of complete(input,false,true))raw+=delta;

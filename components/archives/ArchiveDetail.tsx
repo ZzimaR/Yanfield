@@ -75,12 +75,30 @@ export function ArchiveDetail({
     try {
       const result = await extractChapterArchive({ novelId, chapterId: archive.chapterId, signal: controller.signal });
       if (result.ok) {
-        toast({ title: "档案已重新提取", description: archive.chapterTitle, tone: "success" });
+        const conflicts = result.newConflicts ?? 0;
+        if (result.preservedManual) {
+          toast({
+            title: "档案已更新，保留了你的手动修改",
+            description:
+              conflicts > 0
+                ? `有 ${conflicts} 处档案与正文不一致，已列入「待确认冲突」。如果你的校订是对的，记得同步修改正文。`
+                : "只补充了正文里新增的事实。",
+            tone: conflicts > 0 ? "default" : "success",
+          });
+        } else {
+          toast({ title: "档案已重新提取", description: archive.chapterTitle, tone: "success" });
+        }
         notifyDataChanged("archives");
         onChanged();
       } else {
         toast({ title: "重新提取失败", description: result.error, tone: "error" });
       }
+    } catch (error) {
+      toast({
+        title: "重新提取失败",
+        description: error instanceof Error ? error.message : "提取档案时发生错误",
+        tone: "error",
+      });
     } finally {
       setExtracting(false);
       abortRef.current = null;
@@ -108,8 +126,8 @@ export function ArchiveDetail({
       title: choice === "archive" ? "已标记：保留档案记录" : "已标记：改为以正文为准",
       description:
         choice === "archive"
-          ? "当前版本只做标记说明，档案数据仍以 API 返回为准；后续可在修订正文后重新提取。"
-          : "当前版本只做标记说明，不会自动改写档案；请手动编辑档案或改完正文后重新提取。",
+          ? "档案会保留这条记录。请同步修改正文，让正文与档案一致；之后重新提取也不会覆盖你手动改过的内容。"
+          : "请点「编辑」改正档案里的这一条。手动改过的档案在重新提取时会被保留，所以只改正文不会自动纠正它。",
       tone: "default",
     });
   };
@@ -157,6 +175,16 @@ export function ArchiveDetail({
           </div>
         </div>
       </Card>
+
+      {archive.generatedBy === "manual" ? (
+        <div className="flex items-start gap-2 rounded-md border border-line bg-surface-2 px-3.5 py-2.5">
+          <Pencil className="mt-0.5 size-3.5 shrink-0 text-ink-3" />
+          <p className="min-w-0 flex-1 text-[12px] leading-relaxed text-ink-2">
+            你手动校订过这份档案。重新提取会保留你的修改，只补充正文里新增的事实；如果你改的是事实（比如人数、物品、时间），请同步修改正文，否则会被列为「待确认冲突」，后续章节的
+            AI 也可能读到前后矛盾的信息。
+          </p>
+        </div>
+      ) : null}
 
       {stale ? (
         <div className="flex flex-wrap items-center gap-2 rounded-md border border-line bg-gold-soft px-3.5 py-2.5">

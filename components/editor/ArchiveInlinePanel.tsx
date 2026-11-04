@@ -266,11 +266,28 @@ export function ArchiveInlinePanel({ novelId }: ArchiveInlinePanelProps) {
     try {
       const result = await extractChapterArchive({ novelId, chapterId: selectedChapter.id, signal: controller.signal });
       if (result.ok) {
-        if (aliveRef.current) toast({ title: "档案已提取", description: selectedChapter.title, tone: "success" });
+        if (aliveRef.current) {
+          const conflicts = result.newConflicts ?? 0;
+          toast({
+            title: result.preservedManual ? "档案已更新，保留了你的手动修改" : "档案已提取",
+            description: result.preservedManual
+              ? conflicts > 0
+                ? `发现 ${conflicts} 处档案与正文不一致。若档案校订正确，请同步修改正文。`
+                : "只补充了正文里的新事实。若校订了事实，请同步修改正文。"
+              : selectedChapter.title,
+            tone: conflicts > 0 ? "default" : "success",
+          });
+        }
         await archivesApi.refresh();
         notifyDataChanged("archives");
       } else if (result.error !== "已中止") {
         if (aliveRef.current) setExtractError(result.error ?? "提取失败");
+      }
+    } catch (error) {
+      if (aliveRef.current) {
+        const message = error instanceof Error ? error.message : "提取档案时发生错误";
+        setExtractError(message);
+        toast({ title: "提取档案失败", description: message, tone: "error" });
       }
     } finally {
       if (oneAbortRef.current === controller) {
@@ -299,6 +316,8 @@ export function ArchiveInlinePanel({ novelId }: ArchiveInlinePanelProps) {
     const targets = missingWithContent;
     let done = 0;
     let failed = 0;
+    let preservedManual = 0;
+    let newConflicts = 0;
     let processed = 0;
     try {
       for (const chapter of targets) {
@@ -314,10 +333,18 @@ export function ArchiveInlinePanel({ novelId }: ArchiveInlinePanelProps) {
         const result = await extractChapterArchive({ novelId, chapterId: chapter.id, signal: controller.signal });
         if (result.ok) {
           done += 1;
+          if (result.preservedManual) preservedManual += 1;
+          newConflicts += result.newConflicts ?? 0;
         } else if (result.error !== "已中止") {
           failed += 1;
         }
         await archivesApi.refresh();
+      }
+    } catch (error) {
+      failed += 1;
+      if (aliveRef.current) {
+        const message = error instanceof Error ? error.message : "补齐档案时发生错误";
+        setExtractError(message);
       }
     } finally {
       const aborted = controller.signal.aborted;
@@ -336,8 +363,12 @@ export function ArchiveInlinePanel({ novelId }: ArchiveInlinePanelProps) {
       } else {
         toast({
           title: "补齐完成",
-          description: `成功 ${done} 章${failed > 0 ? `，失败 ${failed} 章（多为正文为空或模型返回异常）` : ""}。`,
-          tone: failed > 0 ? "error" : "success",
+          description: [
+            `成功 ${done} 章${failed > 0 ? `，失败 ${failed} 章` : ""}。`,
+            preservedManual > 0 ? `其中 ${preservedManual} 章保留了手动校订。` : "",
+            newConflicts > 0 ? `发现 ${newConflicts} 处档案与正文不一致，请同步修改正文。` : "",
+          ].filter(Boolean).join(" "),
+          tone: failed > 0 ? "error" : newConflicts > 0 ? "default" : "success",
         });
       }
     }

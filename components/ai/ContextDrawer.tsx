@@ -16,7 +16,7 @@ import { Badge, Button, Sheet, Skeleton, Switch } from "@/components/ui/kit";
 import { cn, formatNumber, truncate } from "@/lib/ui/cn";
 import type { ContextPreview, ContextSection } from "./types";
 import { CHAPTER_SUMMARY_TOGGLE, resolveContextToggle } from "./utils";
-import { BUDGET_OPTIONS, budgetLabel } from "./model-info";
+import { BUDGET_OPTIONS, budgetLabel, recommendedContextBudget } from "./model-info";
 
 /** 服务端只返回已启用的分节；这些已知布尔分节缺失时补一行「未启用」，方便重新打开 */
 const KNOWN_FALLBACK_SECTIONS: Array<{ id: string; label: string }> = [
@@ -59,6 +59,8 @@ export interface ContextDrawerProps {
   budget?: number;
   /** 修改预算：由面板负责写回 settings.defaultContext 并刷新预览 */
   onBudgetChange?: (budget: number) => void;
+  modelContextWindow?: number | null;
+  modelMaxOutputTokens?: number | null;
 }
 
 export function ContextDrawer({
@@ -72,6 +74,8 @@ export function ContextDrawer({
   onConfigChange,
   budget,
   onBudgetChange,
+  modelContextWindow,
+  modelMaxOutputTokens,
 }: ContextDrawerProps) {
   const total = data?.totalTokens ?? 0;
   const activeBudget = typeof budget === "number" ? budget : (data?.budget ?? 0);
@@ -81,11 +85,17 @@ export function ContextDrawer({
 
   /** 预算下拉：预置 2k…128k/不限；若当前值不在列表里则补一项 */
   const budgetOptions = React.useMemo(() => {
-    if (BUDGET_OPTIONS.some((option) => option.value === activeBudget)) return BUDGET_OPTIONS;
-    return [...BUDGET_OPTIONS, { value: activeBudget, label: budgetLabel(activeBudget) }].sort(
+    const recommended = recommendedContextBudget(modelContextWindow, modelMaxOutputTokens);
+    const options = [...BUDGET_OPTIONS];
+    if (recommended && !options.some((option) => option.value === recommended)) {
+      options.push({ value: recommended, label: `建议 ${budgetLabel(recommended)}` });
+    }
+    if (options.some((option) => option.value === activeBudget)) return options;
+    return [...options, { value: activeBudget, label: budgetLabel(activeBudget) }].sort(
       (left, right) => left.value - right.value,
     );
-  }, [activeBudget]);
+  }, [activeBudget, modelContextWindow, modelMaxOutputTokens]);
+  const recommendedBudget = recommendedContextBudget(modelContextWindow, modelMaxOutputTokens);
 
   /** 合并「服务端已启用分节」与「已知但当前未启用的分节」，id 稳定且去重 */
   const rows = React.useMemo<DrawerSection[]>(() => {
@@ -155,6 +165,9 @@ export function ContextDrawer({
               style={{ width: `${percent}%` }}
             />
           </div>
+          <p className="mt-1.5 text-[10px] leading-relaxed text-ink-4 dark:text-ink-3">
+            统计作品资料及分节标题；不含系统提示、聊天历史或提示模板额外加入的材料。
+          </p>
 
           <label className="mt-3 flex items-center justify-between gap-2 text-[11px] text-ink-2">
             单次输出上限（tokens）
@@ -197,8 +210,22 @@ export function ContextDrawer({
           </div>
 
           <p className="mt-1.5 text-[10.5px] leading-relaxed text-ink-4 dark:text-ink-3">
-            预算越高携带的正文与资料越多，响应更慢、费用更高；关闭的分节不会随请求发送。
+            这是资料用量估算。AI 会按需读取资料，分节开关控制可读取范围；选区关闭时，选中文本不会发送。
           </p>
+          {modelContextWindow ? (
+            <p className={cn(
+              "mt-1 text-[10.5px] leading-relaxed",
+              recommendedBudget && activeBudget > recommendedBudget ? "text-gold" : "text-ink-4 dark:text-ink-3",
+            )}>
+              当前模型窗口 {formatNumber(modelContextWindow)} tokens
+              {recommendedBudget ? `；建议资料预算不超过 ${formatNumber(recommendedBudget)}` : ""}。
+              发送时还会检查完整请求及输出预留。
+            </p>
+          ) : (
+            <p className="mt-1 text-[10.5px] leading-relaxed text-ink-4 dark:text-ink-3">
+              当前模型未提供上下文窗口信息，无法预估上限；发送时只能由服务商判断。
+            </p>
+          )}
         </div>
 
         {/* 分节明细 */}
@@ -243,7 +270,7 @@ export function ContextDrawer({
                       <div className="flex items-center gap-1.5">
                         <span className="truncate text-[12.5px] text-ink">{section.label || section.id}</span>
                         {section.mode ? <Badge tone="default">{section.mode}</Badge> : null}
-                        {section.fallback ? <Badge tone="default">未启用</Badge> : null}
+                        {section.fallback ? <Badge tone="default">{enabled ? "暂无可用内容" : "未启用"}</Badge> : null}
                         {section.truncated ? <Badge tone="gold">已截断</Badge> : null}
                         <span className="ml-auto shrink-0 text-[11px] tabular-nums text-ink-3 dark:text-ink-2">
                           {section.tokens > 0 ? `${formatNumber(section.tokens)} tokens` : "—"}

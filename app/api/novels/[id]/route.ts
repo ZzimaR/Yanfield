@@ -1,5 +1,6 @@
 import { bad, handle, notFound, ok } from "@/lib/api-utils";
 import * as repo from "@/lib/repo";
+import { isValidNovelWordGoal, MAX_NOVEL_WORD_GOAL } from "@/lib/novel-goal";
 import type { Novel } from "@/lib/types";
 import { NOVEL_STATUSES, pickEnum, pickFields, readBody, type FieldSpec } from "@/app/api/_lib/http";
 
@@ -31,6 +32,9 @@ export const PATCH = handle<{ id: string }>(async (request, { params }) => {
   if (!repo.getNovel(params.id)) return notFound("作品不存在");
   const body = await readBody(request);
   const patch = pickFields<Novel>(body, NOVEL_FIELDS);
+  if (patch.wordGoal !== undefined && !isValidNovelWordGoal(patch.wordGoal)) {
+    return bad(`全书目标字数必须是 0 至 ${MAX_NOVEL_WORD_GOAL.toLocaleString("zh-CN")} 之间的整数`);
+  }
   const status = pickEnum(body, "status", NOVEL_STATUSES, "作品状态");
   if (status) patch.status = status;
   if (typeof patch.title === "string") {

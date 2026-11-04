@@ -17,6 +17,19 @@ export interface MentionRef {
   label: string;
 }
 
+export interface AgentRequestContext {
+  agentId: AgentId;
+  chapterId: string | null;
+  context: ContextConfig;
+  mentions: MentionRef[];
+  selection?: string;
+  snapshot?: {
+    kind: "world" | "character" | "foreshadow";
+    id: string | null;
+    fields: Record<string, unknown>;
+  };
+}
+
 /** 引用选择器里的一条候选 */
 export interface MentionOption extends MentionRef {
   description?: string;
@@ -57,6 +70,9 @@ export interface ChatTab {
   title: string;
   agentId: AgentId;
   messages: UIMessage[];
+  olderMessagesCursor?: string | null;
+  hasOlderMessages?: boolean;
+  loadingOlderMessages?: boolean;
   createdAt: string;
 }
 

@@ -14,7 +14,7 @@ interface ContextPreviewBody {
   mentions?: { type: "character" | "world" | "chapter" | "archive" | "foreshadow"; id: string; label: string }[];
 }
 
-/** 上下文装配预览：右侧「上下文抽屉」所见的，就是真正发给模型的内容 */
+/** 上下文装配预览：展示常规对话资料估算；Agent 另按分节开关动态读取资料。 */
 export const POST = handle(async (req) => {
   const body = await readJson<ContextPreviewBody>(req);
   if (!body.novelId) throw new ApiError("缺少 novelId", 400);

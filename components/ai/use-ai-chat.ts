@@ -9,7 +9,7 @@
  */
 import * as React from "react";
 import { chatTitleFromMessage, isDefaultChatTitle } from "@/lib/chat-title";
-import { apiGet, apiPost, streamAiChat } from "@/lib/client/api";
+import { apiDelete, apiGet, apiPost, streamAiChat } from "@/lib/client/api";
 import { ApiError } from "@/lib/client/api";
 import { uid } from "@/lib/ui/cn";
 import type {
@@ -33,6 +33,7 @@ import { humanizeAiError } from "./errors";
 
 /** 最多同时打开的会话数 */
 export const MAX_SESSION_TABS = 3;
+const MAX_LOADED_MESSAGES_PER_TAB = 120;
 
 export interface UseAiChatOptions {
   novelId: string;
@@ -71,8 +72,8 @@ interface ExchangeReply {
 }
 
 export type OpenSessionResult =
-  | { ok: true; loadFailed?: boolean }
-  | { ok: false; reason: "max-tabs" };
+  | { ok: true }
+  | { ok: false; reason: "max-tabs" | "load-failed" | "context-changed" };
 
 export interface UseAiChatResult {
   tabs: ChatTab[];
@@ -85,12 +86,14 @@ export interface UseAiChatResult {
   send: (input: SendChatInput) => Promise<void>;
   stop: () => void;
   retry: (messageId: string, extras: ChatExtras) => Promise<void>;
-  removeMessage: (messageId: string) => void;
+  removeMessage: (messageId: string) => Promise<void>;
   selectTab: (key: string) => void;
   newTab: () => boolean;
   closeTab: (key: string) => void;
+  closeSession: (sessionId: string) => void;
   setAgent: (agentId: AgentId) => void;
   openSession: (session: ChatSession) => Promise<OpenSessionResult>;
+  loadOlderMessages: (tabKey: string) => Promise<boolean>;
   /** 在当前会话里先放下一问一答，供设定任务自己接流。返回 assistant 消息 id。 */
   beginExchange: (userText: string, replaceId?: string) => string;
   prepareSession:()=>Promise<string|null>;
@@ -129,15 +132,22 @@ function createTab(agentId: AgentId): ChatTab {
   };
 }
 
-function pickMessages(data: unknown): UIMessage[] {
-  const list = Array.isArray(data)
-    ? data
-    : data && typeof data === "object" && Array.isArray((data as { items?: unknown }).items)
-      ? ((data as { items: unknown[] }).items)
-      : [];
-  return list
+interface MessagePage {
+  items: UIMessage[];
+  hasMore: boolean;
+  beforeId: string | null;
+}
+
+function pickMessages(data: unknown): MessagePage {
+  const record = data && typeof data === "object" ? data as { items?: unknown; hasMore?: unknown; beforeId?: unknown } : null;
+  const list = Array.isArray(data) ? data : Array.isArray(record?.items) ? record.items : [];
+  return {
+    items: list
     .filter((row): row is ChatMessage => !!row && typeof row === "object" && "role" in row)
-    .map(toUiMessage);
+    .map(toUiMessage),
+    hasMore: record?.hasMore === true,
+    beforeId: typeof record?.beforeId === "string" ? record.beforeId : null,
+  };
 }
 
 export function useAiChat({ novelId, chapterId, defaultAgentId }: UseAiChatOptions): UseAiChatResult {
@@ -147,16 +157,51 @@ export function useAiChat({ novelId, chapterId, defaultAgentId }: UseAiChatOptio
   const [streamingTabKey, setStreamingTabKey] = React.useState<string | null>(null);
   const [modelLabel, setModelLabel] = React.useState<string | null>(null);
 
-  const stateRef = React.useRef({ tabs, activeKey });
-  stateRef.current = { tabs, activeKey };
+  const stateRef = React.useRef({ tabs, activeKey, streamingTabKey });
+  stateRef.current = { tabs, activeKey, streamingTabKey };
   const abortRef = React.useRef<AbortController | null>(null);
   const streamingRef = React.useRef(false);
+  const mountedRef = React.useRef(false);
   /** null=未知；true=可用；false=不可用（本页面内不再尝试） */
   const serverSessionRef = React.useRef<boolean | null>(null);
   /** 外部接流（资料助手）的当前轮次；endExchange 用它复位 tab 并落库 */
   const exchangeRef = React.useRef<PendingExchange | null>(null);
   /** 当前轮次已应用的 patch；endExchange 落库时取最终正文/状态/用量 */
   const exchangePatchesRef = React.useRef<Map<string, Partial<UIMessage>>>(new Map());
+  const contextRef = React.useRef({ novelId, chapterId });
+  const previousContextRef = React.useRef({ novelId, chapterId });
+  contextRef.current = { novelId, chapterId };
+
+  React.useEffect(() => {
+    if (previousContextRef.current.novelId === novelId && previousContextRef.current.chapterId === chapterId) return;
+    previousContextRef.current = { novelId, chapterId };
+    abortRef.current?.abort();
+    abortRef.current = null;
+    streamingRef.current = false;
+    serverSessionRef.current = null;
+    exchangeRef.current = null;
+    exchangePatchesRef.current.clear();
+    setStreaming(false);
+    setStreamingTabKey(null);
+    const tab = createTab(defaultAgentId);
+    setTabs([tab]);
+    setActiveKey(tab.key);
+  }, [novelId, chapterId, defaultAgentId]);
+
+  React.useEffect(
+    () => {
+      mountedRef.current = true;
+      return () => {
+        mountedRef.current = false;
+        abortRef.current?.abort();
+        abortRef.current = null;
+        streamingRef.current = false;
+        exchangeRef.current = null;
+        exchangePatchesRef.current.clear();
+      };
+    },
+    [],
+  );
 
   const activeTab = tabs.find((tab) => tab.key === activeKey) ?? tabs[0];
 
@@ -186,7 +231,16 @@ export function useAiChat({ novelId, chapterId, defaultAgentId }: UseAiChatOptio
         if (tab.key !== tabKey) return tab;
         const firstUser = messages.find((message) => message.role === "user");
         const title = isDefaultChatTitle(tab.title) && firstUser ? chatTitleFromMessage(firstUser.content) : tab.title;
-        return { ...tab, title, messages: [...tab.messages, ...messages] };
+        const combined = [...tab.messages, ...messages];
+        if (combined.length <= MAX_LOADED_MESSAGES_PER_TAB) return { ...tab, title, messages: combined };
+        const retained = combined.slice(-MAX_LOADED_MESSAGES_PER_TAB);
+        return {
+          ...tab,
+          title,
+          messages: retained,
+          olderMessagesCursor: retained[0]?.id ?? tab.olderMessagesCursor,
+          hasOlderMessages: true,
+        };
       }),
     );
   }, []);
@@ -205,7 +259,7 @@ export function useAiChat({ novelId, chapterId, defaultAgentId }: UseAiChatOptio
       if (serverSessionRef.current === false) return null;
       try {
         const created = await apiPost<ChatSession>("/api/chat/sessions", {
-          novelId,
+          novelId: contextRef.current.novelId,
           chapterId: chapterId ?? null,
           agentId,
         });
@@ -228,10 +282,12 @@ export function useAiChat({ novelId, chapterId, defaultAgentId }: UseAiChatOptio
       try {
         await Promise.all([
           apiPost(`/api/chat/sessions/${encodeURIComponent(sessionId)}/messages`, {
+            novelId: contextRef.current.novelId,
             role: "user",
             content: userContent,
           }),
           apiPost(`/api/chat/sessions/${encodeURIComponent(sessionId)}/messages`, {
+            novelId,
             role: "assistant",
             content: reply.content,
             reasoning: reply.reasoning ?? "",
@@ -282,10 +338,11 @@ export function useAiChat({ novelId, chapterId, defaultAgentId }: UseAiChatOptio
       let reasoning = "";
       const actions: AiAction[] = [];
       let usage: AiUsage | null = null;
-      let serverMessageId: string | undefined;
       let failed = false;
+      let snapshotFrame = 0;
 
       const snapshot = (patch?: Partial<UIMessage>) => {
+        if (!mountedRef.current) return;
         patchMessage(tabKey, assistant.id, (prev) => ({
           ...prev,
           content,
@@ -297,8 +354,21 @@ export function useAiChat({ novelId, chapterId, defaultAgentId }: UseAiChatOptio
           ...patch,
         }));
       };
+      const scheduleSnapshot = () => {
+        if (snapshotFrame) return;
+        snapshotFrame = requestAnimationFrame(() => {
+          snapshotFrame = 0;
+          snapshot();
+        });
+      };
+      const flushSnapshot = (patch?: Partial<UIMessage>) => {
+        if (snapshotFrame) cancelAnimationFrame(snapshotFrame);
+        snapshotFrame = 0;
+        snapshot(patch);
+      };
 
       const handleEvent = (event: AiStreamEvent) => {
+        if (!mountedRef.current || controller.signal.aborted) return;
         switch (event.type) {
           case "meta":
             provider = event.provider;
@@ -308,26 +378,25 @@ export function useAiChat({ novelId, chapterId, defaultAgentId }: UseAiChatOptio
             break;
           case "delta":
             content += event.text;
-            snapshot();
+            scheduleSnapshot();
             break;
           case "reasoning":
             reasoning += event.text;
-            snapshot();
+            scheduleSnapshot();
             break;
           case "action":
             actions.push(event.action);
-            snapshot();
+            flushSnapshot();
             break;
           case "done":
             usage = event.usage ?? null;
-            serverMessageId = event.messageId;
-            snapshot();
+            flushSnapshot();
             break;
           case "error": {
             failed = true;
             // 真实 Provider 错误 → 中文化、可操作提示（不静默失败）
             const info = humanizeAiError(event.message, { code: event.code });
-            snapshot({
+            flushSnapshot({
               status: "error",
               error: event.message,
               errorTitle: info.title,
@@ -358,15 +427,15 @@ export function useAiChat({ novelId, chapterId, defaultAgentId }: UseAiChatOptio
         };
         await streamAiChat(request, { onEvent: handleEvent, signal: controller.signal });
         if (!failed) {
-          snapshot({ status: controller.signal.aborted ? "aborted" : "complete" });
+          flushSnapshot({ status: controller.signal.aborted ? "aborted" : "complete" });
         }
       } catch (error) {
-        if (isAbortError(error)) snapshot({ status: "aborted" });
+        if (isAbortError(error)) flushSnapshot({ status: "aborted" });
         else {
           const info = humanizeAiError(error, {
             status: error instanceof ApiError ? error.status : undefined,
           });
-          snapshot({
+          flushSnapshot({
             status: "error",
             error: error instanceof Error ? error.message : String(error),
             errorTitle: info.title,
@@ -375,26 +444,21 @@ export function useAiChat({ novelId, chapterId, defaultAgentId }: UseAiChatOptio
           });
         }
       } finally {
-        streamingRef.current = false;
-        abortRef.current = null;
-        setStreaming(false);
-        setStreamingTabKey(null);
+        if (snapshotFrame) cancelAnimationFrame(snapshotFrame);
+        if (abortRef.current === controller) {
+          streamingRef.current = false;
+          abortRef.current = null;
+          if (mountedRef.current) {
+            setStreaming(false);
+            setStreamingTabKey(null);
+          }
+        }
       }
 
-      // 2) 消息落库（接口不可用时降级为本地状态）
-      if (!failed && sessionId && !serverMessageId && content.trim()) {
-        await persistMessages(sessionId, message, {
-          content,
-          reasoning,
-          actions,
-          status: "complete",
-          provider,
-          model,
-          usage,
-        });
-      }
+      // The chat endpoint persists both messages before streaming. Re-persisting here
+      // duplicates interrupted responses because an abort does not emit a done event.
     },
-    [novelId, chapterId, appendMessages, patchMessage, ensureSession, persistMessages],
+    [novelId, chapterId, appendMessages, patchMessage, ensureSession],
   );
 
   /* ---------------- 对外动作 ---------------- */
@@ -464,13 +528,21 @@ export function useAiChat({ novelId, chapterId, defaultAgentId }: UseAiChatOptio
     abortRef.current?.abort();
   }, []);
 
-  const removeMessage = React.useCallback((messageId: string) => {
-    const key = stateRef.current.activeKey;
+  const removeMessage = React.useCallback(async (messageId: string) => {
+    const current = stateRef.current;
+    const tab = current.tabs.find((item) => item.key === current.activeKey);
+    const message = tab?.messages.find((item) => item.id === messageId);
+    if (!tab || !message) return;
+    if (tab.sessionId) {
+      await apiDelete(
+        `/api/chat/sessions/${encodeURIComponent(tab.sessionId)}/messages/${encodeURIComponent(messageId)}?novelId=${encodeURIComponent(contextRef.current.novelId)}`,
+      );
+    }
     setTabs((prev) =>
-      prev.map((tab) =>
-        tab.key === key
-          ? { ...tab, messages: tab.messages.filter((message) => message.id !== messageId) }
-          : tab,
+      prev.map((item) =>
+        item.key === tab.key
+          ? { ...item, messages: item.messages.filter((row) => row.id !== messageId) }
+          : item,
       ),
     );
   }, []);
@@ -492,7 +564,7 @@ export function useAiChat({ novelId, chapterId, defaultAgentId }: UseAiChatOptio
       const current = stateRef.current;
       const target = current.tabs.find((tab) => tab.key === key);
       if (!target) return;
-      if (streamingRef.current) abortRef.current?.abort();
+      if (streamingRef.current && current.streamingTabKey === key) abortRef.current?.abort();
       const remaining = current.tabs.filter((tab) => tab.key !== key);
       if (remaining.length === 0) {
         const replacement = createTab(defaultAgentId);
@@ -510,6 +582,27 @@ export function useAiChat({ novelId, chapterId, defaultAgentId }: UseAiChatOptio
     [defaultAgentId],
   );
 
+  const closeSession = React.useCallback((sessionId: string) => {
+    const current = stateRef.current;
+    const removed = current.tabs.filter((tab) => tab.sessionId === sessionId);
+    if (removed.length === 0) return;
+    if (current.streamingTabKey && removed.some((tab) => tab.key === current.streamingTabKey)) {
+      abortRef.current?.abort();
+    }
+    const remaining = current.tabs.filter((tab) => tab.sessionId !== sessionId);
+    if (remaining.length === 0) {
+      const replacement = createTab(defaultAgentId);
+      setTabs([replacement]);
+      setActiveKey(replacement.key);
+      return;
+    }
+    setTabs(remaining);
+    if (removed.some((tab) => tab.key === current.activeKey)) {
+      const oldIndex = current.tabs.findIndex((tab) => tab.key === current.activeKey);
+      setActiveKey(remaining[Math.min(oldIndex, remaining.length - 1)]?.key ?? remaining[0].key);
+    }
+  }, [defaultAgentId]);
+
   const setAgent = React.useCallback((agentId: AgentId) => {
     const key = stateRef.current.activeKey;
     setTabs((prev) => prev.map((tab) => (tab.key === key ? { ...tab, agentId } : tab)));
@@ -524,33 +617,83 @@ export function useAiChat({ novelId, chapterId, defaultAgentId }: UseAiChatOptio
         return { ok: true };
       }
       if (current.tabs.length >= MAX_SESSION_TABS) return { ok: false, reason: "max-tabs" };
+      const requestedNovelId = contextRef.current.novelId;
+      const requestedChapterId = contextRef.current.chapterId;
+      if (session.novelId !== requestedNovelId) return { ok: false, reason: "context-changed" };
 
-      let messages: UIMessage[] = [];
-      let loadFailed = false;
+      let page: MessagePage;
       try {
         const data = await apiGet<unknown>(
-          `/api/chat/sessions/${encodeURIComponent(session.id)}/messages`,
+          `/api/chat/sessions/${encodeURIComponent(session.id)}/messages?novelId=${encodeURIComponent(requestedNovelId)}&limit=80`,
         );
-        messages = pickMessages(data);
+        page = pickMessages(data);
       } catch {
-        loadFailed = true;
-        serverSessionRef.current = false;
+        if (
+          contextRef.current.novelId !== requestedNovelId
+          || contextRef.current.chapterId !== requestedChapterId
+        ) return { ok: false, reason: "context-changed" };
+        return { ok: false, reason: "load-failed" };
       }
 
+      if (
+        !mountedRef.current ||
+        contextRef.current.novelId !== requestedNovelId ||
+        contextRef.current.chapterId !== requestedChapterId
+      ) {
+        return { ok: false, reason: "context-changed" };
+      }
+      const latest = stateRef.current;
+      const alreadyOpen = latest.tabs.find((tab) => tab.sessionId === session.id);
+      if (alreadyOpen) {
+        setActiveKey(alreadyOpen.key);
+        return { ok: true };
+      }
+      if (latest.tabs.length >= MAX_SESSION_TABS) return { ok: false, reason: "max-tabs" };
       const tab: ChatTab = {
         key: uid("tab"),
         sessionId: session.id,
         title: session.title?.trim() || "",
         agentId: session.agentId,
-        messages,
+        messages: page.items,
+        olderMessagesCursor: page.beforeId,
+        hasOlderMessages: page.hasMore,
         createdAt: session.createdAt,
       };
       setTabs((prev) => [...prev, tab]);
       setActiveKey(tab.key);
-      return { ok: true, loadFailed };
+      return { ok: true };
     },
     [],
   );
+
+  const loadOlderMessages = React.useCallback(async (tabKey: string): Promise<boolean> => {
+    const tab = stateRef.current.tabs.find((item) => item.key === tabKey);
+    if (!tab?.sessionId || !tab.hasOlderMessages || !tab.olderMessagesCursor || tab.loadingOlderMessages) return false;
+    const requestedNovelId = contextRef.current.novelId;
+    setTabs((prev) => prev.map((item) => item.key === tabKey ? { ...item, loadingOlderMessages: true } : item));
+    try {
+      const data = await apiGet<unknown>(
+        `/api/chat/sessions/${encodeURIComponent(tab.sessionId)}/messages?novelId=${encodeURIComponent(requestedNovelId)}&limit=80&before=${encodeURIComponent(tab.olderMessagesCursor)}`,
+      );
+      const page = pickMessages(data);
+      if (contextRef.current.novelId !== requestedNovelId) return false;
+      setTabs((prev) => prev.map((item) => {
+        if (item.key !== tabKey || item.sessionId !== tab.sessionId) return item;
+        const existingIds = new Set(item.messages.map((message) => message.id));
+        return {
+          ...item,
+          messages: [...page.items.filter((message) => !existingIds.has(message.id)), ...item.messages],
+          olderMessagesCursor: page.beforeId,
+          hasOlderMessages: page.hasMore,
+          loadingOlderMessages: false,
+        };
+      }));
+      return true;
+    } catch (error) {
+      setTabs((prev) => prev.map((item) => item.key === tabKey ? { ...item, loadingOlderMessages: false } : item));
+      throw error;
+    }
+  }, []);
 
   /** 外部接流轮次的落库：会话不存在时先建，再存 user+assistant。 */
   const persistExchange = React.useCallback(
@@ -638,8 +781,9 @@ export function useAiChat({ novelId, chapterId, defaultAgentId }: UseAiChatOptio
       if (options?.persist !== true || !patch) return;
       const content = patch.content ?? "";
       if (!content.trim()) return;
-      const sessionId =
-        stateRef.current.tabs.find((item) => item.key === exchange.tabKey)?.sessionId ?? null;
+      const exchangeTab = stateRef.current.tabs.find((item) => item.key === exchange.tabKey);
+      if (!exchangeTab) return;
+      const sessionId = exchangeTab.sessionId;
       await persistExchange(sessionId, exchange.tabKey, exchange.agentId, exchange.userText, {
         content,
         reasoning: patch.reasoning,
@@ -673,8 +817,10 @@ export function useAiChat({ novelId, chapterId, defaultAgentId }: UseAiChatOptio
     selectTab,
     newTab,
     closeTab,
+    closeSession,
     setAgent,
     openSession,
+    loadOlderMessages,
     beginExchange,
     patchExchange,
     endExchange,

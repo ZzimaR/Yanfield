@@ -17,7 +17,7 @@ export function AgentReview({initial,changeId,onClose}:{initial:AgentRun;changeI
   const bridge=useEditorBridge(),root=React.useRef<HTMLDivElement>(null);
   React.useEffect(()=>{
     let live=true;
-    void apiGet<AgentRun>(`/api/ai/agent/${initial.id}`).then(value=>{if(live)setRun(current=>value.updatedAt>=current.updatedAt?value:current);}).catch(e=>{if(live)setError(e.message);});
+    void apiGet<AgentRun>(`/api/ai/agent/${initial.id}?novelId=${encodeURIComponent(initial.novelId)}`).then(value=>{if(live)setRun(current=>value.updatedAt>=current.updatedAt?value:current);}).catch(e=>{if(live)setError(e.message);});
     return()=>{live=false;};
   },[initial.id]);
   const change=run.changes.find(c=>c.id===changeId);
@@ -35,12 +35,12 @@ export function AgentReview({initial,changeId,onClose}:{initial:AgentRun;changeI
     const blocks=units.filter(unit=>decisions[unit.id]!==false).flatMap(unit=>unit.ids);
     try {
       if(blocks.length){
-        const result=await commitAgent(run.id,{selections:[{id:change.id,blocks}]},bridge);
+        const result=await commitAgent(run,{selections:[{id:change.id,blocks}]},bridge);
         const saved=result.changes.find(c=>c.id===change.id);
         const id=saved?.appliedId||saved?.targetId;
         if(id)window.dispatchEvent(new CustomEvent("yantian:agent-navigate",{detail:{kind:"chapter",id}}));
       }else{
-        const result=await apiPatch<AgentRun>(`/api/ai/agent/${run.id}`,{op:"reject",changeId:change.id});
+        const result=await apiPatch<AgentRun>(`/api/ai/agent/${run.id}`,{op:"reject",changeId:change.id,novelId:run.novelId});
         broadcastRun(result);notifyDataChanged("agent");
       }
       onClose();

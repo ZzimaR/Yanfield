@@ -9,20 +9,20 @@ export function broadcastRun(run:AgentRun):void {window.dispatchEvent(new Custom
 export function openAgentReview(run:AgentRun,changeId:string):void {
   window.dispatchEvent(new CustomEvent("yantian:agent-review",{detail:{run,changeId}}));
 }
-export async function commitAgent(runId:string,body:unknown,bridge:EditorBridge|null):Promise<AgentRun> {
+export async function commitAgent(run:Pick<AgentRun,"id"|"novelId">,body:Record<string,unknown>,bridge:EditorBridge|null):Promise<AgentRun> {
   // Stop editor input before flushing so no keystroke can be overwritten by a concurrent commit.
   bridge?.setReadOnly?.(true);
   try {
     await bridge?.flush?.();
-    const run=await apiPost<AgentRun>(`/api/ai/agent/${runId}/apply`,body);
+    const saved=await apiPost<AgentRun>(`/api/ai/agent/${run.id}/apply`,{...body,novelId:run.novelId});
     const current=bridge?.getChapterId?.();
-    const changed=run.changes.find(c=>c.kind==="chapter"&&c.appliedId===current);
+    const changed=saved.changes.find(c=>c.kind==="chapter"&&c.appliedId===current);
     if(changed && !(changed.state==="reverted"&&!changed.before)) {
       // Undo returns the old snapshot; fetch it because IDs/wordCount remain server-owned.
       const {apiGet}=await import("@/lib/client/api");
       const chapter=await apiGet<Chapter>(`/api/chapters/${current}`);
       bridge?.syncSaved?.(chapter);
     }
-    broadcastRun(run);notifyDataChanged("agent");return run;
+    broadcastRun(saved);notifyDataChanged("agent");return saved;
   } finally {bridge?.setReadOnly?.(false);}
 }

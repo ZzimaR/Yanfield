@@ -33,7 +33,7 @@ export function FieldChange({before,after}:{before:unknown;after:unknown}) {
     <div className="whitespace-pre-wrap rounded-md border-l-2 border-jade/35 bg-jade/[0.035] px-2.5 py-2 text-ink-2"><span className="mr-2 text-[10px] text-jade">改</span>{segments.filter(x=>x.type!=="del").map((s,i)=><span key={i} className={s.type==="add"?"bg-jade/15 text-jade":""}>{s.text}</span>)}</div>
   </div>;
 }
-export function AgentRunCard({runId,initial,disabled=false,onContinue}:{runId:string;initial?:AgentRun;disabled?:boolean;onContinue?:(text:string)=>void}) {
+export function AgentRunCard({runId,novelId,initial,disabled=false,onContinue}:{runId:string;novelId:string;initial?:AgentRun;disabled?:boolean;onContinue?:(text:string)=>void}) {
   const [run,setRun]=React.useState<AgentRun|undefined>(initial);
   const [error,setError]=React.useState("");
   const [expanded,setExpanded]=React.useState<string|null>(null);
@@ -46,7 +46,7 @@ export function AgentRunCard({runId,initial,disabled=false,onContinue}:{runId:st
   const [busy,setBusy]=React.useState(false);
   const bridge=useEditorBridge(),{toast}=useToast();
   const receive=React.useCallback((value:AgentRun)=>setRun(current=>!current||current.id!==value.id||value.updatedAt>=current.updatedAt?{...value}:current),[]);
-  const refresh=React.useCallback(()=>{void apiGet<AgentRun>(`/api/ai/agent/${runId}`).then(receive).catch(e=>setError(e.message));},[runId,receive]);
+  const refresh=React.useCallback(()=>{void apiGet<AgentRun>(`/api/ai/agent/${runId}?novelId=${encodeURIComponent(novelId)}`).then(receive).catch(e=>setError(e.message));},[runId,novelId,receive]);
   React.useEffect(()=>{if(initial)receive(initial);else refresh();},[initial,refresh,receive]);
   React.useEffect(()=>{
     const listen=(event:Event)=>{const value=(event as CustomEvent<AgentRun>).detail;if(value.id===runId)receive(value);};
@@ -68,7 +68,7 @@ export function AgentRunCard({runId,initial,disabled=false,onContinue}:{runId:st
   const materials=live.filter(c=>c.kind!=="chapter");
   const chapterCount=live.filter(c=>c.kind==="chapter").length;
   const apply=(changes:AgentChange[])=>mutate(async()=>{
-    const result=await commitAgent(run.id,{selections:changes.map(c=>({id:c.id,fields:fields[c.id]}))},bridge);
+    const result=await commitAgent(run,{selections:changes.map(c=>({id:c.id,fields:fields[c.id]}))},bridge);
     const chapter=result.changes.find(c=>changes.some(selected=>selected.id===c.id)&&c.kind==="chapter"&&c.state==="applied");
     const id=chapter?.appliedId||chapter?.targetId;
     if(id)window.dispatchEvent(new CustomEvent("yantian:agent-navigate",{detail:{kind:"chapter",id}}));
@@ -97,7 +97,7 @@ export function AgentRunCard({runId,initial,disabled=false,onContinue}:{runId:st
     </div>
     <AgentProgress run={run} renderTargets={step=>step.targets?.length?<div className="mt-1.5 flex flex-wrap gap-1.5">{step.targets.map(chip)}</div>:null}/>
     <div className="px-4 py-2.5">
-      <details className="text-[11px] text-ink-3">
+      {run.steps.length ? <details className="text-[11px] text-ink-3">
         <summary className="cursor-pointer py-1">执行过程 · {run.steps.length} 步</summary>
         <ol className="my-2 space-y-3 border-l border-line pl-3">{run.steps.map((step,index)=><li key={step.id}>
           <div className={`flex items-center gap-1.5 ${step.status==="error"?"text-danger":"text-ink-3"}`}>
@@ -107,7 +107,7 @@ export function AgentRunCard({runId,initial,disabled=false,onContinue}:{runId:st
           {step.targets?.length?<div className="mt-1.5 flex flex-wrap gap-1.5">{step.targets.map(chip)}</div>:null}
           {step.detail && (step.status==="error" || step.detail!==run.steps[index-1]?.detail)?<p className="mt-1 leading-relaxed text-ink-4">{step.detail}</p>:null}
         </li>)}</ol>
-      </details>
+      </details> : null}
       {run.references.length?<details className="text-[11px] text-ink-3"><summary className="cursor-pointer py-1">已读取资料 · {run.references.length}</summary><div className="my-2 flex flex-wrap gap-1.5">{run.references.map(chip)}</div></details>:null}
     </div>
     {materials.length?<div className="border-t border-line/60 bg-paper/25 px-4 py-3.5">
@@ -140,7 +140,7 @@ export function AgentRunCard({runId,initial,disabled=false,onContinue}:{runId:st
             <label className="mb-1.5 flex items-center gap-1.5 text-[11px] text-ink-3">{isPending?<input type="checkbox" checked={chosen.includes(key)} disabled={busy||running||disabled} onChange={e=>setFields(p=>({...p,[c.id]:e.target.checked?[...chosen,key]:chosen.filter(k=>k!==key)}))}/>:null}{FIELD_LABEL[key]||key}</label>
             {c.before?<FieldChange before={c.before[key]} after={c.after[key]}/>:<p className="whitespace-pre-wrap rounded-lg border-l-2 border-jade/25 bg-jade/[0.035] px-3 py-2 text-[12px] leading-[1.85] text-ink-2">{display(c.after[key])}</p>}</div>)}</div>:null}
         </>}
-        {isPending?<div className="mt-2 flex items-center gap-2"><button type="button" className="text-[10px] text-ink-4 hover:text-danger" disabled={running||busy||disabled} onClick={()=>void mutate(()=>apiPatch<AgentRun>(`/api/ai/agent/${run.id}`,{op:"reject",changeId:c.id}))}>丢弃此项</button>{!isChapter?<Button className="ml-auto" size="sm" disabled={running||busy||disabled||!chosen.length} onClick={()=>void apply([c])}>应用此项</Button>:null}</div>:null}
+        {isPending?<div className="mt-2 flex items-center gap-2"><button type="button" className="text-[10px] text-ink-4 hover:text-danger" disabled={running||busy||disabled} onClick={()=>void mutate(()=>apiPatch<AgentRun>(`/api/ai/agent/${run.id}`,{op:"reject",changeId:c.id,novelId:run.novelId}))}>丢弃此项</button>{!isChapter?<Button className="ml-auto" size="sm" disabled={running||busy||disabled||!chosen.length} onClick={()=>void apply([c])}>应用此项</Button>:null}</div>:null}
       </div>;
     })}
     {error||run.error?<p role="alert" className="mx-3 mb-3 rounded bg-danger/5 p-2 text-[11px] leading-relaxed text-danger"><CircleAlert className="mr-1 inline size-3"/>{error||run.error}</p>:null}
@@ -160,7 +160,7 @@ export function AgentRunCard({runId,initial,disabled=false,onContinue}:{runId:st
     {!running && run.summary.trim() && run.summary.trim()!==run.progress?.at(-1)?.text?<Markdown text={run.summary} className="break-words border-t border-line/60 px-4 py-3 text-[13px] leading-[1.9] text-ink-2"/>:null}
     {!running?<div className="flex flex-wrap items-center gap-2 border-t border-line/70 bg-paper/35 px-4 py-3">
       {pending.length?<Button variant="primary" size="sm" className="min-h-9 flex-1 justify-center shadow-none" loading={busy} disabled={disabled||!selected.length||selected.some(c=>fields[c.id]?.length===0)} onClick={()=>void apply(selected)}>应用选中的 {selected.length} 项</Button>:null}
-      {applied.length?<Button size="sm" variant="ghost" disabled={disabled||busy} icon={<RotateCcw className="size-3"/>} onClick={()=>void mutate(()=>commitAgent(run.id,{op:"undo"},bridge))}>撤回本轮</Button>:null}
+      {applied.length?<Button size="sm" variant="ghost" disabled={disabled||busy} icon={<RotateCcw className="size-3"/>} onClick={()=>void mutate(()=>commitAgent(run,{op:"undo"},bridge))}>撤回本轮</Button>:null}
       {onContinue?<button type="button" className="text-[11px] text-ink-3 hover:text-accent" disabled={busy||disabled} onClick={()=>onContinue("请基于上轮候选继续修改：")}>继续修改</button>:null}
     </div>:null}
   </div>;

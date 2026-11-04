@@ -250,7 +250,7 @@ export function WorldEditor({
           <TagsInput label="标签" value={draft.tags} onChange={(tags) => update("tags", tags)} placeholder="如：规则、势力、代价" />
         </EditorSection>
 
-        <EditorSection title="AI 可见性与揭示标注" hint="AI 能看到全部设定卡，用来保证前后一致；只有确认不想让 AI 读这条设定时才关闭可见性。">
+        <EditorSection title="AI 可见性与揭示章节" hint="AI 默认只收到当前章节已揭示的可见资料；作者本轮明确 @ 引用时可例外提供。">
           <Switch
             checked={draft.aiVisible}
             onChange={(checked) => update("aiVisible", checked)}
@@ -262,7 +262,7 @@ export function WorldEditor({
             value={draft.revealAtChapter === null ? "" : String(draft.revealAtChapter)}
             onChange={(event) => update("revealAtChapter", event.target.value === "" ? null : Number(event.target.value))}
             options={chapterOptions}
-            hint="留空 = 始终可见；填章节号只是提醒 AI「这之前还没揭示、不要直接写出」（AI 仍然看得到这条设定）。"
+            hint="留空 = 不按章节隐藏；填章节号后，当前章节到达该章前 AI 不会收到这条设定。无当前章节时默认隐藏，除非作者明确 @ 引用。"
           />
           <Switch checked={draft.pinned} onChange={(checked) => update("pinned", checked)} label="置顶" hint="置顶设定排在列表最前。" />
         </EditorSection>

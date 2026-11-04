@@ -141,7 +141,11 @@ export function ArchiveEditor({
       });
       onSaved(saved);
       notifyDataChanged("archives");
-      toast({ title: "档案已更新", description: archive.chapterTitle, tone: "success" });
+      toast({
+        title: "档案已更新",
+        description: "重新提取时会保留你的修改。如果改的是事实，记得同步修改正文，让两边保持一致。",
+        tone: "success",
+      });
       onClose();
     } catch (err) {
       toast({ title: "保存档案失败", description: err instanceof Error ? err.message : String(err), tone: "error" });

@@ -68,6 +68,8 @@ export interface Chapter {
   updatedAt: string;
 }
 
+export type ChapterSummary = Omit<Chapter, "content">;
+
 /* ============================== 三级大纲 ============================== */
 
 export interface NovelOutline {

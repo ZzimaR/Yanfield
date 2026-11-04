@@ -50,7 +50,7 @@ import type { AgentRun } from "@/lib/ai/agent/types";
 import { ModelPicker } from "./ModelPicker";
 import { WelcomePanel } from "./WelcomePanel";
 import { MAX_SESSION_TABS, useAiChat } from "./use-ai-chat";
-import type { ChatExtras, MentionRef, PanelMode, PendingAction, UIMessage } from "./types";
+import type { AgentRequestContext, ChatExtras, MentionRef, PanelMode, PendingAction, UIMessage } from "./types";
 import {
   ACTION_LABEL,
   AGENT_TINT_CLASS,
@@ -66,6 +66,74 @@ import { describeModelTarget, withContextBudget } from "./model-info";
 import { humanizeAiError } from "./errors";
 import { SKILL_OPTIONS } from "./skills";
 import { applyStyleToInstruction, readStyleFromInstruction } from "./styles";
+
+const EMPTY_MENTIONS: MentionRef[] = [];
+const KNOWN_AGENT_IDS: AgentId[] = [
+  "supervisor", "blueprint", "writer", "archivist", "critic", "setting", "consistency", "structure", "custom",
+];
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+function isContextConfig(value: unknown): value is ContextConfig {
+  if (!isRecord(value)) return false;
+  return typeof value.includeNovelOutline === "boolean"
+    && typeof value.includeVolumeOutline === "boolean"
+    && typeof value.includeChapterBlueprint === "boolean"
+    && typeof value.includeChapterSummaries === "number"
+    && (value.chapterSummaryMode === "summary" || value.chapterSummaryMode === "tail")
+    && typeof value.includeArchives === "boolean"
+    && typeof value.archiveDepth === "number"
+    && typeof value.includeCharacters === "boolean"
+    && (value.characterDetail === "brief" || value.characterDetail === "standard" || value.characterDetail === "full")
+    && typeof value.includeWorld === "boolean"
+    && typeof value.includeForeshadows === "boolean"
+    && typeof value.includeStyleGuide === "boolean"
+    && typeof value.includeSelection === "boolean"
+    && typeof value.customInstruction === "string"
+    && typeof value.contextBudget === "number"
+    && typeof value.maxTokens === "number";
+}
+
+function readAgentRequestContext(message: UIMessage): AgentRequestContext | undefined {
+  const action = message.actions.find((item) => item.type === "agent-run");
+  if (!action || !isRecord(action.payload) || !isRecord(action.payload.requestContext)) return undefined;
+  const value = action.payload.requestContext;
+  if (
+    typeof value.agentId !== "string"
+    || !KNOWN_AGENT_IDS.includes(value.agentId as AgentId)
+    || !(typeof value.chapterId === "string" || value.chapterId === null)
+    || !isContextConfig(value.context)
+    || !Array.isArray(value.mentions)
+  ) return undefined;
+  const mentions = value.mentions.filter((item): item is MentionRef => isRecord(item)
+    && ["character", "world", "chapter", "archive", "foreshadow"].includes(String(item.type))
+    && typeof item.id === "string"
+    && typeof item.label === "string");
+  const snapshotValue = value.snapshot;
+  let snapshot: AgentRequestContext["snapshot"];
+  if (
+    isRecord(snapshotValue)
+    && ["world", "character", "foreshadow"].includes(String(snapshotValue.kind))
+    && (typeof snapshotValue.id === "string" || snapshotValue.id === null)
+    && isRecord(snapshotValue.fields)
+  ) {
+    snapshot = {
+      kind: snapshotValue.kind as NonNullable<AgentRequestContext["snapshot"]>["kind"],
+      id: snapshotValue.id,
+      fields: snapshotValue.fields,
+    };
+  }
+  return {
+    agentId: value.agentId as AgentId,
+    chapterId: value.chapterId,
+    context: value.context,
+    mentions,
+    selection: typeof value.selection === "string" ? value.selection : undefined,
+    snapshot,
+  };
+}
 
 export interface AiPanelProps {
   novelId: string;
@@ -97,6 +165,8 @@ export function AiPanel({
   const isMobile = useMediaQuery("(max-width: 767px)");
 
   const chat = useAiChat({ novelId, chapterId: chapterId ?? null, defaultAgentId });
+  const chatRef = React.useRef(chat);
+  chatRef.current = chat;
   const { data: settings, setData: setSettingsData } = useApi<AppSettings>("/api/settings");
   const statsApi = useApi<DashboardStats>("/api/stats");
   const wasStreaming = React.useRef(false);
@@ -105,6 +175,9 @@ export function AiPanel({
   const agents = React.useMemo(() => listAgents(settings), [settings]);
   /** 只有一个智能体时隐藏选择器（内置已精简到 3 个，通常仍会显示） */
   const hasAgentChoice = agents.length > 1;
+  const [mentionMap, setMentionMap] = React.useState<Record<string, MentionRef[]>>({});
+  const activeKey = chat.activeKey;
+  const mentions = mentionMap[activeKey] ?? EMPTY_MENTIONS;
   const activeAgent = React.useMemo(
     () => resolveAgent(chat.activeTab.agentId, settings),
     [chat.activeTab.agentId, settings],
@@ -133,7 +206,21 @@ export function AiPanel({
       setContextConfig(createContextConfig(settings));
     }
   }, [settings]);
-  const preview = useContextPreview({ novelId, chapterId: chapterId ?? null, config: contextConfig });
+  const getContextSelection = React.useCallback(
+    () => bridge?.getSelectionText().trim() ?? "",
+    [bridge],
+  );
+  const preview = useContextPreview({
+    novelId,
+    chapterId: chapterId ?? null,
+    config: contextConfig,
+    getSelection: getContextSelection,
+    mentions,
+  });
+  const openContextPreview = React.useCallback(() => {
+    preview.refresh();
+    setContextOpen(true);
+  }, [preview.refresh]);
 
   /** 预算：以 ContextConfig.contextBudget 为唯一来源（0=不限制），随请求传给服务端 */
   const budget = contextConfig.contextBudget;
@@ -192,7 +279,6 @@ export function AiPanel({
   // 每个会话 Tab 独立的草稿与引用
   const [drafts, setDrafts] = React.useState<Record<string, string>>({});
   const [referenceSnapshots,setReferenceSnapshots]=React.useState<Record<string,HandOffDetail["snapshot"]>>({});
-  const [mentionMap, setMentionMap] = React.useState<Record<string, MentionRef[]>>({});
   const [mode, setMode] = React.useState<PanelMode>("chat");
   const [focusSignal, setFocusSignal] = React.useState(0);
   const [task, setTask] = React.useState<{ id: string; label: string; snapshot?:HandOffDetail["snapshot"];selection?:string;targetChapterId?:string } | null>(null);
@@ -202,15 +288,33 @@ export function AiPanel({
   const activeTabKeyRef=React.useRef(chat.activeKey);activeTabKeyRef.current=chat.activeKey;
   const codexAbortRef = React.useRef<AbortController | null>(null);
   const editAbortRef = React.useRef<AbortController | null>(null);
+  const agentRunIdRef = React.useRef(0);
+  const agentRunTabKeyRef = React.useRef<string | null>(null);
+  const requestContextRef = React.useRef({ novelId, chapterId });
+  React.useEffect(
+    () => {
+      const changed =
+        requestContextRef.current.novelId !== novelId ||
+        requestContextRef.current.chapterId !== chapterId;
+      requestContextRef.current = { novelId, chapterId };
+      if (changed) setPreparing(false);
+      return () => {
+        agentRunIdRef.current += 1;
+        codexAbortRef.current?.abort();
+        editAbortRef.current?.abort();
+        chat.stop();
+        sendingRef.current = false;
+      };
+    },
+    [novelId, chapterId, chat.stop],
+  );
   const [historyOpen, setHistoryOpen] = React.useState(false);
   const [contextOpen, setContextOpen] = React.useState(false);
   const [agentSheetOpen, setAgentSheetOpen] = React.useState(false);
   const [pendingAction, setPendingAction] = React.useState<PendingAction | null>(null);
   const [diffState, setDiffState] = React.useState<DiffState | null>(null);
 
-  const activeKey = chat.activeKey;
   const draft = drafts[activeKey] ?? "";
-  const mentions = mentionMap[activeKey] ?? [];
 
   const setDraft = React.useCallback(
     (value: string) => setDrafts((prev) => ({ ...prev, [activeKey]: value })),
@@ -314,33 +418,62 @@ export function AiPanel({
 
   const sendAgent = React.useCallback(async (text: string, retryMessage?: UIMessage) => {
     if (!text.trim() || chat.streaming || sendingRef.current) return;
+    const runId = ++agentRunIdRef.current;
     sendingRef.current=true;setPreparing(true);
     const originalKey=chat.activeKey;
+    const savedRequest = retryMessage ? readAgentRequestContext(retryMessage) : undefined;
+    const requestContext: AgentRequestContext = {
+      agentId: savedRequest?.agentId ?? chat.activeTab.agentId,
+      chapterId: retryMessage ? (savedRequest ? savedRequest.chapterId : chapterId ?? null) : (task?.targetChapterId || chapterId || null),
+      context: savedRequest?.context ?? contextConfig,
+      mentions: retryMessage ? (savedRequest?.mentions ?? []) : [...mentions],
+      selection: retryMessage
+        ? savedRequest?.selection
+        : contextConfig.includeSelection
+          ? (task?.selection || bridge?.getSelectionText().trim() || undefined)
+          : undefined,
+      snapshot: retryMessage ? savedRequest?.snapshot : undefined,
+    };
     // Persist unsaved writing before the agent reads the chapter; a failed save leaves the input intact.
-    try { await bridge?.flush?.(); } catch { sendingRef.current=false;setPreparing(false);return; }
+    try { await bridge?.flush?.(); } catch {
+      if (runId === agentRunIdRef.current) {
+        sendingRef.current=false;
+        setPreparing(false);
+      }
+      return;
+    }
+    if (runId !== agentRunIdRef.current) return;
     const historyMessages = retryMessage ? chat.activeTab.messages.slice(0, Math.max(0, chat.activeTab.messages.findIndex(m=>m.id===retryMessage.id)-1)) : chat.activeTab.messages;
     const history = historyMessages.filter(m=>m.status!=="streaming").slice(-10).map(m=>({role:m.role,content:m.content}));
     const previous = [...(retryMessage ? [retryMessage] : chat.activeTab.messages)].reverse().flatMap(m=>m.actions).find(a=>a.type==="agent-run");
     const previousRunId = previous && typeof previous.payload==="object" && previous.payload ? (previous.payload as {runId?:string}).runId : undefined;
-    const selection=task?.selection||bridge?.getSelectionText().trim()||undefined;
-    const references=[...mentions];
+    const selection=requestContext.selection;
+    const references=requestContext.mentions;
     const attached=referenceSnapshots[originalKey];
-    const snapshot=task?.snapshot??(attached&&(!attached.id||references.some(m=>m.type===attached.kind&&m.id===attached.id))?attached:undefined);
+    const snapshot=requestContext.snapshot ?? (retryMessage ? undefined : task?.snapshot ?? (attached&&(!attached.id||references.some(m=>m.type===attached.kind&&m.id===attached.id))?attached:undefined));
+    requestContext.snapshot=snapshot;
     const sessionId=await chat.prepareSession();
+    if (runId !== agentRunIdRef.current) return;
     if(activeTabKeyRef.current!==originalKey){sendingRef.current=false;setPreparing(false);return;}
     const assistantId=chat.beginExchange(text, retryMessage?.id);
     setPreparing(false);
     const controller=new AbortController();
     editAbortRef.current=controller;
+    agentRunTabKeyRef.current=originalKey;
     setDraft("");setMentions([]);setTask(null);setReferenceSnapshots(prev=>({...prev,[originalKey]:undefined}));
     let currentRun:AgentRun|undefined;
     let action:AiAction|undefined;
     try {
-      await streamAiAgent({novelId,chapterId:task?.targetChapterId||chapterId,sessionId:sessionId||undefined,agentId:chat.activeTab.agentId,message:text,snapshot,history,previousRunId,retryRunId:retryMessage ? previousRunId : undefined,selection,mentions:references,context:contextConfig}, {
+      await streamAiAgent({novelId,chapterId:requestContext.chapterId,sessionId:sessionId||undefined,agentId:requestContext.agentId,message:text,snapshot,history,previousRunId,retryRunId:retryMessage ? previousRunId : undefined,selection,mentions:references,context:requestContext.context}, {
         signal:controller.signal,
         onEvent:event=>{
+          if (runId !== agentRunIdRef.current) return;
           if(event.type==="meta") chat.patchExchange(assistantId,{provider:event.provider,model:event.model});
-          if(event.type==="action") {action=event.action;chat.patchExchange(assistantId,{actions:[action]});}
+          if(event.type==="action") {
+            const payload=isRecord(event.action.payload)?event.action.payload:{};
+            action={...event.action,payload:{...payload,requestContext}};
+            chat.patchExchange(assistantId,{actions:[action]});
+          }
           if(event.type==="agent") {
             currentRun=event.run;
             chat.patchExchange(assistantId,{agentRun:event.run,content:event.run.summary||"正在处理任务",status:event.run.status==="running"?"streaming":event.run.status==="error"?"error":event.run.status==="aborted"?"aborted":"complete",error:event.run.error,usage:event.run.usage});
@@ -354,12 +487,24 @@ export function AiPanel({
         },
       });
     } catch(e) {
-      chat.patchExchange(assistantId,{status:controller.signal.aborted?"aborted":"error",content:currentRun?.summary||"任务未完成",error:controller.signal.aborted?"已停止，完成的候选已保留":e instanceof Error?e.message:"任务失败"});
-      if(action) {
-        const runId=(action.payload as {runId:string}).runId;
-        try {const saved=await apiGet<AgentRun>(`/api/ai/agent/${runId}`);chat.patchExchange(assistantId,{agentRun:saved});}catch{}
+      if (runId === agentRunIdRef.current) {
+        chat.patchExchange(assistantId,{status:controller.signal.aborted?"aborted":"error",content:currentRun?.summary||"任务未完成",error:controller.signal.aborted?"已停止，完成的候选已保留":e instanceof Error?e.message:"任务失败"});
       }
-    } finally {sendingRef.current=false;editAbortRef.current=null;await chat.endExchange({persist:!sessionId});}
+      if(action && runId === agentRunIdRef.current) {
+        const savedRunId=(action.payload as {runId:string}).runId;
+        try {
+          const saved=await apiGet<AgentRun>(`/api/ai/agent/${savedRunId}?novelId=${encodeURIComponent(novelId)}`);
+          if (runId === agentRunIdRef.current) chat.patchExchange(assistantId,{agentRun:saved});
+        } catch {}
+      }
+    } finally {
+      if (runId === agentRunIdRef.current) {
+        sendingRef.current=false;
+        editAbortRef.current=null;
+        if(agentRunTabKeyRef.current===originalKey)agentRunTabKeyRef.current=null;
+        await chat.endExchange({persist:!sessionId});
+      }
+    }
   },[bridge,chat,novelId,chapterId,mentions,contextConfig,task,referenceSnapshots,setDraft,setMentions]);
   React.useEffect(()=>{
     const text=pendingAutoSendRef.current;
@@ -369,11 +514,42 @@ export function AiPanel({
   },[task,sendAgent,chat.streaming]);
   const handleSend=React.useCallback(()=>sendAgent(draft.trim()),[sendAgent,draft]);
   const handleQuickAsk=React.useCallback((prompt:string)=>{void sendAgent(prompt);},[sendAgent]);
+  const sendAgentRef=React.useRef(sendAgent);
+  sendAgentRef.current=sendAgent;
   const handleRetry=React.useCallback((message:UIMessage)=>{
-    const index=chat.activeTab.messages.findIndex(m=>m.id===message.id);
-    const original=chat.activeTab.messages.slice(0,index).reverse().find(m=>m.role==="user");
-    if(original)void sendAgent(original.content, message);
-  },[chat.activeTab.messages,sendAgent]);
+    const messages=chatRef.current.activeTab.messages;
+    const index=messages.findIndex(m=>m.id===message.id);
+    const original=messages.slice(0,index).reverse().find(m=>m.role==="user");
+    if(original)void sendAgentRef.current(original.content, message);
+  },[]);
+
+  const handleDeleteMessage = React.useCallback(async (message: UIMessage) => {
+    try {
+      await chatRef.current.removeMessage(message.id);
+    } catch (error) {
+      toast({
+        title: "消息删除失败",
+        description: error instanceof Error ? error.message : "请稍后重试。",
+        tone: "error",
+      });
+    }
+  }, [toast]);
+
+  const handleCloseTab = React.useCallback((key: string) => {
+    if (agentRunTabKeyRef.current === key) editAbortRef.current?.abort();
+    chat.closeTab(key);
+  }, [chat.closeTab]);
+
+  const handleSessionDeleted = React.useCallback((sessionId: string) => {
+    if (chat.tabs.some((tab) => tab.sessionId === sessionId && tab.key === agentRunTabKeyRef.current)) {
+      editAbortRef.current?.abort();
+    }
+    chat.closeSession(sessionId);
+  }, [chat.closeSession, chat.tabs]);
+  const handleContinue = React.useCallback((text: string) => {
+    setDrafts((prev) => ({ ...prev, [activeTabKeyRef.current]: text }));
+    setFocusSignal((value) => value + 1);
+  }, []);
 
   const handleCopy = React.useCallback(
     async (message: UIMessage) => {
@@ -403,15 +579,15 @@ export function AiPanel({
     (session: ChatSession) => {
       void chat.openSession(session).then((result) => {
         if (!result.ok) {
+          if (result.reason === "context-changed") return;
           toast({
-            title: "最多同时打开 3 个会话",
-            description: "请先关闭一个会话，再打开历史会话。",
+            title: result.reason === "max-tabs" ? "最多同时打开 3 个会话" : "历史消息加载失败",
+            description: result.reason === "max-tabs"
+              ? "请先关闭一个会话，再打开历史会话。"
+              : "未打开该会话，请检查连接后重试。",
             tone: "error",
           });
           return;
-        }
-        if (result.loadFailed) {
-          toast({ title: "历史消息加载失败", description: "已打开空会话，可继续对话。", tone: "error" });
         }
         setHistoryOpen(false);
       });
@@ -606,7 +782,7 @@ export function AiPanel({
                       aria-label="关闭会话"
                       onClick={(event) => {
                         event.stopPropagation();
-                        chat.closeTab(tab.key);
+                        handleCloseTab(tab.key);
                       }}
                       className="rounded-sm text-ink-4 opacity-0 transition-opacity duration-150 hover:text-danger group-hover/tab:opacity-100 dark:text-ink-3"
                     >
@@ -659,19 +835,47 @@ export function AiPanel({
           />
         ) : (
           <div className="mx-auto flex w-full max-w-[520px] flex-col gap-7">
+            {chat.activeTab.hasOlderMessages ? (
+              <Button
+                className="self-center"
+                size="sm"
+                variant="ghost"
+                loading={chat.activeTab.loadingOlderMessages}
+                disabled={chat.activeTab.loadingOlderMessages}
+                onClick={() => {
+                  const element = scrollRef.current;
+                  const previousHeight = element?.scrollHeight ?? 0;
+                  void chat.loadOlderMessages(chat.activeKey).then((loaded) => {
+                    if (!loaded || !element) return;
+                    requestAnimationFrame(() => {
+                      element.scrollTop += element.scrollHeight - previousHeight;
+                    });
+                  }).catch((error: unknown) => {
+                    toast({
+                      title: "更早消息加载失败",
+                      description: error instanceof Error ? error.message : "请稍后重试。",
+                      tone: "error",
+                    });
+                  });
+                }}
+              >
+                加载更早消息
+              </Button>
+            ) : null}
             {chat.activeTab.messages.map((message, index) => (
               <div key={message.id} className="flex flex-col">
                 <ChatMessageView
+                  novelId={novelId}
                   message={message}
-                  agent={activeAgent}
-                  streaming={chat.streaming && index === chat.activeTab.messages.length - 1}
+                  agent={resolveAgent(readAgentRequestContext(message)?.agentId ?? chat.activeTab.agentId, settings)}
+                  streaming={chat.streaming && chat.streamingTabKey === chat.activeKey && index === chat.activeTab.messages.length - 1}
                   canRetry={!chat.streaming}
                   onCopy={handleCopy}
                   onRetry={handleRetry}
-                  onDelete={(target) => chat.removeMessage(target.id)}
+                  onDelete={handleDeleteMessage}
                   onApplyAction={handleAction}
                   disableActions={chat.streaming}
-                  onContinue={(text)=>{setDraft(text);setFocusSignal(v=>v+1);}}
+                  onContinue={handleContinue}
                   pricing={settings?.aiPricing ?? statsApi.data?.aiPricing}
                 />
                 {message.codexItems && message.codexItems.length > 0 ? (
@@ -715,7 +919,8 @@ export function AiPanel({
               ? "新建设定、修改角色或整理资料，生成后审阅改动…"
               : "输入要求，/ 选技能，@ 引用资料…"
           }
-          onOpenContext={() => setContextOpen(true)}
+          onOpenContext={openContextPreview}
+          includeSelection={contextConfig.includeSelection}
           agentName={activeAgent.name}
           onOpenAgent={hasAgentChoice ? () => setAgentSheetOpen(true) : undefined}
           style={style}
@@ -736,7 +941,7 @@ export function AiPanel({
         />
         <div className="flex h-7 items-center gap-2 border-t border-line/60 px-3">
           {statsApi.data?<UsageIndicator label="今日" cachedInputTokens={statsApi.data.todayCachedInputTokens} cacheReportedInputTokens={statsApi.data.todayCacheReportedInputTokens} promptTokens={statsApi.data.todayPromptTokens} completionTokens={statsApi.data.todayCompletionTokens} calls={statsApi.data.todayAiCalls} price={statsApi.data.aiPricing??settings?.aiPricing??{inputPerMillion:0,outputPerMillion:0}}/>:<span className="text-[10px] text-ink-4">用量加载中</span>}
-          <ContextStatus tokens={preview.data?.totalTokens??0} budget={budget} loading={preview.loading} error={preview.error} onClick={()=>setContextOpen(true)}/>
+          <ContextStatus tokens={preview.data?.totalTokens??0} budget={budget} loading={preview.loading} error={preview.error} onClick={openContextPreview}/>
         </div>
       </div>
 
@@ -815,10 +1020,12 @@ export function AiPanel({
         onClose={() => setHistoryOpen(false)}
         novelId={novelId}
         activeSessionId={chat.activeTab.sessionId}
+        busySessionId={chat.tabs.find((tab) => tab.key === chat.streamingTabKey)?.sessionId}
         defaultAgentId={chat.activeTab.agentId}
         maxTabsReached={chat.tabs.length >= MAX_SESSION_TABS}
         onOpenSession={handleOpenSession}
         onCreateSession={handleCreateSession}
+        onDeleted={handleSessionDeleted}
       />
 
       <ContextDrawer
@@ -831,6 +1038,8 @@ export function AiPanel({
         config={contextConfig}
         onConfigChange={setContextConfig}
         budget={budget}
+        modelContextWindow={target?.contextWindow}
+        modelMaxOutputTokens={target?.maxOutputTokens}
         onBudgetChange={(next) => void handleBudgetChange(next)}
       />
 

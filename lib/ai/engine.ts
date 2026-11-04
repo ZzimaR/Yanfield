@@ -35,14 +35,24 @@ import {
   getSettings,
   listCharacters,
   listForeshadows,
-  listMessages,
+  listChatHistoryPage,
   listPresets,
   listProviders,
   listWorld,
+  getArchiveByChapter,
   recordAiTokens,
   updateMessage,
   upsertArchive,
 } from "@/lib/repo";
+import {
+  ARCHIVE_TRUNCATED_MESSAGE,
+  MANUAL_ARCHIVE_RULES,
+  archiveLengthRules,
+  archiveOutputBudget,
+  manualArchiveBlock,
+  mergeManualArchive,
+  type ArchivePayload,
+} from "@/lib/ai/archive-extract";
 import { ApiError } from "@/lib/api-utils";
 import { estimateTokens, uid } from "@/lib/ui/cn";
 import { appendTaskConstraint, resolveTaskAuthorText } from "@/lib/ai/assist-brief";
@@ -60,6 +70,7 @@ import {
 import { buildCodexUserPrompt, CODEX_SYSTEM, formatCodexCatalog, type CodexItem, type CodexTurn } from "@/lib/ai/codex";
 import {
   ProviderError,
+  isOutputLimitError,
   streamCompletion,
   type AiMessage,
   type ProviderChunk,
@@ -193,11 +204,9 @@ export interface ChatRunParams extends AiChatRequest {
 }
 
 function historyMessages(sessionId: string): { messages: ChatMessage[]; trimmed: boolean } {
-  const all = listMessages(sessionId).filter(
-    (message) => message.content.trim() && (message.status === "complete" || message.status === "streaming"),
-  );
-  const { kept, trimmed } = trimChatHistory(all);
-  return { messages: kept, trimmed };
+  const page = listChatHistoryPage(sessionId, 10);
+  const { kept, trimmed } = trimChatHistory(page.items);
+  return { messages: kept, trimmed: page.hasMore || trimmed };
 }
 
 function toAiMessages(
@@ -234,10 +243,17 @@ export async function* runChatStream(params: ChatRunParams): AsyncGenerator<AiSt
 
   try {
     let session = sessionId ? getChatSession(sessionId) : undefined;
+    if (sessionId && !session) throw new ApiError("会话不存在", 404);
+    if (session && session.novelId !== params.novelId) throw new ApiError("会话不属于该作品", 404);
+    const chapterId = params.chapterId ?? session?.chapterId ?? null;
+    if (chapterId) {
+      const chapter = getChapter(chapterId);
+      if (!chapter || chapter.novelId !== params.novelId) throw new ApiError("章节不属于该作品", 400);
+    }
     if (!session) {
       session = createChatSession(params.novelId, {
         agentId: params.agentId ?? "supervisor",
-        chapterId: params.chapterId ?? null,
+        chapterId,
         mode: params.mode ?? "chat",
         title: params.message.trim().slice(0, 24) || "新对话",
       });
@@ -254,7 +270,7 @@ export async function* runChatStream(params: ChatRunParams): AsyncGenerator<AiSt
     const config = mergeContextConfig(params.context);
     const context = assembleContext({
       novelId: params.novelId,
-      chapterId: params.chapterId ?? session.chapterId,
+      chapterId,
       config,
       selection: params.selection,
       mentions: params.mentions,
@@ -573,6 +589,9 @@ export async function* runTaskStream(params: TaskRunParams): AsyncGenerator<AiSt
   try {
     const feature = params.feature;
     const chapter = params.chapterId ? getChapter(params.chapterId) : undefined;
+    if (params.chapterId && (!chapter || chapter.novelId !== params.novelId)) {
+      throw new ApiError("章节不属于该作品", 400);
+    }
     const config = mergeContextConfig(params.context);
     const context = assembleContext({
       novelId: params.novelId,
@@ -750,9 +769,11 @@ function normalizeArchive(raw: unknown, fallbackSummary: string): {
 export async function* runArchiveExtract(params: ArchiveExtractParams): AsyncGenerator<AiStreamEvent> {
   const startedAt = Date.now();
   const chapter = getChapter(params.chapterId);
-  if (!chapter) throw new ApiError("章节不存在", 404);
+  if (!chapter || chapter.novelId !== params.novelId) throw new ApiError("章节不存在", 404);
   const target = resolveTarget("chat");
   yield { type: "meta", runId: uid("run"), feature: "archive-extract", provider: target.provider.name, model: target.model };
+  const existing = getArchiveByChapter(chapter.id);
+  const manual = existing?.generatedBy === "manual" ? existing : null;
 
   const plain = htmlToText(chapter.content).trim();
   if (!plain) {
@@ -761,10 +782,36 @@ export async function* runArchiveExtract(params: ArchiveExtractParams): AsyncGen
   }
 
   const fallbackSummary = plain.replace(/\s+/g, " ").slice(0, 160);
-  let payload: ReturnType<typeof normalizeArchive>;
+  let payload: ArchivePayload;
   let accumulated = "";
-  const reported:UsageBox = { prompt: 0, completion: 0 };
+  let reported:UsageBox = { prompt: 0, completion: 0 };
   let estimatedPrompt = estimateTokens(plain);
+  let spentPrompt = 0;
+  let spentCompletion = 0;
+  let spentCachedInputTokens = 0;
+  let spentCacheReportedInputTokens = 0;
+  let spentReportedCost: AiUsage["reportedCost"];
+  let allAttemptsReportedCost = true;
+  const accountAttempt = () => {
+    spentPrompt += reported.prompt || estimatedPrompt;
+    spentCompletion += reported.completion || estimateTokens(accumulated);
+    spentCachedInputTokens += reported.cachedInputTokens ?? 0;
+    spentCacheReportedInputTokens += reported.cacheReportedInputTokens ?? 0;
+    const cost = reported.reportedCost;
+    if (!cost) {
+      allAttemptsReportedCost = false;
+    } else if (spentReportedCost && spentReportedCost.currency === cost.currency) {
+      spentReportedCost = {
+        ...cost,
+        amount: spentReportedCost.amount + cost.amount,
+        complete: spentReportedCost.complete && cost.complete,
+      };
+    } else if (spentReportedCost) {
+      spentReportedCost = { ...spentReportedCost, complete: false };
+    } else {
+      spentReportedCost = cost;
+    }
+  };
 
   if (target.provider.kind === "demo") {
     payload = normalizeArchive(buildDemoArchive(chapter.id), fallbackSummary);
@@ -773,50 +820,76 @@ export async function* runArchiveExtract(params: ArchiveExtractParams): AsyncGen
   } else {
     const presets = listPresets(params.novelId);
     const preset = resolvePreset("archive-extract", presets);
+    const config = mergeContextConfig({ includeChapterBlueprint: true, includeArchives: true });
     const context = assembleContext({
       novelId: params.novelId,
       chapterId: chapter.id,
-      config: mergeContextConfig({ includeChapterBlueprint: true, includeArchives: true }),
+      config,
     });
-    const vars = {
-      chapter: plain.slice(0, 12000),
-      chapterTitle: chapter.title,
-      context: context.text,
-      message: "",
-      selection: "",
-      words: 0,
-      ratio: 1,
-      instruction: "",
-      tail: "",
-      novelOutline: "",
-      volumeOutline: "",
-    };
-    const userContent = renderTemplate(preset.userTemplate || "{{chapter}}", vars);
-    const messages: AiMessage[] = [
-      { role: "system", content: `${preset.systemPrompt}\n\n只输出 JSON，不要输出 Markdown 代码块以外的任何文字。` },
-      { role: "user", content: `【已有事实】\n${context.text}\n\n【本章正文】\n${plain.slice(0, 12000)}` },
-    ];
-    for await (const chunk of streamCompletion({
-      provider: target.provider,
-      model: target.model, thinkingLevel: target.thinkingLevel,
-      messages,
-      temperature: 0.2,
-      maxTokens: 2000,
-      signal: params.signal,
-    })) {
-      if (absorbUsage(chunk, reported)) continue;
-      const handled = handleChunk(chunk, (text) => {
-        accumulated += text;
-      });
-      if (handled) yield handled;
-    }
-    estimatedPrompt = estimateTokens(messages.map((item) => item.content).join("\n"));
-    const parsed = extractJson(accumulated);
-    if (parsed === null) {
-      yield { type: "error", message: "档案解析失败：模型没有返回合法 JSON，可重试或换用能力更强的模型。", code: "parse" };
-      return;
+    const declaredMax = target.provider.models.find((item) => item.id === target.model)?.maxOutputTokens;
+    let parsed: unknown = null;
+    for (let attempt = 0; ; attempt += 1) {
+      const system = [
+        preset.systemPrompt,
+        archiveLengthRules(attempt > 0),
+        manual ? MANUAL_ARCHIVE_RULES : "",
+        "只输出 JSON，不要输出 Markdown 代码块以外的任何文字。",
+      ].filter(Boolean).join("\n\n");
+      const user = [
+        `【已有事实】\n${context.text}`,
+        manual ? manualArchiveBlock(manual) : "",
+        `【本章正文】\n${plain.slice(0, 12000)}`,
+      ].filter(Boolean).join("\n\n");
+      const messages: AiMessage[] = [
+        { role: "system", content: system },
+        { role: "user", content: user },
+      ];
+      estimatedPrompt = estimateTokens(messages.map((item) => item.content).join("\n"));
+      accumulated = "";
+      reported = { prompt: 0, completion: 0 };
+      try {
+        for await (const chunk of streamCompletion({
+          provider: target.provider,
+          model: target.model,
+          thinkingLevel: target.thinkingLevel === "default" ? "off" : target.thinkingLevel,
+          disableThinking: true,
+          messages,
+          temperature: 0.2,
+          maxTokens: archiveOutputBudget(declaredMax, attempt, config.maxTokens),
+          signal: params.signal,
+        })) {
+          if (absorbUsage(chunk, reported)) continue;
+          if (chunk.type === "delta") accumulated += chunk.text;
+        }
+      } catch (error) {
+        if (!isOutputLimitError(error) || params.signal?.aborted) throw error;
+        accountAttempt();
+        if (attempt >= 1) {
+          yield { type: "error", message: ARCHIVE_TRUNCATED_MESSAGE, code: "length" };
+          return;
+        }
+        continue;
+      }
+      parsed = extractJson(accumulated);
+      if (parsed !== null) break;
+      accountAttempt();
+      if (attempt >= 1) {
+        yield {
+          type: "error",
+          message: "档案解析失败：模型连续两次没有返回完整 JSON。请重试或换用更稳定的模型。",
+          code: "parse",
+        };
+        return;
+      }
     }
     payload = normalizeArchive(parsed, fallbackSummary);
+  }
+
+  let newConflicts = 0;
+  if (manual) {
+    const merged = mergeManualArchive(manual, payload);
+    payload = merged.payload;
+    newConflicts = merged.newConflicts;
   }
 
   const archive = upsertArchive({
@@ -832,11 +905,32 @@ export async function* runArchiveExtract(params: ArchiveExtractParams): AsyncGen
     conflicts: payload.conflicts,
     status: "fresh",
     sourceWordCount: chapter.wordCount,
-    generatedBy: "ai",
+    // 保持 manual，下次重新提取仍会保护作者的校订
+    generatedBy: manual ? "manual" : "ai",
     model: target.model,
   });
 
   const usage = settleUsage(estimatedPrompt, estimateTokens(accumulated), reported, Date.now() - startedAt);
+  usage.promptTokens += spentPrompt;
+  usage.completionTokens += spentCompletion;
+  usage.totalTokens = usage.promptTokens + usage.completionTokens;
+  usage.cachedInputTokens = (usage.cachedInputTokens ?? 0) + spentCachedInputTokens || undefined;
+  usage.cacheReportedInputTokens = (usage.cacheReportedInputTokens ?? 0) + spentCacheReportedInputTokens || undefined;
+  if (spentReportedCost) {
+    if (usage.reportedCost && usage.reportedCost.currency === spentReportedCost.currency) {
+      usage.reportedCost = {
+        ...usage.reportedCost,
+        amount: usage.reportedCost.amount + spentReportedCost.amount,
+        complete: usage.reportedCost.complete && spentReportedCost.complete && allAttemptsReportedCost,
+      };
+    } else if (usage.reportedCost) {
+      usage.reportedCost = { ...usage.reportedCost, complete: false };
+    } else {
+      usage.reportedCost = { ...spentReportedCost, complete: false };
+    }
+  } else if (usage.reportedCost && !allAttemptsReportedCost) {
+    usage.reportedCost = { ...usage.reportedCost, complete: false };
+  }
   addAiLog({
     novelId: params.novelId,
     chapterId: chapter.id,
@@ -852,7 +946,7 @@ export async function* runArchiveExtract(params: ArchiveExtractParams): AsyncGen
   });
   recordAiTokens(usage.totalTokens);
 
-  yield { type: "action", action: makeAction("save-archive", "写入第" + archive.orderIndex + "章档案", { archive }, true) };
+  yield { type: "action", action: makeAction("save-archive", "写入第" + archive.orderIndex + "章档案", { archive, preservedManual: Boolean(manual), newConflicts }, true) };
   yield { type: "done", usage };
 }
 

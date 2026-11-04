@@ -8,7 +8,6 @@
 import * as React from "react";
 import { LoaderCircle, RefreshCw, Search, Users } from "lucide-react";
 import { apiGet } from "@/lib/client/api";
-import { useDebouncedValue } from "@/lib/ui/hooks";
 import { cn } from "@/lib/ui/cn";
 import type { MentionOption } from "./types";
 import { MENTION_TYPE_LABEL, MENTION_TYPE_ORDER } from "./utils";
@@ -20,6 +19,7 @@ export interface MentionPickerProps {
   query: string;
   onPick: (option: MentionOption) => void;
   onClose: () => void;
+  onRegisterFirstOption?: (pick: (() => boolean) | null) => void;
 }
 
 type RawRow = Record<string, unknown>;
@@ -67,8 +67,8 @@ function toOption(type: MentionOption["type"], row: RawRow): MentionOption | nul
   return { type, id, label: name, description: readString(row, ["summary", "content"]) };
 }
 
-/** 拉取全部可选引用资料（单个接口失败不影响其他分组） */
-async function loadMentionOptions(novelId: string): Promise<MentionOption[]> {
+/** 拉取全部可选引用资料；部分分组失败时保留可用结果并明确提示。 */
+async function loadMentionOptions(novelId: string): Promise<{ options: MentionOption[]; warning: string | null }> {
   const query = `?novelId=${encodeURIComponent(novelId)}`;
   const endpoints: Array<[MentionOption["type"], string]> = [
     ["chapter", `/api/chapters${query}&view=summary`],
@@ -87,6 +87,13 @@ async function loadMentionOptions(novelId: string): Promise<MentionOption[]> {
 
   const options: MentionOption[] = [];
   const seen = new Set<string>();
+  const failures = settled.filter((result) => result.status === "rejected");
+  if (failures.length === settled.length) {
+    const first = failures[0];
+    throw new Error(first?.status === "rejected" && first.reason instanceof Error
+      ? first.reason.message
+      : "引用资料加载失败");
+  }
   for (const result of settled) {
     if (result.status !== "fulfilled") continue;
     for (const row of result.value.rows) {
@@ -98,21 +105,24 @@ async function loadMentionOptions(novelId: string): Promise<MentionOption[]> {
       options.push(option);
     }
   }
-  return options;
+  return {
+    options,
+    warning: failures.length ? `${failures.length} 类资料加载失败，当前仅显示已成功加载的资料。` : null,
+  };
 }
 
-export function MentionPicker({ novelId, query, onPick }: MentionPickerProps) {
+export function MentionPicker({ novelId, query, onPick, onRegisterFirstOption }: MentionPickerProps) {
   const [options, setOptions] = React.useState<MentionOption[]>([]);
   const [loading, setLoading] = React.useState(true);
   const [error, setError] = React.useState<string | null>(null);
-  const debouncedQuery = useDebouncedValue(query, 120);
 
   const load = React.useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
-      const list = await loadMentionOptions(novelId);
-      setOptions(list);
+      const result = await loadMentionOptions(novelId);
+      setOptions(result.options);
+      setError(result.warning);
     } catch (err) {
       setError(err instanceof Error ? err.message : "引用资料加载失败");
     } finally {
@@ -125,8 +135,11 @@ export function MentionPicker({ novelId, query, onPick }: MentionPickerProps) {
     setLoading(true);
     setError(null);
     loadMentionOptions(novelId)
-      .then((list) => {
-        if (alive) setOptions(list);
+      .then((result) => {
+        if (alive) {
+          setOptions(result.options);
+          setError(result.warning);
+        }
       })
       .catch((err: unknown) => {
         if (alive) setError(err instanceof Error ? err.message : "引用资料加载失败");
@@ -140,7 +153,7 @@ export function MentionPicker({ novelId, query, onPick }: MentionPickerProps) {
   }, [novelId]);
 
   const filtered = React.useMemo(() => {
-    const keyword = debouncedQuery.trim().toLowerCase();
+    const keyword = query.trim().toLowerCase();
     const list = keyword
       ? options.filter(
           (item) =>
@@ -149,7 +162,7 @@ export function MentionPicker({ novelId, query, onPick }: MentionPickerProps) {
         )
       : options;
     return list.slice(0, 40);
-  }, [options, debouncedQuery]);
+  }, [options, query]);
 
   const groups = React.useMemo(
     () =>
@@ -159,6 +172,16 @@ export function MentionPicker({ novelId, query, onPick }: MentionPickerProps) {
       })).filter((group) => group.items.length > 0),
     [filtered],
   );
+  const pickFirst = React.useCallback(() => {
+    const first = filtered[0];
+    if (!first) return false;
+    onPick(first);
+    return true;
+  }, [filtered, onPick]);
+  React.useEffect(() => {
+    onRegisterFirstOption?.(pickFirst);
+    return () => onRegisterFirstOption?.(null);
+  }, [onRegisterFirstOption, pickFirst]);
 
   return (
     <div className="absolute bottom-full left-0 right-0 z-30 mb-2 overflow-hidden rounded-md border border-line bg-surface shadow-float rise-in">
@@ -171,7 +194,7 @@ export function MentionPicker({ novelId, query, onPick }: MentionPickerProps) {
       </div>
 
       <div className="scroll-thin max-h-64 overflow-y-auto p-1">
-        {error ? (
+        {error && groups.length === 0 ? (
           <div className="flex flex-col items-center gap-2 px-3 py-4 text-center">
             <p className="text-[12px] text-danger">{error}</p>
             <button
@@ -193,7 +216,9 @@ export function MentionPicker({ novelId, query, onPick }: MentionPickerProps) {
             ) : null}
           </div>
         ) : (
-          groups.map((group) => (
+          <>
+            {error ? <p className="px-2 py-1 text-[10.5px] text-gold" role="status">{error}</p> : null}
+            {groups.map((group) => (
             <div key={group.type} className="mb-1 last:mb-0">
               <div className="px-2 py-1 text-[10.5px] font-medium tracking-wide text-ink-4">
                 {MENTION_TYPE_LABEL[group.type]}
@@ -219,7 +244,8 @@ export function MentionPicker({ novelId, query, onPick }: MentionPickerProps) {
                 </button>
               ))}
             </div>
-          ))
+            ))}
+          </>
         )}
       </div>
     </div>

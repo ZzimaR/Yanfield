@@ -24,6 +24,7 @@ import type { Novel } from "@/lib/types";
 import { applyTheme, getStoredTheme, resolveTheme, type ThemeMode } from "@/lib/ui/theme";
 import { InkstoneMark } from "@/components/brand/InkstoneMark";
 import { IconButton, Tooltip } from "@/components/ui/kit";
+import { LinkPendingIcon } from "@/components/ui/LinkPendingIcon";
 
 export type AppShellActive = "library" | "overview" | "outline" | "bible" | "archives" | "editor" | "settings";
 
@@ -185,7 +186,10 @@ export function AppShell({
                   href={`/editor/${novelId}`}
                   className="inline-flex h-7 items-center gap-1.5 rounded-md bg-accent px-2.5 text-[12px] font-medium text-accent-ink transition-colors hover:bg-accent-hover"
                 >
-                  <PenLine className="size-3.5" /> 继续写作
+                  <LinkPendingIcon className="size-3.5">
+                    <PenLine className="size-3.5" />
+                  </LinkPendingIcon>{" "}
+                  继续写作
                 </Link>
               </div>
             </div>

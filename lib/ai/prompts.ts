@@ -41,7 +41,7 @@ export function getAgent(agentId: AgentId | undefined): AgentDef {
  * 但「知道」不等于「写出来」——正文只能写到读者已经知道的信息。
  */
 export const KNOWLEDGE_BOUNDARY =
-  "设定卡与故事档案是作者的私有资料：你可以看到全部内容，用来保证前后一致、不写崩设定；但「知道」不等于「写出来」，正文只能写到当前章节已经揭示、读者已经知道的信息。标有「尚未揭示」的资料只能用来埋伏笔、铺线索，不能提前点破、替读者揭晓，也不能让人物说出他此刻不该知道的事。";
+  "只依据本轮实际提供或作者明确引用的资料，不假定未提供的设定。作者明确引用尚未揭示的资料时，只用于保持设定一致；正文只能写到当前章节已揭示的信息，不能提前点破、替读者揭晓，也不能让人物说出他此刻不该知道的事。";
 
 /** 智能体人格前缀：拼在 systemPrompt 前，让同一模型切换角色（应用设置里的人设覆盖） */
 export function agentPreamble(agentId: AgentId | undefined, settings: AppSettings): string {

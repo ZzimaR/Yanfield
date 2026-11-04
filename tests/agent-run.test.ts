@@ -10,7 +10,7 @@ vi.mock("@/lib/ai/provider",()=>({streamCompletion:async function*(input:unknown
   const sourceId=value.includes("__SOURCE_ID__")?JSON.parse((input as {messages:{content:string}[]}).messages[1].content).sources[0].id:"";
   yield {type:"delta",text:value.replaceAll("__SOURCE_ID__",sourceId)};yield {type:"usage",promptTokens:10,completionTokens:5,cachedInputTokens:fake.cache.shift(),cost:fake.costs.shift()};
 }}));
-vi.mock("@/lib/ai/engine",()=>({resolveTarget:()=>({provider:{id:"test",name:"test",kind:"openai"},model:"test"}),mergeContextConfig:(c:unknown)=>({contextBudget:24000,includeCharacters:true,includeWorld:true,includeForeshadows:true,includeArchives:true,includeNovelOutline:true,includeVolumeOutline:true,includeChapterBlueprint:true,includeStyleGuide:true,...(c as object)})}));
+vi.mock("@/lib/ai/engine",()=>({resolveTarget:()=>({provider:{id:"test",name:"test",kind:"openai"},model:"test"}),mergeContextConfig:(c:unknown)=>({contextBudget:24000,includeCharacters:true,includeWorld:true,includeForeshadows:true,includeArchives:true,includeNovelOutline:true,includeVolumeOutline:true,includeChapterBlueprint:true,includeStyleGuide:true,includeSelection:true,...(c as object)})}));
 const folder=mkdtempSync(join(tmpdir(),"yanfield-run-"));
 let repo:typeof import("@/lib/repo"),runtime:typeof import("@/lib/ai/agent/run"),store:typeof import("@/lib/ai/agent/store");
 beforeAll(async()=>{process.env.YANFIELD_DB_PATH=join(folder,"test.db");repo=await import("@/lib/repo");runtime=await import("@/lib/ai/agent/run");store=await import("@/lib/ai/agent/store");});
@@ -145,6 +145,56 @@ describe("Agent连续工具执行",()=>{
     expect(event.run.changes[0].after.content).toBe("<p>林舟将信压在账本下。</p>");
     const writer=fake.inputs.find(i=>(i as {messages:{content:string}[]}).messages[0].content.startsWith("你是小说写手")) as {messages:{content:string}[]};
     expect(JSON.parse(writer.messages.at(-1)!.content).targetWords).toBe("把信压在账本下".length);
+  });
+  it("关闭选区上下文后忽略客户端仍传入的选中文本",async()=>{
+    const novel=repo.createNovel({title:"关闭选区"});
+    fake.inputs=[];fake.queue=[plan([],"只按文字要求回答")];
+    await collect({
+      novelId:novel.id,
+      message:"简单回答",
+      selection:"不应发送的选中正文",
+      context:{includeSelection:false},
+    });
+    const messages=(fake.inputs[0] as {messages:{role:string;content:string}[]}).messages;
+    expect(messages.at(-1)?.content).not.toContain("不应发送的选中正文");
+  });
+  it("不限预算时仍允许写手生成正文",async()=>{
+    const novel=repo.createNovel({title:"不限预算写作"});
+    fake.queue=[
+      plan([{name:"write_chapter",args:{instruction:"写一个简短开篇",words:100}}]),
+      "潮水退了。",
+      plan([],"正文候选已准备好"),
+    ];
+    const events=await collect({
+      novelId:novel.id,
+      message:"写一个简短开篇，不增加资料",
+      context:{contextBudget:0},
+    });
+    const event=events.filter((item)=>item.type==="agent").at(-1)!;
+    if(event.type!=="agent")throw new Error("missing");
+    expect(event.run.status).toBe("ready");
+    expect(event.run.changes).toHaveLength(1);
+  });
+  it("工作区档案排除当前章及后续章节",async()=>{
+    const novel=repo.createNovel({title:"档案时序"});
+    const previous=repo.createChapter(novel.id,{title:"第一章"});
+    const current=repo.createChapter(novel.id,{title:"第二章"});
+    const future=repo.createChapter(novel.id,{title:"第三章"});
+    const previousArchive=repo.upsertArchive({novelId:novel.id,chapterId:previous.id,chapterSummary:"先前已发生剧情"});
+    repo.upsertArchive({novelId:novel.id,chapterId:future.id,chapterSummary:"尚未发生剧情"});
+    fake.inputs=[];
+    fake.queue=[plan([{name:"workspace",args:{}}]),plan([],"查看完成")];
+    await collect({novelId:novel.id,chapterId:current.id,message:"核对档案"});
+    const messages=(fake.inputs[1] as {messages:{content:string}[]}).messages;
+    const workspace=messages.find((item)=>item.content.startsWith("工具 workspace 返回："))?.content ?? "";
+    expect(workspace).toContain(previousArchive.chapterSummary);
+    expect(workspace).not.toContain("尚未发生剧情");
+
+    fake.inputs=[];
+    fake.queue=[plan([{name:"read_archive",args:{chapterId:future.id}}]),plan([],"已跳过未发生的档案")];
+    await collect({novelId:novel.id,chapterId:current.id,message:"核对档案"});
+    const readMessages=(fake.inputs[1] as {messages:{content:string}[]}).messages;
+    expect(readMessages.some((item)=>item.content.includes("不能读取当前章节之后的故事档案"))).toBe(true);
   });
   it("重复或跨格式的选区先拒绝，不调用写手浪费token",async()=>{
     const novel=repo.createNovel({title:"重复选区"}),chapter=repo.createChapter(novel.id,{title:"第一章",content:"<p>信在账本下。</p><p>信在账本下。</p>"});fake.inputs=[];

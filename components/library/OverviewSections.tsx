@@ -14,11 +14,12 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { Badge, Card, Progress } from "@/components/ui/kit";
-import { CHAPTER_STATUS_LABEL, type Chapter } from "@/lib/types";
+import { LinkPendingIcon } from "@/components/ui/LinkPendingIcon";
+import { CHAPTER_STATUS_LABEL, type Chapter, type ChapterSummary } from "@/lib/types";
 import { cn, formatRelativeTime, formatWords } from "@/lib/ui/cn";
 
 export interface ChapterEntry {
-  chapter: Chapter;
+  chapter: ChapterSummary;
   volumeTitle: string;
 }
 
@@ -145,7 +146,9 @@ export function ContinueWritingCard({ editorHref, lastChapter, todayWords }: Con
           href={editorHref}
           className="inline-flex h-10 shrink-0 items-center justify-center gap-2 rounded-md bg-accent px-5 text-[14px] font-medium text-accent-ink shadow-card transition-colors hover:bg-accent-hover"
         >
-          <PenLine className="size-4" aria-hidden />
+          <LinkPendingIcon className="size-4">
+            <PenLine className="size-4" aria-hidden />
+          </LinkPendingIcon>
           继续写作
           <ArrowRight className="size-3.5" aria-hidden />
         </Link>
@@ -157,8 +160,8 @@ export function ContinueWritingCard({ editorHref, lastChapter, todayWords }: Con
 /* ============================== 卷进度 ============================== */
 
 export interface VolumeProgressCardProps {
-  volumes: { id: string; title: string; chapters: Chapter[] }[];
-  looseChapters: Chapter[];
+  volumes: { id: string; title: string; chapters: ChapterSummary[] }[];
+  looseChapters: ChapterSummary[];
   editorBase: string;
 }
 

@@ -1,14 +1,13 @@
 import { describe, expect, it } from "vitest";
-import { disclosureNote, filterAiVisible } from "@/lib/ai/context";
+import { filterAiVisible, isAiVisibleAtChapter } from "@/lib/ai/context";
 import { agentPreamble } from "@/lib/ai/prompts";
 import { DEMO_CHARACTERS, DEMO_WORLD } from "@/lib/defaults";
 import { DEFAULT_APP_SETTINGS } from "@/lib/types";
 
 /**
- * 上下文「全知但标注」纯逻辑单测。
- * - AI 能看到全部设定卡（只有 aiVisible=false 的卡不进上下文）；
- * - revealAtChapter 没到的卡照常进上下文，只在行尾标注「尚未揭示」，不丢内容；
- * - 智能体提示词带「知道不等于写出」的输出约束。
+ * 上下文可见性纯逻辑单测。
+ * - AI 只看到已揭示且 aiVisible=true 的卡；
+ * - 智能体提示词要求仅依据实际提供或作者明确引用的资料。
  * 只测纯函数，不连数据库：数据库句柄在 getDb() 里才创建，模块导入本身无副作用。
  */
 describe("filterAiVisible", () => {
@@ -29,28 +28,29 @@ describe("filterAiVisible", () => {
   });
 });
 
-describe("disclosureNote", () => {
-  it("没填揭示章节 = 不标注", () => {
-    expect(disclosureNote({ aiVisible: true, revealAtChapter: null }, 1)).toBe("");
+describe("isAiVisibleAtChapter", () => {
+  it("未设置揭示章节时，AI 可见性开关决定是否可见", () => {
+    expect(isAiVisibleAtChapter({ aiVisible: true, revealAtChapter: null }, 1)).toBe(true);
+    expect(isAiVisibleAtChapter({ aiVisible: false, revealAtChapter: null }, 1)).toBe(false);
   });
 
-  it("没有章节上下文（聊天场景）不标注", () => {
-    expect(disclosureNote({ aiVisible: true, revealAtChapter: 6 }, null)).toBe("");
+  it("无章节上下文时，未设定揭示章节的卡默认隐藏", () => {
+    expect(isAiVisibleAtChapter({ aiVisible: true, revealAtChapter: 6 }, null)).toBe(false);
   });
 
-  it("还没写到揭示章节：标注出来，而不是丢卡", () => {
-    expect(disclosureNote({ aiVisible: true, revealAtChapter: 6 }, 1)).toBe("（尚未揭示，第 6 章后）");
-    expect(disclosureNote({ aiVisible: true, revealAtChapter: 6 }, 5)).toBe("（尚未揭示，第 6 章后）");
+  it("在揭示章节之前隐藏", () => {
+    expect(isAiVisibleAtChapter({ aiVisible: true, revealAtChapter: 6 }, 1)).toBe(false);
+    expect(isAiVisibleAtChapter({ aiVisible: true, revealAtChapter: 6 }, 5)).toBe(false);
   });
 
-  it("已写到揭示章节及之后：不再标注", () => {
-    expect(disclosureNote({ aiVisible: true, revealAtChapter: 6 }, 6)).toBe("");
-    expect(disclosureNote({ aiVisible: true, revealAtChapter: 6 }, 7)).toBe("");
+  it("作者明确引用可覆盖揭示章节，但不能覆盖 AI 隐藏开关", () => {
+    expect(isAiVisibleAtChapter({ aiVisible: true, revealAtChapter: 6 }, 1, true)).toBe(true);
+    expect(isAiVisibleAtChapter({ aiVisible: false, revealAtChapter: 6 }, 1, true)).toBe(false);
   });
 
-  it("aiVisible 关闭的卡不进上下文，也就不标注", () => {
-    expect(disclosureNote({ aiVisible: false, revealAtChapter: 6 }, 1)).toBe("");
-    expect(disclosureNote({ aiVisible: false, revealAtChapter: null }, 1)).toBe("");
+  it("到达揭示章节后可见", () => {
+    expect(isAiVisibleAtChapter({ aiVisible: true, revealAtChapter: 6 }, 6)).toBe(true);
+    expect(isAiVisibleAtChapter({ aiVisible: true, revealAtChapter: 6 }, 7)).toBe(true);
   });
 });
 
@@ -78,25 +78,23 @@ describe("demo seed 没有未揭示标注", () => {
 });
 
 describe("智能体提示词的知识边界", () => {
-  it("内置智能体：能看到全部设定，但知道不等于写出", () => {
+  it("内置智能体只依据本轮提供的资料", () => {
     const text = agentPreamble("writer", DEFAULT_APP_SETTINGS);
-    expect(text).toContain("设定卡");
-    expect(text).toContain("知道");
-    expect(text).toContain("写出来");
-    expect(text).toContain("尚未揭示");
+    expect(text).toContain("提供或作者明确引用的资料");
+    expect(text).toContain("不假定未提供");
+    expect(text).toContain("当前章节已揭示");
   });
 
-  it("主编与设定智能体同样带约束", () => {
+  it("主编与设定智能体同样遵守资料边界", () => {
     for (const agentId of ["supervisor", "setting"] as const) {
       const text = agentPreamble(agentId, DEFAULT_APP_SETTINGS);
-      expect(text).toContain("知道");
-      expect(text).toContain("尚未揭示");
+      expect(text).toContain("不假定未提供");
     }
   });
 
   it("自定义智能体同样带约束", () => {
     const text = agentPreamble("custom", DEFAULT_APP_SETTINGS);
-    expect(text).toContain("知道");
-    expect(text).toContain("写出来");
+    expect(text).toContain("不假定未提供");
+    expect(text).toContain("当前章节已揭示");
   });
 });

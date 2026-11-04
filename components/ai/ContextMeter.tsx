@@ -11,7 +11,7 @@ import { apiPost } from "@/lib/client/api";
 import type { ContextConfig } from "@/lib/types";
 import { Skeleton } from "@/components/ui/kit";
 import { cn } from "@/lib/ui/cn";
-import type { ContextPreview } from "./types";
+import type { ContextPreview, MentionRef } from "./types";
 import { formatTokens, normalizeContextPreview } from "./utils";
 import { budgetLabel } from "./model-info";
 
@@ -19,6 +19,8 @@ export interface UseContextPreviewOptions {
   novelId: string;
   chapterId?: string | null;
   config: ContextConfig;
+  getSelection?: () => string;
+  mentions?: MentionRef[];
   enabled?: boolean;
 }
 
@@ -33,6 +35,8 @@ export function useContextPreview({
   novelId,
   chapterId,
   config,
+  getSelection,
+  mentions = [],
   enabled = true,
 }: UseContextPreviewOptions): UseContextPreviewResult {
   const [data, setData] = React.useState<ContextPreview | null>(null);
@@ -40,19 +44,31 @@ export function useContextPreview({
   const [error, setError] = React.useState<string | null>(null);
   const [tick, setTick] = React.useState(0);
   const configKey = React.useMemo(() => JSON.stringify(config), [config]);
+  const mentionsKey = React.useMemo(() => JSON.stringify(mentions), [mentions]);
 
   React.useEffect(() => {
     if (!enabled || !novelId) return;
     let alive = true;
     setLoading(true);
     setError(null);
+    const selection = getSelection?.().trim();
+    setData(null);
     // 注意：服务端请求字段是 context（不是 config）；响应结构与 UI 结构不同，统一归一化
-    apiPost<unknown>("/api/ai/context", { novelId, chapterId: chapterId ?? null, context: config })
+    apiPost<unknown>("/api/ai/context", {
+      novelId,
+      chapterId: chapterId ?? null,
+      context: config,
+      selection: selection || undefined,
+      mentions,
+    })
       .then((result) => {
         if (alive) setData(normalizeContextPreview(result));
       })
       .catch((err: unknown) => {
-        if (alive) setError(err instanceof Error ? err.message : "上下文预览不可用");
+        if (alive) {
+          setData(null);
+          setError(err instanceof Error ? err.message : "上下文预览不可用");
+        }
       })
       .finally(() => {
         if (alive) setLoading(false);
@@ -62,7 +78,7 @@ export function useContextPreview({
     };
     // config 通过序列化 key 参与依赖，避免对象引用变化导致重复请求
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [novelId, chapterId, configKey, enabled, tick]);
+  }, [novelId, chapterId, configKey, mentions, mentionsKey, getSelection, enabled, tick]);
 
   const refresh = React.useCallback(() => setTick((prev) => prev + 1), []);
   return { data, loading, error, refresh };

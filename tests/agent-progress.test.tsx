@@ -22,6 +22,9 @@ describe("Agent 进展展示",()=>{
  it("兼容没有进展字段的旧任务",()=>{
   expect(()=>renderToStaticMarkup(<AgentProgress run={{...fixture,progress:undefined}} renderTargets={()=>null}/>)).not.toThrow();
  });
+ it("没有进展、步骤且任务结束时不渲染空白容器",()=>{
+  expect(renderToStaticMarkup(<AgentProgress run={{...fixture,status:"complete",progress:[],steps:[]}} renderTargets={()=>null} />)).toBe("");
+ });
 });
 
 it("Agent说明按Markdown排版，保留引号且不执行原始HTML",()=>{

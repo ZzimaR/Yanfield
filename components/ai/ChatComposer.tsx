@@ -48,6 +48,7 @@ export interface ChatComposerProps {
   chapterId?: string | null;
   placeholder?: string;
   onOpenContext?: () => void;
+  includeSelection?: boolean;
   /** 输入区 chips：当前智能体名（显示在「智能体」chip 上） */
   agentName?: string;
   /** 打开智能体选择器（面板用 Sheet 承载） */
@@ -89,6 +90,7 @@ export function ChatComposer({
   chapterId,
   placeholder = "说说想写什么，或选一段文字交给我…",
   onOpenContext,
+  includeSelection = true,
   agentName,
   onOpenAgent,
   style = null,
@@ -101,6 +103,7 @@ export function ChatComposer({
   className,
 }: ChatComposerProps) {
   const textareaRef = React.useRef<HTMLTextAreaElement | null>(null);
+  const mentionPickFirstRef = React.useRef<(() => boolean) | null>(null);
   const [mention, setMention] = React.useState<{ open: boolean; query: string; start: number }>({
     open: false,
     query: "",
@@ -258,7 +261,11 @@ export function ChatComposer({
         return;
       }
       // @ 引用选择器打开时先选引用，不发送
-      if (mention.open) return;
+      if (mention.open) {
+        event.preventDefault();
+        mentionPickFirstRef.current?.();
+        return;
+      }
       event.preventDefault();
       if(!streaming && !sending && !disabled)onSend();
       return;
@@ -294,7 +301,7 @@ export function ChatComposer({
     return items;
   }, [onStyleChange, style]);
 
-  const selectionLength = selectionText.trim().length;
+  const selectionLength = includeSelection ? selectionText.trim().length : 0;
 
   return (
     <div className={cn("relative border-t border-line/60 bg-surface px-4 pb-4 pt-3", className)}>
@@ -305,6 +312,7 @@ export function ChatComposer({
           query={mention.query}
           onPick={pickMention}
           onClose={() => setMention({ open: false, query: "", start: 0 })}
+          onRegisterFirstOption={(pick) => { mentionPickFirstRef.current = pick; }}
         />
       ) : null}
 

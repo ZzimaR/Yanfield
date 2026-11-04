@@ -39,6 +39,7 @@ const EMPTY_SELECTION: SelectionInfo = { text: "", from: 0, to: 0, empty: true }
 
 interface EditorWorkbenchProps {
   novelId: string;
+  initialChapterId?: string | null;
 }
 
 /**
@@ -46,7 +47,7 @@ interface EditorWorkbenchProps {
  * 职责：目录树 + 章节草稿 + 自动保存 + EditorBridge 注入 + 三栏布局 +
  * 沉浸模式 + 主题 + 快捷键 + 各种加载/错误态。
  */
-export function EditorWorkbench({ novelId }: EditorWorkbenchProps) {
+export function EditorWorkbench({ novelId, initialChapterId = null }: EditorWorkbenchProps) {
   const router = useRouter();
   const { toast } = useToast();
 
@@ -69,6 +70,7 @@ export function EditorWorkbench({ novelId }: EditorWorkbenchProps) {
     `yantian:editor:chapter:${novelId}`,
     null,
   );
+  const [initialChapterPending, setInitialChapterPending] = React.useState(Boolean(initialChapterId));
 
   const [theme, setTheme] = React.useState<EditorTheme>("light");
   const [selection, setSelection] = React.useState<SelectionInfo>(EMPTY_SELECTION);
@@ -130,15 +132,17 @@ export function EditorWorkbench({ novelId }: EditorWorkbenchProps) {
     [toast],
   );
 
-  const { tree, loading, error, notFound, actions } = useNovelTree({
+  const { tree, initialChapter, loading, error, notFound, actions } = useNovelTree({
     novelId,
+    initialChapterId,
     onError: onTreeError,
     onSuccess: onTreeSuccess,
   });
 
   const chapters = React.useMemo(() => flattenChapters(tree), [tree]);
   const chapterMeta = React.useMemo(() => findChapter(tree, chapterId), [tree, chapterId]);
-  const chapterApi = useChapterContent(chapterMeta?.id ?? null);
+  const chapterRequestId = initialChapterPending ? initialChapter?.id ?? null : chapterMeta?.id ?? null;
+  const chapterApi = useChapterContent(chapterRequestId, initialChapter);
   // Never show the previous request's body while switching chapters.
   const chapter = React.useMemo(() => chapterMeta && chapterApi.data?.id === chapterMeta.id
     ? { ...chapterApi.data, ...chapterMeta, content: chapterApi.data.content }
@@ -174,6 +178,7 @@ export function EditorWorkbench({ novelId }: EditorWorkbenchProps) {
   // 目录加载完成后：优先深链章节 → 上次打开的章节 → 第一章
   React.useEffect(() => {
     if (!tree) return;
+    if (initialChapterPending) setInitialChapterPending(false);
     const linked = linkedChapterIdRef.current;
     if (linked) {
       linkedChapterIdRef.current = null;
@@ -185,7 +190,7 @@ export function EditorWorkbench({ novelId }: EditorWorkbenchProps) {
     if (chapterId && chapters.some((item) => item.id === chapterId)) return;
     const fallback = chapters[0]?.id ?? null;
     if (fallback !== chapterId) setChapterId(fallback);
-  }, [tree, chapters, chapterId, setChapterId]);
+  }, [tree, chapters, chapterId, setChapterId, initialChapterPending]);
 
   // 章节切换时把 chapterId 同步回地址栏，刷新/复制链接仍停在同一章
   React.useEffect(() => {
@@ -281,7 +286,7 @@ export function EditorWorkbench({ novelId }: EditorWorkbenchProps) {
       if(value.run.novelId!==novelId)return;
       void (async()=>{
         await flush();
-        const latest=await apiGet<AgentRun>(`/api/ai/agent/${value.run.id}`);
+        const latest=await apiGet<AgentRun>(`/api/ai/agent/${value.run.id}?novelId=${encodeURIComponent(novelId)}`);
         const change=latest.changes.find(c=>c.id===value.changeId);
         if(!change)return;
         await actions.refresh();

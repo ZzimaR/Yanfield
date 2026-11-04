@@ -4,7 +4,7 @@
  * - 已保存的 Provider 只需传 providerId（可带新的 baseUrl / kind / apiKey 覆盖草稿）
  * - 新建 Provider 时传 kind + baseUrl + apiKey 即可预览，不写入数据库
  */
-import { ProviderError, listProviderModels } from "@/lib/ai/provider";
+import { ProviderError, listProviderModels, redactProviderEndpoint } from "@/lib/ai/provider";
 import { bad, handle, ok } from "@/lib/api-utils";
 import * as repo from "@/lib/repo";
 import type { ProviderConfig, ProviderKind } from "@/lib/types";
@@ -49,11 +49,11 @@ export const POST = handle(async (request) => {
     const result = await listProviderModels(draft);
     return ok({
       models: result.models,
-      endpoint: result.endpoint,
+      endpoint: redactProviderEndpoint(result.endpoint),
       count: result.models.length,
       providerId: stored?.id ?? null,
       kind,
-      baseUrl: draft.baseUrl,
+      baseUrl: redactProviderEndpoint(draft.baseUrl),
     });
   } catch (error) {
     if (error instanceof ProviderError) return bad(error.message, error.status);

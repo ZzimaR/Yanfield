@@ -42,19 +42,41 @@ export function readEntity(kind: EntityKind, id: string, novelId: string): Field
   if (row && row.novelId !== novelId) throw new ApiError("对象不属于该作品",400);
   return row;
 }
-export function visibleEntity(kind: EntityKind,id:string,novelId:string): Fields | null {
+export function visibleEntity(
+  kind: EntityKind,
+  id: string,
+  novelId: string,
+  chapterIndex: number | null = null,
+  explicitlyReferenced = false,
+): Fields | null {
   const row = readEntity(kind,id,novelId);
   if (row?.aiVisible === false) throw new ApiError("这张资料已对 AI 隐藏",400);
+  if (
+    row &&
+    typeof row.revealAtChapter === "number" &&
+    (chapterIndex === null || row.revealAtChapter > chapterIndex) &&
+    !explicitlyReferenced
+  ) {
+    throw new ApiError("这张资料尚未在当前章节揭示；如确需使用，请在本轮明确引用",400);
+  }
   return row;
 }
 
-export function propose(run: AgentRun, kind: EntityKind, targetId: string | null, patch: unknown, reason: string, title?: string): AgentChange {
+export function propose(
+  run: AgentRun,
+  kind: EntityKind,
+  targetId: string | null,
+  patch: unknown,
+  reason: string,
+  title?: string,
+  visibility?: { chapterIndex: number | null; explicitlyReferenced: boolean },
+): AgentChange {
   const after = validatePatch(kind,patch);
   const existing = run.changes.find(c=>c.kind===kind && c.targetId===targetId && c.state==="pending" && (targetId || c.title === title));
   let before: Fields | null = existing?.before ?? null;
   const dependency = targetId ? run.changes.find(c=>c.id===targetId && c.kind==="chapter" && !c.targetId) : undefined;
   if (targetId && !dependency && !existing) {
-    before = visibleEntity(kind,targetId,run.novelId);
+    before = visibleEntity(kind,targetId,run.novelId,visibility?.chapterIndex,visibility?.explicitlyReferenced);
     if (!before && !["blueprint","outline","volume-outline"].includes(kind)) throw new ApiError("要修改的对象不存在",404);
   }
   if (dependency && kind!=="blueprint") throw new ApiError("该引用只可用于新章的章纲",400);

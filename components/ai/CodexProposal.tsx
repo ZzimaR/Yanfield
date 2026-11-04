@@ -60,12 +60,12 @@ export function CodexProposal({
     }
     for (const [ref, id] of writtenRef.current) ids.set(ref, id);
     // 父级可能被 prepareCodexItems 映射成库里已存在的设定 id（不在本批 ids 里），单独校验
-    const existingWorldIds = todo.some((item) => item.kind === "world" && item.parentRef)
-      ? await fetchWorldIds(novelId)
-      : new Set<string>();
-    const dropped: string[] = [];
+    let dropped: string[] = [];
     let done = 0;
     try {
+      const existingWorldIds = todo.some((item) => item.kind === "world" && item.parentRef)
+        ? await fetchWorldIds(novelId)
+        : new Set<string>();
       for (const item of todo) {
         const saved = await writeCard(novelId, item, ids, existingWorldIds);
         writtenRef.current.set(item.ref, saved.id);
@@ -256,12 +256,8 @@ function resolveWorldParent(
 
 /** 拉一次库里已有设定 id：prepareCodexItems 可能把父级标题换成了已存在的设定 id。 */
 async function fetchWorldIds(novelId: string): Promise<Set<string>> {
-  try {
-    const data = await apiGet<{ items?: WorldSetting[] }>(`/api/world?novelId=${encodeURIComponent(novelId)}`);
-    return new Set((data?.items ?? []).map((item) => item.id));
-  } catch {
-    return new Set();
-  }
+  const data = await apiGet<{ items?: WorldSetting[] }>(`/api/world?novelId=${encodeURIComponent(novelId)}`);
+  return new Set((data?.items ?? []).map((item) => item.id));
 }
 
 async function writeCard(

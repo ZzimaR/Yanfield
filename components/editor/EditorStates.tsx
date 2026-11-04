@@ -13,7 +13,7 @@ const linkButtonClass =
 /** 加载骨架：还原三栏布局，避免首屏跳动 */
 export function EditorLoading() {
   return (
-    <div className="flex h-full min-h-0 flex-col bg-paper" aria-busy="true" aria-label="正在加载写作台">
+    <div className="relative flex h-full min-h-0 flex-col bg-paper" aria-busy="true" aria-label="正在加载写作台">
       <div className="flex h-12 shrink-0 items-center gap-3 border-b border-line px-3">
         <Skeleton className="size-8 rounded-md" />
         <Skeleton className="h-3.5 w-44" />
@@ -36,6 +36,18 @@ export function EditorLoading() {
           {Array.from({ length: 7 }).map((_, index) => (
             <Skeleton key={index} className={cn("h-3.5", index % 3 === 0 ? "w-1/2" : "w-full")} />
           ))}
+        </div>
+      </div>
+      <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
+        <div
+          role="status"
+          className="fade-in flex flex-col items-center gap-3 rounded-lg border border-line bg-surface/90 px-7 py-5 shadow-card backdrop-blur"
+        >
+          <div className="ink-write relative h-7 w-28" aria-hidden>
+            <span className="ink-write-line absolute bottom-1 left-0 h-[2px] w-full rounded-full bg-accent/70" />
+            <Feather className="ink-write-pen absolute bottom-1 left-0 size-5 text-accent" />
+          </div>
+          <p className="text-[12.5px] text-ink-3">正在铺开稿纸…</p>
         </div>
       </div>
     </div>

@@ -9,6 +9,7 @@ import { countWords } from "@/lib/ui/cn";
 export function AgentProgress({run,renderTargets}:{run:AgentRun;renderTargets:(step:AgentStep)=>React.ReactNode}) {
   const progress=run.progress??[];
   const important=(step:AgentStep)=>step.status!=="complete" || ["write_chapter","propose","organize_materials"].includes(step.tool??"");
+  if (!progress.length && !run.steps.length && run.status !== "running") return null;
   return <div className="space-y-3 px-4 py-3" aria-label="任务进展">
     {Array.from({length:run.steps.length+1},(_,index)=><React.Fragment key={index}>
       {progress.filter(p=>p.stepIndex===index).map(p=><Markdown key={p.id} text={p.text} className="break-words text-[13px] leading-[1.9] text-ink-2"/>)}

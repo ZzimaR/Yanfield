@@ -2,6 +2,7 @@
 
 import * as React from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { BookOpen, Download, Ellipsis, Pencil, PenLine, Trash } from "lucide-react";
 import { InkstoneMark } from "@/components/brand/InkstoneMark";
 import { Dropdown, IconButton } from "@/components/ui/kit";
@@ -19,6 +20,7 @@ export interface NovelCardProps {
 
 /** 书架作品卡片：封面渐变 + 汇总信息 + 操作菜单。 */
 export function NovelCard({ novel, onDelete, onEdit }: NovelCardProps) {
+  const router = useRouter();
   const cover = resolveCoverStyle(novel.coverKey);
   const meta = (
     <>
@@ -71,7 +73,7 @@ export function NovelCard({ novel, onDelete, onEdit }: NovelCardProps) {
               label: "继续写作",
               icon: <PenLine className="size-3.5" />,
               onSelect: () => {
-                window.location.href = editorHref(novel.id, novel.lastChapterId);
+                router.push(editorHref(novel.id, novel.lastChapterId));
               },
               hint: novel.lastChapterId ? "最近一章" : undefined,
             },

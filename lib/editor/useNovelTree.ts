@@ -7,6 +7,7 @@ import type { MoveTarget, NovelTree, TreeActions, TreeVolume } from "./types";
 
 interface UseNovelTreeOptions {
   novelId: string;
+  initialChapterId?: string | null;
   /** 请求失败提示（通常直接接 toast） */
   onError?: (message: string) => void;
   /** 操作成功提示 */
@@ -15,6 +16,7 @@ interface UseNovelTreeOptions {
 
 export interface UseNovelTreeResult {
   tree: NovelTree | null;
+  initialChapter: Chapter | null;
   loading: boolean;
   error: string | null;
   /** 作品不存在（404）——页面展示专门的空状态 */
@@ -33,8 +35,9 @@ function errorMessage(err: unknown): string {
  * 编辑器目录树：加载 + 卷/章增删改移。
  * 所有写操作串行执行（避免并发刷新互相覆盖），失败统一回调 onError。
  */
-export function useNovelTree({ novelId, onError, onSuccess }: UseNovelTreeOptions): UseNovelTreeResult {
+export function useNovelTree({ novelId, initialChapterId, onError, onSuccess }: UseNovelTreeOptions): UseNovelTreeResult {
   const [tree, setTree] = React.useState<NovelTree | null>(null);
+  const [initialChapter, setInitialChapter] = React.useState<Chapter | null>(null);
   const [loading, setLoading] = React.useState(true);
   const [error, setError] = React.useState<string | null>(null);
   const [notFound, setNotFound] = React.useState(false);
@@ -60,7 +63,12 @@ export function useNovelTree({ novelId, onError, onSuccess }: UseNovelTreeOption
       setError(null);
       setNotFound(false);
       try {
-        const data = await apiGet<NovelTree>(`/api/novels/${novelId}/tree?view=summary`);
+        const chapterQuery = !silent && initialChapterId
+          ? `&chapterId=${encodeURIComponent(initialChapterId)}`
+          : "";
+        const data = await apiGet<NovelTree & { selectedChapter?: Chapter | null }>(
+          `/api/novels/${novelId}/tree?view=summary${chapterQuery}`,
+        );
         if (!data || !data.novel) throw new Error("目录数据格式异常");
         const volumes: TreeVolume[] = (data.volumes ?? []).map((volume) => ({
           ...volume,
@@ -71,6 +79,7 @@ export function useNovelTree({ novelId, onError, onSuccess }: UseNovelTreeOption
           volumes,
           looseChapters: data.looseChapters ?? [],
         });
+        if (!silent) setInitialChapter(data.selectedChapter ?? null);
       } catch (err) {
         setTree(null);
         if (err instanceof ApiError && err.status === 404) {
@@ -82,7 +91,7 @@ export function useNovelTree({ novelId, onError, onSuccess }: UseNovelTreeOption
         setLoading(false);
       }
     },
-    [novelId, fail],
+    [novelId, initialChapterId, fail],
   );
 
   React.useEffect(() => {
@@ -228,5 +237,5 @@ export function useNovelTree({ novelId, onError, onSuccess }: UseNovelTreeOption
     [novelId, load, patchChapterLocal, fail],
   );
 
-  return { tree, loading, error, notFound, actions };
+  return { tree, initialChapter, loading, error, notFound, actions };
 }

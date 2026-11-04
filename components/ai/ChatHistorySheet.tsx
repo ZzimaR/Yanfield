@@ -26,6 +26,7 @@ export interface ChatHistorySheetProps {
   onClose: () => void;
   novelId: string;
   activeSessionId?: string | null;
+  busySessionId?: string | null;
   /** 新建会话时使用的智能体 */
   defaultAgentId: AgentId;
   /** 已达到 3 个 Tab 上限时禁止新建 */
@@ -52,6 +53,7 @@ export function ChatHistorySheet({
   onClose,
   novelId,
   activeSessionId,
+  busySessionId,
   defaultAgentId,
   maxTabsReached = false,
   onOpenSession,
@@ -114,7 +116,7 @@ export function ChatHistorySheet({
     if (!deleting || deleteLoading) return;
     setDeleteLoading(true);
     try {
-      await apiDelete(`/api/chat/sessions/${encodeURIComponent(deleting.id)}`);
+      await apiDelete(`/api/chat/sessions/${encodeURIComponent(deleting.id)}?novelId=${encodeURIComponent(novelId)}`);
       notifyDataChanged("chat-sessions");
       setSessions((prev) => prev.filter((item) => item.id !== deleting.id));
       onDeleted?.(deleting.id);
@@ -226,8 +228,9 @@ export function ChatHistorySheet({
                       </span>
                     </button>
                     <IconButton
-                      label="删除会话"
+                      label={session.id === busySessionId ? "请先停止此会话的生成，再删除" : "删除会话"}
                       size="sm"
+                      disabled={session.id === busySessionId}
                       className="shrink-0 text-ink-4 opacity-50 transition-opacity hover:text-danger group-hover:opacity-100 focus-visible:opacity-100"
                       onClick={() => setDeleting(session)}
                     >
