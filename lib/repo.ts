@@ -49,6 +49,7 @@ import type {
   Volume,
   VolumeOutline,
   WorldCategory,
+  WorldImportance,
   WorldSetting,
 } from "./types";
 import { uid } from "./ui/cn";
@@ -606,7 +607,7 @@ export function reorderCharacters(ids: ID[]): void {
 /* ============================== 世界观设定 ============================== */
 
 const WORLD_COLS: Record<string, string> = {
-  parentId: "parent_id", title: "title", category: "category", summary: "summary", content: "content",
+  parentId: "parent_id", title: "title", category: "category", importance: "importance", summary: "summary", content: "content",
   tags: "tags", aiVisible: "ai_visible", revealAtChapter: "reveal_at_chapter", orderIndex: "order_index", pinned: "pinned",
 };
 
@@ -617,6 +618,7 @@ function worldFromRow(r: Row): WorldSetting {
     parentId: r.parent_id ? s(r.parent_id) : null,
     title: s(r.title),
     category: s(r.category, "custom") as WorldCategory,
+    importance: (["high", "medium", "low"].includes(s(r.importance)) ? s(r.importance) : "medium") as WorldImportance,
     summary: s(r.summary),
     content: s(r.content),
     tags: parseJson<string[]>(r.tags, []),
@@ -643,15 +645,15 @@ export function createWorld(novelId: ID, input: Partial<WorldSetting> & { title:
   const count = n(get<{ c: number }>("SELECT COUNT(*) AS c FROM world_settings WHERE novel_id = ?", [novelId])?.c);
   const id = uid("world");
   const base: WorldSetting = {
-    id, novelId, parentId: null, title: input.title, category: "custom", summary: "",
+    id, novelId, parentId: null, title: input.title, category: "custom", importance: "medium", summary: "",
     content: "", tags: [], aiVisible: true, revealAtChapter: null, orderIndex: count, pinned: false,
     createdAt: now, updatedAt: now,
   };
   const w: WorldSetting = { ...base, ...input, id, novelId, orderIndex: input.orderIndex ?? count };
   run(
-    `INSERT INTO world_settings (id,novel_id,parent_id,title,category,summary,content,tags,ai_visible,reveal_at_chapter,order_index,pinned,created_at,updated_at)
-     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-    [w.id, w.novelId, w.parentId, w.title, w.category, w.summary, w.content, toJson(w.tags), w.aiVisible ? 1 : 0, w.revealAtChapter, w.orderIndex, w.pinned ? 1 : 0, now, now],
+    `INSERT INTO world_settings (id,novel_id,parent_id,title,category,importance,summary,content,tags,ai_visible,reveal_at_chapter,order_index,pinned,created_at,updated_at)
+     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+    [w.id, w.novelId, w.parentId, w.title, w.category, w.importance, w.summary, w.content, toJson(w.tags), w.aiVisible ? 1 : 0, w.revealAtChapter, w.orderIndex, w.pinned ? 1 : 0, now, now],
   );
   return w;
 }

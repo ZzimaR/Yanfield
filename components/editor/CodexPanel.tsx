@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { ChevronRight, Folder, FolderOpen, MapPin, Plus, ScrollText, User } from "lucide-react";
+import { ChevronRight, Folder, FolderOpen, MapPin, Package, Plus, ScrollText, User } from "lucide-react";
 import { Button, EmptyState, Input, Skeleton } from "@/components/ui/kit";
 import { useApi, useDataChanged } from "@/lib/client/api";
 import { toItems } from "@/lib/editor/normalize";
@@ -11,6 +11,7 @@ import {
   type Foreshadow,
   type Volume,
   type WorldSetting,
+  WORLD_IMPORTANCE_LABEL,
 } from "@/lib/types";
 import { worldRows } from "@/lib/editor/world-tree";
 import { cn } from "@/lib/ui/cn";
@@ -93,7 +94,8 @@ export function CodexPanel({ novelId }: CodexPanelProps) {
   const [query, setQuery] = React.useState("");
   const [activeGroup, setActiveGroup] = React.useState("all");
   const [collapsed, setCollapsed] = React.useState<Set<string>>(()=>new Set());
-  const parentIds = React.useMemo(()=>new Set(world.map(s=>s.parentId).filter((id):id is string=>!!id)),[world]);
+  /** Items get their own group; branch toggles only count children shown in the same group. */
+  const parentIdsOf = React.useCallback((settings: WorldSetting[]) => new Set(settings.map(s=>s.parentId).filter((id):id is string=>!!id)), []);
   const [editing, setEditing] = React.useState<CodexEntry | null>(null);
   const [creatingWorld, setCreatingWorld] = React.useState(false);
   const [creatingCharacter, setCreatingCharacter] = React.useState(false);
@@ -119,7 +121,8 @@ export function CodexPanel({ novelId }: CodexPanelProps) {
     const pick = <T extends CodexEntry>(list: T[]): T[] => list.filter((entry) => entryMatches(entry, keyword));
     return {
       characters: pick(characters.map((data) => ({ kind: "character" as const, data }))),
-      world: pick(world.map((data) => ({ kind: "world" as const, data }))),
+      world: pick(world.filter((data) => data.category !== "item").map((data) => ({ kind: "world" as const, data }))),
+      items: pick(world.filter((data) => data.category === "item").map((data) => ({ kind: "world" as const, data }))),
       foreshadows: pick(foreshadows.map((data) => ({ kind: "foreshadow" as const, data }))),
     };
   }, [characters, world, foreshadows, keyword]);
@@ -129,11 +132,14 @@ export function CodexPanel({ novelId }: CodexPanelProps) {
   const settledRef = React.useRef(false);
   settledRef.current = !loading;
   const total = characters.length + world.length + foreshadows.length;
-  const matched = (activeGroup === "all" || activeGroup === "characters" ? filtered.characters.length : 0) + (activeGroup === "all" || activeGroup === "world" ? filtered.world.length : 0) + (activeGroup === "all" || activeGroup === "foreshadows" ? filtered.foreshadows.length : 0);
+  const itemTotal = world.filter((data) => data.category === "item").length;
+  const inGroup = (key: string) => activeGroup === "all" || activeGroup === key;
+  const matched = (inGroup("characters") ? filtered.characters.length : 0) + (inGroup("world") ? filtered.world.length : 0) + (inGroup("items") ? filtered.items.length : 0) + (inGroup("foreshadows") ? filtered.foreshadows.length : 0);
 
   const groups: { key: string; title: string; icon: React.ReactNode; entries: CodexEntry[]; total: number }[] = [
     { key: "characters", title: "角色", icon: <User className="size-3.5" />, entries: filtered.characters, total: characters.length },
-    { key: "world", title: "世界观", icon: <MapPin className="size-3.5" />, entries: filtered.world, total: world.length },
+    { key: "world", title: "世界观", icon: <MapPin className="size-3.5" />, entries: filtered.world, total: world.length - itemTotal },
+    { key: "items", title: "物品", icon: <Package className="size-3.5" />, entries: filtered.items, total: itemTotal },
     { key: "foreshadows", title: "伏笔", icon: <ScrollText className="size-3.5" />, entries: filtered.foreshadows, total: foreshadows.length },
   ];
 
@@ -276,14 +282,14 @@ export function CodexPanel({ novelId }: CodexPanelProps) {
               className="inline-flex items-center gap-1 rounded-sm text-[11.5px] text-ink-2 transition-colors hover:text-ink"
             >
               <Plus className="size-3" aria-hidden />
-              新建设定
+              {activeGroup === "items" ? "新建物品" : "新建设定"}
             </button>
           </div>
         </div>
         <Input
           value={query}
           onChange={(event) => setQuery(event.target.value)}
-          placeholder="搜索角色 / 世界观 / 伏笔"
+          placeholder="搜索角色 / 世界观 / 物品 / 伏笔"
           aria-label="搜索设定"
           className="h-8 text-[12px]"
         />
@@ -317,29 +323,33 @@ export function CodexPanel({ novelId }: CodexPanelProps) {
           <p className="px-2 py-6 text-center text-[12px] text-ink-3">{query.trim() ? `没有匹配「${query.trim()}」的资料` : "此分类还没有资料"}</p>
         ) : (
           <div className="space-y-3">
-            {groups.filter(group=>activeGroup==="all" || group.key===activeGroup).map((group) =>
-              group.entries.length === 0 ? null : (
+            {groups.filter(group=>activeGroup==="all" || group.key===activeGroup).map((group) => {
+              const tree = (group.key === "world" || group.key === "items") && !keyword;
+              const groupSettings = tree ? group.entries.map((entry) => entry.data as WorldSetting) : [];
+              const parentIds = parentIdsOf(groupSettings);
+              return group.entries.length === 0 ? null : (
                 <section key={group.key} aria-label={group.title}>
                   <div className="mb-1.5 flex items-center gap-1.5 px-2 text-[11px] font-semibold tracking-wide text-ink-3">
                     {group.icon}
                     <span>{group.title}</span>
                     <span className="tabular-nums">{group.entries.length}</span>
-                    {group.key==="world" && !keyword && parentIds.size>0 ? <span className="ml-auto flex gap-2 font-normal tracking-normal">
-                      <button type="button" onClick={()=>setCollapsed(new Set())} className="hover:text-accent">全部展开</button>
-                      <button type="button" onClick={()=>setCollapsed(new Set(parentIds))} className="hover:text-accent">全部收起</button>
+                    {tree && parentIds.size>0 ? <span className="ml-auto flex gap-2 font-normal tracking-normal">
+                      <button type="button" onClick={()=>setCollapsed(prev=>{const next=new Set(prev);parentIds.forEach(id=>next.delete(id));return next;})} className="hover:text-accent">全部展开</button>
+                      <button type="button" onClick={()=>setCollapsed(prev=>new Set([...prev,...parentIds]))} className="hover:text-accent">全部收起</button>
                     </span> : null}
                   </div>
                   <div className="space-y-1">
-                    {(group.key === "world" && !keyword
-                      ? worldRows(group.entries.map((entry) => entry.data as WorldSetting), collapsed).map(({ setting, depth }) => ({
+                    {(tree
+                      ? worldRows(groupSettings, collapsed).map(({ setting, depth }) => ({
                           entry: { kind: "world" as const, data: setting },
                           depth,
                         }))
                       : group.entries.map((entry) => ({ entry, depth: 0 }))
                     ).map(({ entry, depth }) => {
-                      const branch=entry.kind==="world" && parentIds.has(entry.data.id) && !keyword;
+                      const branch=entry.kind==="world" && parentIds.has(entry.data.id);
                       const folded=collapsed.has(entry.data.id);
                       const title=entry.kind==="character"?entry.data.name:entry.data.title;
+                      const importance=entry.kind==="world" && (entry.data.category==="item" || entry.data.importance!=="medium") ? entry.data.importance : null;
                       return (
                         <div key={`${entry.kind}:${entry.data.id}`} className="flex min-w-0 items-start"
                           style={{ marginLeft: Math.min(depth, 6) * 10, width: `calc(100% - ${Math.min(depth, 6) * 10}px)` }}>
@@ -356,6 +366,7 @@ export function CodexPanel({ novelId }: CodexPanelProps) {
                           <span className="flex min-w-0 items-center gap-2">
                             <span className="shrink-0 text-ink-3">{branch?(folded?<Folder className="size-3.5"/>:<FolderOpen className="size-3.5"/>):group.icon}</span>
                             <span className="min-w-0 flex-1 truncate text-[13px] font-medium text-ink">{entry.kind==="character"?entry.data.name:entry.data.title}</span>
+                            {importance?<span title={`重要程度：${WORLD_IMPORTANCE_LABEL[importance]}`} className={cn("shrink-0 rounded px-1 text-[10px] leading-4",importance==="high"?"bg-accent/10 text-accent":importance==="low"?"bg-surface-2 text-ink-4":"bg-jade/10 text-jade")}>{`重要·${WORLD_IMPORTANCE_LABEL[importance]}`}</span>:null}
                           </span>
                           <span className="mt-0.5 block truncate pl-[22px] text-[11px] leading-5 text-ink-3">
                             {entry.kind==="character"?entry.data.identity:entry.kind==="world"?entry.data.summary:entry.data.description}
@@ -366,8 +377,8 @@ export function CodexPanel({ novelId }: CodexPanelProps) {
                     })}
                   </div>
                 </section>
-              ),
-            )}
+              );
+            })}
           </div>
         )}
       </div>
@@ -393,6 +404,7 @@ export function CodexPanel({ novelId }: CodexPanelProps) {
         onSaved={(saved) => handleSaved({ kind: "world", data: saved })}
         onDeleted={handleDeleted}
         presentation="float"
+        defaultCategory={activeGroup === "items" ? "item" : "rule"}
       />
       <ForeshadowEditor
         open={creatingForeshadow || editing?.kind === "foreshadow"}

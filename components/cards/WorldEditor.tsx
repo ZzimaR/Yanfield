@@ -14,12 +14,13 @@ import { referenceCardInAssistant } from "@/lib/editor/hand-off";
 import { AiTextField, TagsInput, stripChapterNumber, unwrapEntity, useErrorToast } from "@/components/outline/form-kit";
 import { ModelKeyHint } from "@/components/ai/ModelKeyHint";
 import { apiDelete, apiPatch, apiPost, notifyDataChanged, useApi } from "@/lib/client/api";
-import type { WorldCategory, WorldSetting } from "@/lib/types";
-import { WORLD_CATEGORY_LABEL } from "@/lib/types";
+import type { WorldCategory, WorldImportance, WorldSetting } from "@/lib/types";
+import { WORLD_CATEGORY_LABEL, WORLD_IMPORTANCE_LABEL } from "@/lib/types";
 
 interface WorldDraft {
   title: string;
   category: WorldCategory;
+  importance: WorldImportance;
   parentId: string | null;
   summary: string;
   content: string;
@@ -29,10 +30,11 @@ interface WorldDraft {
   pinned: boolean;
 }
 
-function emptyDraft(parentId: string | null): WorldDraft {
+function emptyDraft(parentId: string | null, category: WorldCategory = "rule"): WorldDraft {
   return {
     title: "",
-    category: "rule",
+    category,
+    importance: "medium",
     parentId,
     summary: "",
     content: "",
@@ -47,6 +49,7 @@ function toDraft(setting: WorldSetting): WorldDraft {
   return {
     title: setting.title,
     category: setting.category,
+    importance: setting.importance ?? "medium",
     parentId: setting.parentId,
     summary: setting.summary,
     content: setting.content,
@@ -67,6 +70,7 @@ export function WorldEditor({
   onSaved,
   onDeleted,
   presentation = "sheet",
+  defaultCategory = "rule",
 }: {
   open: boolean;
   novelId: string;
@@ -78,11 +82,13 @@ export function WorldEditor({
   onDeleted: () => void;
   /** 写作台里用可拖动的窗口，不盖成整页。 */
   presentation?: "sheet" | "float";
+  /** Category preset for new settings, e.g. creating from the item group. */
+  defaultCategory?: WorldCategory;
 }) {
   const { toast } = useToast();
   const editing = Boolean(setting);
   const detailApi = useApi<WorldSetting>(open && setting ? `/api/world/${setting.id}` : null);
-  const [draft, setDraft] = React.useState<WorldDraft>(() => (setting ? toDraft(setting) : emptyDraft(null)));
+  const [draft, setDraft] = React.useState<WorldDraft>(() => (setting ? toDraft(setting) : emptyDraft(null, defaultCategory)));
   const [saving, setSaving] = React.useState(false);
   const dirtyRef=React.useRef(false);
   const baseStampRef=React.useRef(setting?.updatedAt);
@@ -97,7 +103,7 @@ export function WorldEditor({
     dirtyRef.current=false;baseStampRef.current=setting?.updatedAt;
     if (open) {
       setSavedId(setting?.id ?? null);
-      setDraft(setting ? toDraft(setting) : emptyDraft(null));
+      setDraft(setting ? toDraft(setting) : emptyDraft(null, defaultCategory));
       setMinimized(false);
     }
   }
@@ -211,9 +217,10 @@ export function WorldEditor({
         <CardEditorHero kind="设定" value={draft.title} onChange={value=>update("title",value)} subtitle={subtitle} actions={<Button variant="ghost" size="sm" className="font-semibold text-[#315b80] hover:bg-[#315b80]/[0.07] hover:text-[#20496e] dark:text-[#9dc4e7] dark:hover:bg-[#9dc4e7]/10 dark:hover:text-[#c1dbee]" icon={<Sparkles className="size-3.5"/>} onClick={openAssistant}>AI 助手</Button>}/>
         <ModelKeyHint />
 
-        <EditorSection title="基本信息" hint="先给这条设定一个能搜到的名字与归属，AI 会按分类理解它的约束力。">
-          <div className="grid gap-4 sm:grid-cols-2">
+        <EditorSection title="基本信息" hint="先给这条设定一个能搜到的名字与归属，AI 会按分类理解它的约束力；重要程度高的设定会优先进入 AI 上下文。">
+          <div className="grid gap-4 sm:grid-cols-3">
             <Select label="分类" value={draft.category} onChange={event=>update("category",event.target.value as WorldCategory)} options={Object.entries(WORLD_CATEGORY_LABEL).map(([value,label])=>({value,label}))}/>
+            <Select label="重要程度" value={draft.importance} onChange={event=>update("importance",event.target.value as WorldImportance)} options={Object.entries(WORLD_IMPORTANCE_LABEL).map(([value,label])=>({value,label}))}/>
             <Select label="归属" value={draft.parentId??""} onChange={event=>update("parentId",event.target.value||null)} options={parentOptions}/>
           </div>
         </EditorSection>

@@ -192,12 +192,16 @@ export type WorldCategory =
   | "history"
   | "custom";
 
+export type WorldImportance = "high" | "medium" | "low";
+
 export interface WorldSetting {
   id: ID;
   novelId: ID;
   parentId: ID | null;
   title: string;
   category: WorldCategory;
+  /** 剧情重要程度：AI 组装上下文时优先保留高、先省略低。 */
+  importance: WorldImportance;
   summary: string;
   content: string;
   tags: string[];
@@ -693,6 +697,12 @@ export const WORLD_CATEGORY_LABEL: Record<WorldCategory, string> = {
   rule: "规则",
   history: "历史",
   custom: "自定义",
+};
+
+export const WORLD_IMPORTANCE_LABEL: Record<WorldImportance, string> = {
+  high: "高",
+  medium: "中",
+  low: "低",
 };
 
 export const FORESHADOW_STATUS_LABEL: Record<ForeshadowStatus, string> = {

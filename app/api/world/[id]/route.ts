@@ -1,7 +1,7 @@
 import { bad, handle, notFound, ok } from "@/lib/api-utils";
 import * as repo from "@/lib/repo";
 import type { WorldSetting } from "@/lib/types";
-import { WORLD_CATEGORIES, pickEnum, pickFields, readBody, type FieldSpec } from "@/app/api/_lib/http";
+import { WORLD_CATEGORIES, WORLD_IMPORTANCES, pickEnum, pickFields, readBody, type FieldSpec } from "@/app/api/_lib/http";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -33,6 +33,8 @@ export const PATCH = handle<{ id: string }>(async (request, { params }) => {
   const patch = pickFields<WorldSetting>(body, WORLD_FIELDS);
   const category = pickEnum(body, "category", WORLD_CATEGORIES, "设定分类");
   if (category) patch.category = category;
+  const importance = pickEnum(body, "importance", WORLD_IMPORTANCES, "重要程度");
+  if (importance) patch.importance = importance;
   if (typeof patch.title === "string") {
     patch.title = patch.title.trim();
     if (!patch.title) return bad("设定标题不能为空");

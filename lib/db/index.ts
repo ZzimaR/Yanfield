@@ -135,6 +135,7 @@ CREATE TABLE IF NOT EXISTS world_settings (
   parent_id TEXT REFERENCES world_settings(id) ON DELETE CASCADE,
   title TEXT NOT NULL,
   category TEXT NOT NULL DEFAULT 'custom',
+  importance TEXT NOT NULL DEFAULT 'medium',
   summary TEXT NOT NULL DEFAULT '',
   content TEXT NOT NULL DEFAULT '',
   tags TEXT NOT NULL DEFAULT '[]',
@@ -297,6 +298,8 @@ export function getDb(): DB {
   for(const column of ["cached_input_tokens","cache_reported_input_tokens"]){
     if(!logColumns.has(column))db.exec(`ALTER TABLE ai_logs ADD COLUMN ${column} INTEGER NOT NULL DEFAULT 0`);
   }
+  const worldColumns=new Set((db.prepare("PRAGMA table_info(world_settings)").all() as {name:string}[]).map(c=>c.name));
+  if(!worldColumns.has("importance"))db.exec("ALTER TABLE world_settings ADD COLUMN importance TEXT NOT NULL DEFAULT 'medium'");
   dbInstance = db;
   return db;
 }

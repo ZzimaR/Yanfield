@@ -13,6 +13,7 @@ import {
   FORESHADOW_STATUS_LABEL,
   NOVEL_STATUS_LABEL,
   WORLD_CATEGORY_LABEL,
+  WORLD_IMPORTANCE_LABEL,
 } from "@/lib/types";
 import type {
   AgentId,
@@ -22,6 +23,7 @@ import type {
   ForeshadowStatus,
   NovelStatus,
   WorldCategory,
+  WorldImportance,
 } from "@/lib/types";
 
 export type Json = Record<string, unknown>;
@@ -183,6 +185,7 @@ export const NOVEL_STATUSES = Object.keys(NOVEL_STATUS_LABEL) as NovelStatus[];
 export const CHAPTER_STATUSES = Object.keys(CHAPTER_STATUS_LABEL) as ChapterStatus[];
 export const CHARACTER_ROLES = Object.keys(CHARACTER_ROLE_LABEL) as CharacterRole[];
 export const WORLD_CATEGORIES = Object.keys(WORLD_CATEGORY_LABEL) as WorldCategory[];
+export const WORLD_IMPORTANCES = Object.keys(WORLD_IMPORTANCE_LABEL) as WorldImportance[];
 export const FORESHADOW_STATUSES = Object.keys(FORESHADOW_STATUS_LABEL) as ForeshadowStatus[];
 export const ARCHIVE_STATUSES = Object.keys(ARCHIVE_STATUS_LABEL) as (keyof typeof ARCHIVE_STATUS_LABEL)[];
 export const AI_FEATURES = Object.keys(AI_FEATURE_LABEL) as AiFeature[];

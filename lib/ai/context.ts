@@ -201,8 +201,12 @@ function worldLine(setting: WorldSetting, detail: "brief" | "standard" | "full")
   const content = setting.content.replace(/\s+/g, " ").trim();
   const limit = detail === "brief" ? 60 : detail === "standard" ? 140 : 260;
   const body = content || setting.summary;
-  return `- ${setting.title}：${preview(body, limit)}`;
+  const mark = setting.importance === "high" ? "（重要）" : setting.importance === "low" ? "（次要）" : "";
+  return `- ${setting.title}${mark}：${preview(body, limit)}`;
 }
+
+/** High-importance settings survive budget trimming longer; low ones are dropped first. */
+const IMPORTANCE_SCORE: Record<WorldSetting["importance"], number> = { high: 20, medium: 0, low: -20 };
 
 function buildSection(id: ContextSectionId, label: string, text: string, priority: number): ContextSectionMeta {
   const tokens = estimateTokens(`【${label}】\n${text.trim()}`);
@@ -444,7 +448,7 @@ export function assembleContext(input: AssembledContextInput): AssembledContext 
           relevanceText,
           setting.pinned,
           explicitWorldIds.has(setting.id),
-        ),
+        ) + (IMPORTANCE_SCORE[setting.importance] ?? 0),
       }))
       .sort((left, right) => right.score - left.score || left.setting.orderIndex - right.setting.orderIndex)
       .map(({ setting }) => worldLine(setting, config.characterDetail));

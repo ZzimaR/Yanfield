@@ -100,7 +100,7 @@ docker-compose.yml .env.example
 | `volume_outlines` | 卷纲 | 卷摘要、卷弧目标、关键事件、伏笔计划 |
 | `chapter_blueprints` | 章纲 | 本章目标、视角、冲突、情绪曲线、场景列表、情节节点、结尾钩子、目标字数 |
 | `characters` | 角色卡 | 别名、身份、外貌、性格、目标、秘密、弧光、说话风格、关系网、当前状态、`aiVisible`、`revealAtChapter` |
-| `world_settings` | 设定卡 | 分类（力量体系/地理/势力/物品/规则/历史/自定义）、父级、标签、`aiVisible`、揭示章节 |
+| `world_settings` | 设定卡 | 分类（力量体系/地理/势力/物品/规则/历史/自定义）、父级、标签、重要程度（high/medium/low）、`aiVisible`、揭示章节 |
 | `foreshadows` | 伏笔卡 | 埋设章节、状态（已埋设/推进中/已回收/已放弃）、回收计划、关联角色 |
 | `story_archives` | 故事档案 | 本章摘要、角色状态、设定状态、资源总账（`ledger`）、时间线、伏笔、冲突；`status` 最新/已过期/待确认、`generatedBy`/`model` |
 | `chat_sessions` | AI 对话会话 | 作品、标题、绑定智能体、当前模式 |

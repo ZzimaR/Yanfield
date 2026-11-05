@@ -3,6 +3,7 @@ import * as repo from "@/lib/repo";
 import type { WorldSetting } from "@/lib/types";
 import {
   WORLD_CATEGORIES,
+  WORLD_IMPORTANCES,
   pickEnum,
   pickFields,
   queryParam,
@@ -49,6 +50,8 @@ export const POST = handle(async (request) => {
   const input = pickFields<WorldSetting>(body, WORLD_FIELDS);
   const category = pickEnum(body, "category", WORLD_CATEGORIES, "设定分类");
   if (category) input.category = category;
+  const importance = pickEnum(body, "importance", WORLD_IMPORTANCES, "重要程度");
+  if (importance) input.importance = importance;
   if (!validParent(input.parentId, novelId)) return bad("父级设定不存在或不属于该作品");
   return ok(repo.createWorld(novelId, { ...input, title }), { status: 201 });
 });
