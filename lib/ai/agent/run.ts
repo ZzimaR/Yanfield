@@ -20,6 +20,7 @@ import { MATERIAL_PROMPT, materialResultSchema, prepareMaterial, type ExistingMa
 import { flattenChapters, isAiVisibleAtChapter } from "@/lib/ai/context";
 
 const kinds=z.enum(["chapter","blueprint","character","world","foreshadow","outline","volume-outline"]);
+const IMPORTANCE_RANK={high:0,medium:1,low:2} as const;
 const decisionSchema=z.object({message:z.string(),calls:z.array(z.object({name:z.enum(["workspace","list","read","propose","write_chapter","reject_change","read_archive"]),args:z.record(z.string(),z.unknown())})).max(12).default([]),done:z.boolean().default(false)});
 const SYSTEM=`你是砚田写作台的执行助手。理解作者的目标，按需读取材料、调用写手和提出可审阅修改。普通讨论直接回答，明确修改请求必须产出实际候选，不能只说“可以”。
 每轮最多12个工具调用，批量读取可分轮执行。只输出标准JSON，不输出DSML、XML、工具标签或Markdown围栏：{"message":"简短执行说明或最终答复","calls":[{"name":"工具名","args":{}}],"done":false}。完成时calls为空、done=true。
@@ -27,7 +28,7 @@ const SYSTEM=`你是砚田写作台的执行助手。理解作者的目标，按
 workspace {}：作品基本资料、文风、卷章目录和资料目录。建议先读一次。长篇仅列最近12章、当前章邻近章和明确引用章节；chapterCount是总章数，资料目录仅前40项，更多用list分页或搜索。目录章号index为全书号，orderIndex只在卷内排序。
 list {kind,query?,offset?,limit?}：offset默认0，limit默认30、最多60；返回数量达到limit时可增加offset继续读取。搜索角色/设定/伏笔/正文/章纲目录，kind为chapter|blueprint|character|world|foreshadow。
 read {kind,id,offset?,limit?}：读指定对象。kind还可为outline（id=novelId）、volume-outline（id=volumeId）。长正文按contentOffset/contentLimit分页（默认12000字符），不要把摘要当全文。读取优先返回本轮候选。AI 隐藏的资料不可读取；未揭示资料仅在作者本轮明确引用时可读，且不能提前写入正文。
-propose {kind,id?,fields,reason,title?}：暂存新建/修改，只填要改的字段，空串表示明确清空。修改前必须read，不能伪造id。新章的章纲id可填write_chapter返回的changeId。新建角色用name、role、identity、appearance、personality、goals、secrets、arc、speechStyle、currentState、gender、age、aliases、tags；设定用title、category(power/geography/faction/item/rule/history/custom)、summary、content、parentId、tags；伏笔用title、description、notes、status(planted/advanced/paid/dropped)。
+propose {kind,id?,fields,reason,title?}：暂存新建/修改，只填要改的字段，空串表示明确清空。修改前必须read，不能伪造id。新章的章纲id可填write_chapter返回的changeId。新建角色用name、role、identity、appearance、personality、goals、secrets、arc、speechStyle、currentState、gender、age、aliases、tags；设定用title、category(power/geography/faction/item/rule/history/custom)、importance(high/medium/low，剧情重要程度)、summary、content、parentId、tags；伏笔用title、description、notes、status(planted/advanced/paid/dropped)。
 章纲字段goal,pov,conflict,emotionalArc,scenes[{id,title,summary,purpose,characters:[],location,emotion}],plotPoints:[],hooks:[],targetWords,notes。总纲字段premise,theme,tone,mainPlot,subplots:[],characterArcs:[{character,arc}],worldRules:[],ending,hooks:[]。卷纲summary,arcGoal,keyEvents:[],foreshadowPlan:[]。
 write_chapter {id?,title?,volumeId?,instruction,words?,mode?}：调用写手流式生成正文，自动暂存，返回changeId、实际字数。新章不传id；改现有章必须先read。mode为rewrite（默认）、append、selection。selection仅改作者当前选中段落。沿用作者要求和指定文风，不要擅自默认追加600字。
 read_archive {chapterId}：读取指定章节的故事档案（含状态），不能把stale档案当最新事实。
@@ -37,6 +38,7 @@ reject_change {changeId}：丢弃本轮候选。
 写完读取候选（read id可填changeId），检查章纲、事实一致性和字数；必要时最多再写两轮，修订同一候选须传其changeId。字数由工具计算。工具失败时修正参数或如实报告，绝不假称已完成。所有修改仅待确认，只有应用回执成功才可说已保存。最终说明改了哪些、哪些仍待确认。
 正文完成后系统会单独整理有原文依据的资料卡，因此不用提前猜测人物身世或为每个人物创建空壳。只整理资料的任务请先读正文，再用propose按字段完整整理；未知字段省略。
 资料卡要便于后续写作：身份、性格、目标、口吻、当前处境分别填对应字段，不把全部信息塞进一句身份；设定用summary概括、content分段整理位置/运作方式/剧情关联。信息量以原文依据为准，不新建只有名称的空卡，不为了详细而虚构。
+建卡克制：物品、地点、道路、建筑等只有与关键剧情相关（推动主线、承载伏笔、反复出现或有特殊规则）时才新建设定卡，并按剧情分量填importance；一次性道具、路过的街道、普通器物不建卡。拿不准是否值得建卡时不要新建，在答复里列出名称并询问作者。资料中importance为high的设定优先遵守，low的可简略参考。
 长篇批量建卡每轮最多提出两张完整卡片，其余分轮完成，避免输出截断。最多12轮，合理批量读取；不要无界读全书。已经给出的写作要求随每次write_chapter传入。
 回复要求：默认用2—4句说明本轮做了什么、仍待作者确认什么；作者明确要求分析、方案或细节时再展开。候选内容已在任务卡展示，不要重复粘贴整章或整张卡，不罗列历史候选清单、不输出数据库ID/changeId、原始字段名。应用入口在当前这条任务卡，不能编造“角色页签/正文页签点应用”等界面路径。润色可以在授权范围内细化动作，但复盘必须承认这些是新增细节，不能称为“原有”。目标字数明确时应主动在剩余写作轮次内补到至少90%，不能用“若想达到原目标再告诉我”代替完成要求；短选区按原句长度润色，不凑100字。暂存不等于已保存；只能依据本轮工具回执描述结果，工具回执如出现possiblyRemoved，必须核对未授权丢失的事实并修正，不能对着实际删除的候选声称没删。不把旧候选当已应用、不猜旧任务状态，不把局部工具失败说成整体成功。字数仅引用工具统计。
 事实边界：已保存的作者设定与已写正文同为事实依据，正文没提到不等于设定不成立；“不增加X”只禁止新增，不授权删除已有X，例如不增加出航限制不能把已有的退潮送信、涨潮收船规则删掉；整理旧卡不能因正文未出现就删掉卡里已有的规矩或事实，除非作者明确要求删除或先确认冲突。跨章核对以最新明确事件为准，已交代的交付不能反复说成未知。未确认的方案、人物关系和背景不能成为默认设定；未知就保留未知或询问，不能说“不回答就默认某种身份”。整理既有资料、反推已写章纲时不得新增未发生的对话、动作或离场，不把合理推断说成原文事实。例如“涨潮收船”不意味着“潮未退时船绝不出航”，“信的收件人未在材料中出现”不等于“信没有收件人”。作者明确要求构思未来剧情、设计外貌时可以提出新增创意，但要把建议与既定事实区分开。`;
@@ -196,7 +198,7 @@ export async function* runAgent(request: AgentRequest, signal?: AbortSignal): As
             const recentArchives=config.includeArchives&&chapterIndex!==null
               ?repo.listArchives(novel.id).filter(a=>a.orderIndex<chapterIndex).slice(-Math.max(1,config.archiveDepth))
               :[];
-            result={novel:{id:novel.id,title:novel.title,synopsis:novel.synopsis,pov:novel.pov},volumes:tree.volumes.map(v=>({id:v.id,title:v.title})),chapterCount:ordered.length,chapterListPartial:directory.length<ordered.length,chapters:directory,characterCount:characters.length,characters:characters.slice(0,40).map(c=>({id:c.id,name:c.name})),worldCount:worlds.length,world:worlds.slice(0,40).map(c=>({id:c.id,title:c.title})),foreshadowCount:foreshadows.length,foreshadows:foreshadows.slice(0,40).map(c=>({id:c.id,title:c.title})),recentArchives:recentArchives.map(a=>({chapterId:a.chapterId,status:a.status,summary:a.chapterSummary}))};
+            result={novel:{id:novel.id,title:novel.title,synopsis:novel.synopsis,pov:novel.pov},volumes:tree.volumes.map(v=>({id:v.id,title:v.title})),chapterCount:ordered.length,chapterListPartial:directory.length<ordered.length,chapters:directory,characterCount:characters.length,characters:characters.slice(0,40).map(c=>({id:c.id,name:c.name})),worldCount:worlds.length,world:[...worlds].sort((a,b)=>IMPORTANCE_RANK[a.importance]-IMPORTANCE_RANK[b.importance]).slice(0,40).map(c=>({id:c.id,title:c.title,category:c.category,importance:c.importance})),foreshadowCount:foreshadows.length,foreshadows:foreshadows.slice(0,40).map(c=>({id:c.id,title:c.title})),recentArchives:recentArchives.map(a=>({chapterId:a.chapterId,status:a.status,summary:a.chapterSummary}))};
           } else if(call.name==="list") {
             const kind=kinds.parse(args.kind),query=String(args.query||"");
             const offset=z.number().int().min(0).max(100000).parse(args.offset??0);
@@ -209,7 +211,7 @@ export async function* runAgent(request: AgentRequest, signal?: AbortSignal): As
               if("revealAtChapter" in r&&typeof r.revealAtChapter==="number"&&chapterIndex!==null&&r.revealAtChapter>chapterIndex&&!explicitlyMentioned.has(r.id))return false;
               if("revealAtChapter" in r&&typeof r.revealAtChapter==="number"&&chapterIndex===null&&!explicitlyMentioned.has(r.id))return false;
               return JSON.stringify(r).includes(query);
-            }).slice(offset,offset+limit).map(r=>({id:r.id,title:"name" in r?r.name:r.title,summary:String("identity" in r?r.identity:"summary" in r?r.summary:"description" in r?r.description:"").slice(0,200)}));
+            }).slice(offset,offset+limit).map(r=>({id:r.id,title:"name" in r?r.name:r.title,..."importance" in r?{category:r.category,importance:r.importance}:{},summary:String("identity" in r?r.identity:"summary" in r?r.summary:"description" in r?r.description:"").slice(0,200)}));
           } else if(call.name==="read_archive") {
             if(!config.includeArchives)throw new Error("故事档案已在上下文设置中关闭");
             const chapterId=z.string().parse(args.chapterId);

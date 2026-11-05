@@ -93,6 +93,7 @@ export const CODEX_SYSTEM = `你是这部小说的资料助手。作者会贴一
 {"message":"一两句人话","items":[{"ref":"cen","op":"create","kind":"world|character|foreshadow","id":null,"parentRef":null,"title":"","category":"geography|faction|item|rule|history|power|custom","summary":"","content":"","relation":"位于|相邻","role":"supporting","identity":"","personality":"","relatesTo":null,"description":"","status":"planted","notes":"","picked":true}]}
 规则：
 - 文中有名字的国家、州、城、镇、关、书院、组织，各一张世界卡。有名字的人各一张角色卡。没有情节钩子就不要建伏笔。
+- 物品、道路、街巷、建筑只有和关键剧情相关（推动主线、承载伏笔、有特殊规则）才建卡，一次性道具和普通场景不建；拿不准时不建，在 message 里列出名字问作者要不要建。
 - 有名字、或带明确钩子（信物、暗号、身世、没兑现的约定等）的线索，每条一张伏笔卡：kind 用 "foreshadow"，title 写伏笔标题，description 写「埋了什么、打算怎么收」，notes 写提醒，status 从 planted/advanced/paid/dropped 里选一个。
 - 只给材料或对话里真的出现的线索建伏笔卡，不要编造材料/对话里没有的伏笔。
 - 州的 parentRef 指向国家，城指向所属的州，书院或机构指向所在的城。邻国 relation 写「相邻」，parentRef 留空，不要挂到本国下面。

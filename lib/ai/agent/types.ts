@@ -53,7 +53,7 @@ export const FIELD_LABEL: Record<string, string> = {
   title: "标题", name: "姓名", content: "正文", summary: "摘要", identity: "身份", appearance: "外貌",
   personality: "性格", goals: "目标", secrets: "秘密", arc: "人物弧光", speechStyle: "说话风格",
   currentState: "当前状态", gender: "性别", age: "年龄", role: "定位", aliases: "别名", tags: "标签",
-  category: "分类", parentId: "所属设定", description: "描述", notes: "备注", status: "状态",
+  category: "分类", importance: "重要程度", parentId: "所属设定", description: "描述", notes: "备注", status: "状态",
   goal: "章节目标", pov: "视角", conflict: "核心冲突", emotionalArc: "情绪曲线", scenes: "分场",
   plotPoints: "情节节点", hooks: "钩子", targetWords: "目标字数", premise: "一句话故事", theme: "主题",
   tone: "基调", mainPlot: "主线", subplots: "支线", characterArcs: "人物弧光", worldRules: "世界规则",
