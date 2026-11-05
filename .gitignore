@@ -11,5 +11,6 @@ data/*.db-journal
 data/*.db-wal
 data/*.db-shm
 .tmp-shots/
+video/
 recon/
 smoke-api.*

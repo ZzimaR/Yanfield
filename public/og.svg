@@ -15,14 +15,14 @@
         font-family="'Noto Serif SC','Source Han Serif SC','Songti SC',STSong,serif"
         font-size="46" font-weight="700" fill="#f5f1e8">墨</text>
 
-  <!-- 标识：浅色砚台 -->
-  <g transform="translate(88 92) scale(2.15)">
-    <rect x="1.6" y="8.1" width="28.8" height="18.2" rx="5.2" fill="#e4d7c2"/>
-    <rect x="1.6" y="6.2" width="28.8" height="18.2" rx="5.2" fill="#f6f0e4" stroke="#c4b396" stroke-width="1.15"/>
-    <ellipse cx="11.1" cy="15.2" rx="5.7" ry="4.55" fill="#1c1915"/>
-    <ellipse cx="9.5" cy="13.85" rx="2.05" ry="1.15" fill="#5c5348"/>
-    <path d="M18.4 12.1c2.5.35 5.1.42 7.6.12" stroke="#d9ccb8" stroke-width="1.15" stroke-linecap="round"/>
-    <path d="M18.6 16.55c2.7.28 5.3.3 7.5.05" stroke="#e7dccb" stroke-width="1.05" stroke-linecap="round"/>
+  <!-- 标识：田字格墨点 -->
+  <g transform="translate(88 92) scale(1.075)">
+    <rect x="2.5" y="2.5" width="59" height="59" rx="15" fill="#f5f1e8" stroke="#d6c9b0" stroke-width="1.5"/>
+    <g fill="none" stroke="#b5462f">
+      <rect x="11" y="11" width="42" height="42" rx="5" stroke-width="2.6"/>
+      <path d="M32 11v42M11 32h42" stroke-width="1.6" stroke-dasharray="3 2.6" opacity=".7"/>
+    </g>
+    <path d="M22.5 18c1.6-1.4 4.6-.9 8 1.2 5.6 3.4 11.4 8.6 12.3 14.6.8 5.4-2.6 9.6-7.6 9.6-4.6 0-7.6-3.4-7.4-7.8.2-3.6-1-7.8-4.2-12.8-1.2-1.9-2.2-3.6-1.1-4.8Z" fill="#201d18"/>
   </g>
 
   <!-- 标题区 -->

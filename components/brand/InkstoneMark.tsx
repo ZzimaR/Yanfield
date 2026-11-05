@@ -1,6 +1,6 @@
 import { cn } from "@/lib/ui/cn";
 
-/** 砚台标识。图源是带笔与墨池的圆角标，透明底，浅色和夜航里都能看清。 */
+/** 砚田标识：宣纸方块上的朱红田字格与一笔墨点，矢量图，小尺寸和深色主题下都清晰。 */
 export function InkstoneMark({ className }: { className?: string }) {
-  return <img src="/brand-mark.png" alt="砚田" width={512} height={512} className={cn("object-contain", className)} />;
+  return <img src="/logo.svg" alt="砚田" width={64} height={64} className={cn("object-contain", className)} />;
 }

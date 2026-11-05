@@ -1,5 +1,10 @@
 <div align="center">
 
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/assets/logo-dark.svg">
+  <img src="docs/assets/logo-light.svg" alt="砚田标识：宣纸方块上的朱红田字格与一笔墨点" width="96" height="96">
+</picture>
+
 # 砚田 Yanfield
 
 **为长篇故事留一方安静的书桌。**

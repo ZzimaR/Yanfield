@@ -15,8 +15,11 @@ export const metadata: Metadata = {
   applicationName: "砚田 Yanfield",
   authors: [{ name: "Zzima", url: "https://github.com/ZzimaR" }],
   icons: {
-    icon: [{ url: "/brand-mark.png", type: "image/png" }],
-    shortcut: ["/brand-mark.png"],
+    icon: [
+      { url: "/favicon.svg", type: "image/svg+xml" },
+      { url: "/brand-mark.png", type: "image/png" },
+    ],
+    shortcut: ["/favicon.svg"],
     apple: [{ url: "/brand-mark.png" }],
   },
   openGraph: {
