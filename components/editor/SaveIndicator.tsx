@@ -41,7 +41,7 @@ export function SaveIndicator({ state, lastSavedAt, className, showIdle = true }
 
   if (state === "error") {
     return (
-      <span className={cn(BASE, "text-danger", className)} title="保存失败，修改仍在本地，可再次 Ctrl/Cmd+S 重试">
+      <span className={cn(BASE, "text-danger", className)} title="保存失败，修改尚未写入数据库，可点击保存或按 Ctrl/Cmd+S 重试">
         <span className="size-1.5 rounded-full bg-danger" aria-hidden />
         保存失败
       </span>
@@ -50,7 +50,7 @@ export function SaveIndicator({ state, lastSavedAt, className, showIdle = true }
 
   if (state === "dirty") {
     return (
-      <span className={cn(BASE, "text-gold", className)} title="停止输入约 1.2 秒后自动保存">
+      <span className={cn(BASE, "text-gold", className)} title="有未保存的修改，可点击保存或按 Ctrl/Cmd+S">
         <span className="size-1.5 rounded-full bg-gold" aria-hidden />
         未保存
       </span>

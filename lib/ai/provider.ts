@@ -539,11 +539,11 @@ function demoCodex(user: string): string {
     return JSON.stringify({
       message: "建成澜国，临波州和青阳挂在下面，朔国只记相邻，陆衡进角色。",
       items: [
-        { ref: "cen", op: "create", kind: "world", title: "澜国", category: "faction", summary: "西面临海的国家", content: "西面临海，北面是天山。", relation: "" },
-        { ref: "wanghai", op: "create", kind: "world", parentRef: "cen", title: "临波州", category: "geography", summary: "西部沿海", content: "京城周边的近海腹地。", relation: "位于" },
-        { ref: "ningchuan", op: "create", kind: "world", parentRef: "wanghai", title: "青阳城", category: "geography", summary: "京城", content: "西距海三百里。", relation: "位于" },
-        { ref: "li", op: "create", kind: "world", title: "朔国", category: "faction", summary: "南邻", content: "出关后的国家。", relation: "相邻" },
-        { ref: "zhongke", op: "create", kind: "character", name: "陆衡", role: "supporting", identity: "生长在白石镇。", personality: "" },
+        { ref: "lan", op: "create", kind: "world", title: "澜国", category: "faction", summary: "西面临海的国家", content: "西面临海，北面是天山。", relation: "" },
+        { ref: "linbo", op: "create", kind: "world", parentRef: "lan", title: "临波州", category: "geography", summary: "西部沿海", content: "京城周边的近海腹地。", relation: "位于" },
+        { ref: "qingyang", op: "create", kind: "world", parentRef: "linbo", title: "青阳城", category: "geography", summary: "京城", content: "西距海三百里。", relation: "位于" },
+        { ref: "shuo", op: "create", kind: "world", title: "朔国", category: "faction", summary: "南邻", content: "出关后的国家。", relation: "相邻" },
+        { ref: "luheng", op: "create", kind: "character", name: "陆衡", role: "supporting", identity: "生长在白石镇。", personality: "" },
       ],
     });
   }

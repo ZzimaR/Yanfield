@@ -1,5 +1,5 @@
 import { bad, handle, ok } from "@/lib/api-utils";
-import { MAX_IMPORT_CHAPTERS, splitChapters } from "@/app/api/_lib/text";
+import { splitChapters } from "@/app/api/_lib/text";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -41,7 +41,7 @@ export const POST = handle(async (request) => {
     }
   }
 
-  const chapters = splitChapters(text, customRegex).slice(0, MAX_IMPORT_CHAPTERS);
+  const chapters = splitChapters(text, customRegex);
   if (chapters.length === 0) return bad("未识别到任何章节");
   return ok({ chapters, total: chapters.length });
 });

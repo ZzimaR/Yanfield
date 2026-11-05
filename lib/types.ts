@@ -941,3 +941,12 @@ export const COVER_STYLES: Record<string, { from: string; to: string; ink: strin
   bamboo: { from: "#4a6b45", to: "#22331f", ink: "#e6efe1", label: "青竹" },
   azure: { from: "#3a5f8a", to: "#1b2c44", ink: "#e3ecf6", label: "天青" },
 };
+
+/** GET /api/system：运行环境信息 */
+export interface SystemInfo {
+  version: string;
+  schemaVersion: number;
+  dbPath: string;
+  dataDir: string;
+  customDbPath: boolean;
+}

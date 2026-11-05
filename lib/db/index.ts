@@ -1,11 +1,12 @@
 import { DatabaseSync } from "node:sqlite";
 import fs from "node:fs";
 import path from "node:path";
+import { resolveDbPath } from "./data-path.mjs";
 
 /**
  * SQLite 访问层（使用 Node 内置 node:sqlite，零原生依赖）
- * - 数据库文件默认在 <cwd>/data/yanfield.db，可用 YANFIELD_DB_PATH 覆盖
- * - 单例 + WAL + 外键约束
+ * - 数据库文件默认在系统用户数据目录（见 data-path.mjs），可用 YANFIELD_DB_PATH 覆盖
+ * - 单例 + WAL + 外键约束 + user_version 版本化迁移
  */
 
 const SCHEMA = `
@@ -282,10 +283,57 @@ export type DB = DatabaseSync;
 
 let dbInstance: DB | null = null;
 
-function resolveDbPath(): string {
-  const custom = process.env.YANFIELD_DB_PATH;
-  if (custom) return custom;
-  return path.join(process.cwd(), "data", "yanfield.db");
+function columnsOf(db: DB, table: string): Set<string> {
+  return new Set((db.prepare(`PRAGMA table_info(${table})`).all() as { name: string }[]).map((c) => c.name));
+}
+
+/**
+ * 按 PRAGMA user_version 顺序执行的迁移；MIGRATIONS[i] 把库从版本 i 升到 i + 1。
+ * 以后改表结构只追加新迁移，不要修改已发布的迁移。
+ */
+const MIGRATIONS: ((db: DB) => void)[] = [
+  // v1：基线。补齐版本化之前开发期数据库缺少的列。
+  (db) => {
+    const logColumns = columnsOf(db, "ai_logs");
+    for (const column of ["cached_input_tokens", "cache_reported_input_tokens"]) {
+      if (!logColumns.has(column)) db.exec(`ALTER TABLE ai_logs ADD COLUMN ${column} INTEGER NOT NULL DEFAULT 0`);
+    }
+    if (!columnsOf(db, "world_settings").has("importance")) {
+      db.exec("ALTER TABLE world_settings ADD COLUMN importance TEXT NOT NULL DEFAULT 'medium'");
+    }
+  },
+];
+
+export const SCHEMA_VERSION = MIGRATIONS.length;
+
+function readUserVersion(db: DB): number {
+  return Number((db.prepare("PRAGMA user_version").get() as { user_version: number }).user_version);
+}
+
+function migrate(db: DB, dbPath: string): void {
+  const current = readUserVersion(db);
+  if (current > SCHEMA_VERSION) {
+    throw new Error(
+      `数据库版本为 ${current}，高于当前程序支持的 ${SCHEMA_VERSION}。请升级砚田后再打开：${dbPath}`,
+    );
+  }
+  db.exec(SCHEMA);
+  for (let version = current; version < SCHEMA_VERSION; version += 1) {
+    db.exec("BEGIN");
+    try {
+      MIGRATIONS[version](db);
+      db.exec(`PRAGMA user_version = ${version + 1}`);
+      db.exec("COMMIT");
+    } catch (err) {
+      db.exec("ROLLBACK");
+      throw err;
+    }
+  }
+}
+
+/** 当前进程实际使用的数据库文件绝对路径 */
+export function getDbPath(): string {
+  return resolveDbPath();
 }
 
 export function getDb(): DB {
@@ -293,13 +341,12 @@ export function getDb(): DB {
   const dbPath = resolveDbPath();
   fs.mkdirSync(path.dirname(dbPath), { recursive: true });
   const db = new DatabaseSync(dbPath);
-  db.exec(SCHEMA);
-  const logColumns=new Set((db.prepare("PRAGMA table_info(ai_logs)").all() as {name:string}[]).map(c=>c.name));
-  for(const column of ["cached_input_tokens","cache_reported_input_tokens"]){
-    if(!logColumns.has(column))db.exec(`ALTER TABLE ai_logs ADD COLUMN ${column} INTEGER NOT NULL DEFAULT 0`);
+  try {
+    migrate(db, dbPath);
+  } catch (err) {
+    db.close();
+    throw err;
   }
-  const worldColumns=new Set((db.prepare("PRAGMA table_info(world_settings)").all() as {name:string}[]).map(c=>c.name));
-  if(!worldColumns.has("importance"))db.exec("ALTER TABLE world_settings ADD COLUMN importance TEXT NOT NULL DEFAULT 'medium'");
   dbInstance = db;
   return db;
 }

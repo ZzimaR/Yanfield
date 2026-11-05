@@ -8,13 +8,13 @@
  *  3. 保留不符合上述条件的作品、自建预设、Provider 与设置；内置预设中的改动可能丢失。
  *
  * 重新启动后只有数据库没有任何作品时才自动写入示例作品。执行前请停服并备份数据库。
- * 数据库路径与运行时一致：YANFIELD_DB_PATH，默认 <cwd>/data/yanfield.db
+ * 数据库路径与运行时一致：YANFIELD_DB_PATH，默认在系统用户数据目录（见 lib/db/data-path.mjs）
  */
 import { DatabaseSync } from "node:sqlite";
 import fs from "node:fs";
-import path from "node:path";
+import { resolveDbPath } from "../lib/db/data-path.mjs";
 
-const dbPath = process.env.YANFIELD_DB_PATH ?? path.join(process.cwd(), "data", "yanfield.db");
+const dbPath = resolveDbPath();
 
 if (!fs.existsSync(dbPath)) {
   console.log(`[seed] 数据库不存在：${dbPath}`);

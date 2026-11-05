@@ -7,10 +7,10 @@ import type { SelectionInfo } from "./types";
  */
 
 /** Alt+J：请求 AI 面板聚焦输入框（AI 面板监听） */
-export const FOCUS_AI_EVENT = "yantian:editor-focus-ai";
+export const FOCUS_AI_EVENT = "yanfield:editor-focus-ai";
 
 /** 选区变化广播（AI 面板监听，用于展示「已选中 N 字」等提示） */
-export const SELECTION_EVENT = "yantian:editor-selection";
+export const SELECTION_EVENT = "yanfield:editor-selection";
 
 export interface SelectionEventDetail extends SelectionInfo {
   chapterId: string | null;

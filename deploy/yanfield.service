@@ -7,7 +7,7 @@
 #   sudo -u yanfield git clone https://github.com/ZzimaR/Yanfield.git /opt/yanfield
 #   cd /opt/yanfield
 #   sudo -u yanfield pnpm install --frozen-lockfile
-#   sudo -u yanfield env YANFIELD_STANDALONE=0 NEXT_TELEMETRY_DISABLED=1 pnpm build
+#   sudo -u yanfield env NEXT_TELEMETRY_DISABLED=1 pnpm build
 #
 #   # 安装本服务文件（路径按实际用户名/目录调整）
 #   sudo cp deploy/yanfield.service /etc/systemd/system/yanfield.service
@@ -17,7 +17,7 @@
 #
 # 日志：journalctl -u yanfield -f
 # 升级：cd /opt/yanfield && sudo -u yanfield git pull && sudo -u yanfield pnpm install
-#       && sudo -u yanfield env YANFIELD_STANDALONE=0 NEXT_TELEMETRY_DISABLED=1 pnpm build
+#       && sudo -u yanfield env NEXT_TELEMETRY_DISABLED=1 pnpm build
 #       && sudo systemctl restart yanfield
 #
 # 更多部署细节（反向代理、HTTPS、备份恢复）见 docs/deploy.md。
@@ -37,15 +37,15 @@ WorkingDirectory=/opt/yanfield
 # 运行环境（按需修改）
 Environment=NODE_ENV=production
 Environment=PORT=3000
-Environment=YANFIELD_STANDALONE=0
 # 默认只监听本机；对外提供服务请在前面放反向代理（Nginx/Caddy），
 # 不要直接把 3000 端口裸奔到公网（砚田没有登录鉴权）。
 Environment=HOSTNAME=127.0.0.1
+# 必须显式指定：ProtectHome=true 时默认的 ~/.local/share/yanfield 不可写
 Environment=YANFIELD_DB_PATH=/opt/yanfield/data/yanfield.db
 Environment=NEXT_TELEMETRY_DISABLED=1
 Environment=PATH=/usr/local/bin:/usr/bin:/bin
 
-# 使用普通生产构建；如改用 standalone，须先移除 YANFIELD_STANDALONE=0 并重新构建：
+# 使用普通生产构建；如改用 standalone，须以 YANFIELD_STANDALONE=1 重新构建：
 #   ExecStart=/usr/bin/node .next/standalone/server.js
 # （standalone 需要把 .next/static 与 public 复制到 .next/standalone 下，见 docs/deploy.md）
 ExecStart=/opt/yanfield/node_modules/.bin/next start -H 127.0.0.1 -p 3000

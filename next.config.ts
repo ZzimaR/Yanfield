@@ -1,11 +1,9 @@
 import type { NextConfig } from "next";
 
-// Docker / 自托管部署时产出独立 server.js（默认开启）。
-// Windows 上若没有创建符号链接的权限（未开「开发者模式」），next build
-// 在复制 standalone 追踪文件时会报 EPERM；此时用 `YANFIELD_STANDALONE=0`
-// 关闭 standalone 输出，`next start` 同样可以跑起来。
+// standalone 输出（独立 server.js）只给 Docker / 打包使用，需显式 `YANFIELD_STANDALONE=1` 开启。
+// 本机直接 `pnpm build && pnpm start` 用普通构建，也避免 Windows 没有符号链接权限时的 EPERM。
 const pages = process.env.YANFIELD_PAGES === "1";
-const standalone = !pages && process.env.YANFIELD_STANDALONE !== "0";
+const standalone = !pages && process.env.YANFIELD_STANDALONE === "1";
 
 const nextConfig: NextConfig = {
   reactStrictMode: true,

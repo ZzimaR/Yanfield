@@ -18,7 +18,7 @@ const MIN_HEIGHT = 260;
 /** 缩放的最大宽度（另一半上限是视口宽） */
 const MAX_WIDTH = 920;
 /** 尺寸记忆：同一会话内所有浮窗共用，并持久化到 localStorage */
-const SIZE_STORAGE_KEY = "yantian:float-window:size";
+const SIZE_STORAGE_KEY = "yanfield:float-window:size";
 
 type FloatWindowSize = { width: number; height: number };
 

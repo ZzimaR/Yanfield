@@ -37,7 +37,7 @@ pnpm.cmd install
 pnpm.cmd dev
 ```
 
-PowerShell 若禁止运行脚本，可使用上面的 `pnpm.cmd`（安装 pnpm 时使用 `npm.cmd`），无需修改全局执行策略。首次启动会自动创建 `data/yanfield.db`；库中没有作品时会写入示例《潮信》，并初始化离线演示模型。
+PowerShell 若禁止运行脚本，可使用上面的 `pnpm.cmd`（安装 pnpm 时使用 `npm.cmd`），无需修改全局执行策略。首次启动会在系统用户数据目录自动创建数据库（Windows `%APPDATA%\Yanfield\yanfield.db`，其他系统见 [docs/deploy.md](./docs/deploy.md#数据位置)）；库中没有作品时会写入示例《潮信》，并初始化离线演示模型。开发时建议用下方 B 方式指定独立数据库，避免与日常写作的数据混用。
 
 > **想接真实模型**：`cp .env.example .env`，填上某个 `*_API_KEY` 后重启，初始化会按内置预设自动创建 Provider；品牌服务还需主动拉取或手动添加模型，再选择默认模型。也可以在「设置 → 模型服务」里添加。部署与备份见 [docs/deploy.md](./docs/deploy.md)。`.env` 已在 `.gitignore` 中，不要提交。
 

@@ -4,7 +4,7 @@
 #   cp .env.example .env     # 可选：按需填模型 Key（不建 .env 也能启动，走离线演示模式）
 #   mkdir -p data            # Linux/macOS 首次建议：sudo chown 1001:1001 data
 #   docker compose up -d --build
-#   # 打开 http://127.0.0.1:3000（远程服务器换成服务器 IP/域名或走反向代理）
+#   # 打开 http://127.0.0.1:3000；远程访问使用隧道或带鉴权的反向代理
 #
 # 升级：git pull && docker compose up -d --build
 # 备份：停容器后复制 ./data 目录（SQLite 单文件，含 -wal/-shm）
@@ -20,7 +20,7 @@ services:
     restart: unless-stopped
 
     ports:
-      - "3000:3000"
+      - "127.0.0.1:3000:3000"
 
     # 可选读取 .env（存在则透传模型 Key；不存在也能直接启动，需要 Compose v2.24+）
     env_file:

@@ -8,7 +8,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-const dir = mkdtempSync(join(tmpdir(), "yantian-seed-"));
+const dir = mkdtempSync(join(tmpdir(), "yanfield-seed-"));
 const dbPath = join(dir, "env.db");
 
 type SeedModule = typeof import("../lib/seed");

@@ -66,8 +66,7 @@ cd Yanfield
 
 ```powershell
 pnpm.cmd install --frozen-lockfile
-$env:YANFIELD_STANDALONE = "0"
-$env:NEXT_TELEMETRY_DISABLED = "1"
+pnpm.cmd exec next telemetry disable
 pnpm.cmd build
 pnpm.cmd start --hostname 127.0.0.1
 ```
@@ -76,17 +75,18 @@ pnpm.cmd start --hostname 127.0.0.1
 
 ```bash
 pnpm install --frozen-lockfile
-export YANFIELD_STANDALONE=0
-export NEXT_TELEMETRY_DISABLED=1
+pnpm exec next telemetry disable
 pnpm build
 pnpm start --hostname 127.0.0.1
 ```
 
 打开 [http://127.0.0.1:3000](http://127.0.0.1:3000)。首次使用时会创建本地数据库和示例作品《潮信》。
 
-`YANFIELD_STANDALONE=0` 使用适合本机运行的普通构建，也能避免 Windows 的符号链接权限问题；`NEXT_TELEMETRY_DISABLED=1` 关闭 Next.js 自带的匿名遥测。**每次新开终端启动时，都需要重新设置这两个变量**。
+`next telemetry disable` 关闭 Next.js 自带的匿名遥测，只需在这台电脑上执行一次。
 
-首次安装或更新代码后需要构建。日后进入 `Yanfield` 目录，重新设置变量并运行 `pnpm start --hostname 127.0.0.1`（Windows 使用 `pnpm.cmd`），不必每次重新构建。保持终端运行，按 `Ctrl + C` 停止。
+书稿保存在系统用户数据目录里，与从哪个文件夹启动无关：Windows 为 `%APPDATA%\Yanfield\yanfield.db`，macOS 为 `~/Library/Application Support/Yanfield/yanfield.db`，Linux 为 `~/.local/share/yanfield/yanfield.db`。「设置 → 数据」会显示实际路径，并可一键打开所在文件夹；删除或重新下载项目源码不会影响书稿。
+
+首次安装或更新代码后需要构建。日后进入 `Yanfield` 目录运行 `pnpm start --hostname 127.0.0.1`（Windows 使用 `pnpm.cmd`），不必每次重新构建。保持终端运行，按 `Ctrl + C` 停止。
 
 `pnpm dev` 是开发调试模式，首次访问页面时可能需要即时编译；日常写作请使用上面的生产模式。上述启动命令只监听本机；砚田没有登录鉴权，不要直接暴露到公网，远程访问请参考[部署指南](docs/deploy.md)。
 
@@ -120,7 +120,7 @@ pnpm start --hostname 127.0.0.1
 <summary>展开查看写作、AI 和资料功能</summary>
 
 **写作**
-- 作品 / 卷 / 章三级结构，三栏沉浸写作台（目录 · 正文 · AI），自动保存、字数统计、专注模式
+- 作品 / 卷 / 章三级结构，三栏沉浸写作台（目录 · 正文 · AI），自动保存与手动保存按钮、字数统计、专注模式
 - 写作台左栏四页签：目录 · 章纲 · 设定 · 档案；章纲、设定、档案都在浮窗里就地编辑，不离开正文
 - `Ctrl / ⌘ K` 快速跳转：搜章节、角色、设定、档案，或直接切换左栏页签；`Alt + J` 聚焦右侧 AI；`Ctrl / ⌘ + Shift + 1–4` 直达左栏四个页签；旧的大纲 / 设定 / 档案页面会自动跳回写作台
 - 正文排版可调：衬线 / 黑体、字号、字重、行高、字间距、段落间距、页边距、最大行宽
@@ -161,6 +161,8 @@ pnpm start --hostname 127.0.0.1
 mkdir -p data
 docker compose up -d --build
 ```
+
+Docker Compose 默认只将端口绑定到宿主机的 `127.0.0.1`。远程访问请使用隧道或带鉴权的反向代理，不要直接暴露没有登录保护的服务。
 
 Node 直接运行见[快速开始](#快速开始)。systemd 模板：[deploy/yanfield.service](deploy/yanfield.service)。Docker/Compose 的默认服务、镜像与容器名统一为 `yanfield`；旧部署切换方式见[部署升级说明](docs/deploy.md#从旧命名部署升级)。
 

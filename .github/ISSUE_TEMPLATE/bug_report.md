@@ -55,4 +55,4 @@ assignees: ""
 
 ## 已尝试的排查
 
-<!-- 例如：清空 data/ 重来、重启 dev、换 Provider、换浏览器、看 docs/faq.md 等。 -->
+<!-- 例如：用 YANFIELD_DB_PATH 换一个全新的数据库重试、重启 dev、换 Provider、换浏览器、看 docs/faq.md 等。不要删除真实数据库。 -->

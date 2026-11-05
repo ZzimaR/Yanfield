@@ -14,6 +14,7 @@ import type { ChapterStatus } from "@/lib/types";
 import { emitSelection } from "@/lib/editor/events";
 import type { SaveState, SelectionInfo } from "@/lib/editor/types";
 import { SaveIndicator } from "./SaveIndicator";
+import { SaveButton } from "./SaveButton";
 import { StatusMenu } from "./StatusMenu";
 import { SelectionToolbar } from "./SelectionToolbar";
 import { FindReplaceBar } from "./FindReplaceBar";
@@ -56,6 +57,7 @@ interface EditorCanvasProps {
   onSelectionChange: (selection: SelectionInfo) => void;
   onAskAi: () => void;
   onExitImmersive: () => void;
+  onSave: () => void;
   /** 正文顶部的 AI 快捷任务条插槽（由上层注入，保持本组件与 AI 解耦） */
   aiBar?: React.ReactNode;
   review?: {run:AgentRun;changeId:string}|null;
@@ -148,6 +150,7 @@ export function EditorCanvas(props: EditorCanvasProps) {
     onSelectionChange,
     onAskAi,
     onExitImmersive,
+    onSave,
     aiBar,
     review,
     onCloseReview,
@@ -174,8 +177,8 @@ export function EditorCanvas(props: EditorCanvasProps) {
   const [findRequest, setFindRequest] = React.useState(0);
 
   /** 写作辅助开关：默认关闭，localStorage 记忆（刷新后保持） */
-  const [typewriter, setTypewriter] = useLocalStorageState<boolean>("yantian:editor:typewriter", false);
-  const [focusParagraph, setFocusParagraph] = useLocalStorageState<boolean>("yantian:editor:focus-paragraph", false);
+  const [typewriter, setTypewriter] = useLocalStorageState<boolean>("yanfield:editor:typewriter", false);
+  const [focusParagraph, setFocusParagraph] = useLocalStorageState<boolean>("yanfield:editor:focus-paragraph", false);
 
   const extensions = React.useMemo(
     () => [
@@ -365,6 +368,7 @@ export function EditorCanvas(props: EditorCanvasProps) {
       ) : null}
       {immersive ? (
         <div className="absolute right-3 top-3 z-20 flex items-center gap-2">
+          <SaveButton onSave={onSave} saving={saveState === "saving"} />
           <Tooltip label="打开 AI 助手（Alt+J）" side="left">
             <IconButton label="打开 AI 助手" onClick={onAskAi} className="border-line bg-surface/90 text-accent shadow-xs backdrop-blur hover:bg-surface">
               <MessagesSquare className="size-4" />

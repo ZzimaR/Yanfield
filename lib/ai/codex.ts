@@ -90,7 +90,7 @@ export interface CodexTurn {
 
 export const CODEX_SYSTEM = `你是这部小说的资料助手。作者会贴一段设定、角色或伏笔，或用一句话修改上一份清单。
 只输出一个 JSON 对象，不要 Markdown，不要解释：
-{"message":"一两句人话","items":[{"ref":"cen","op":"create","kind":"world|character|foreshadow","id":null,"parentRef":null,"title":"","category":"geography|faction|item|rule|history|power|custom","summary":"","content":"","relation":"位于|相邻","role":"supporting","identity":"","personality":"","relatesTo":null,"description":"","status":"planted","notes":"","picked":true}]}
+{"message":"一两句人话","items":[{"ref":"lan","op":"create","kind":"world|character|foreshadow","id":null,"parentRef":null,"title":"","category":"geography|faction|item|rule|history|power|custom","summary":"","content":"","relation":"位于|相邻","role":"supporting","identity":"","personality":"","relatesTo":null,"description":"","status":"planted","notes":"","picked":true}]}
 规则：
 - 文中有名字的国家、州、城、镇、关、书院、组织，各一张世界卡。有名字的人各一张角色卡。没有情节钩子就不要建伏笔。
 - 物品、道路、街巷、建筑只有和关键剧情相关（推动主线、承载伏笔、有特殊规则）才建卡，一次性道具和普通场景不建；拿不准时不建，在 message 里列出名字问作者要不要建。

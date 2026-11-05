@@ -3,7 +3,7 @@
 import * as React from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Download, FileText, HardDriveDownload, RefreshCw, TriangleAlert, Upload } from "lucide-react";
+import { Copy, Download, FileText, FolderOpen, HardDriveDownload, RefreshCw, TriangleAlert, Upload } from "lucide-react";
 import {
   Badge,
   Button,
@@ -17,10 +17,11 @@ import {
   useToast,
 } from "@/components/ui/kit";
 import { apiPost, notifyDataChanged, useApi } from "@/lib/client/api";
-import type { ImportChapterDraft, Novel } from "@/lib/types";
+import type { ImportChapterDraft, Novel, SystemInfo } from "@/lib/types";
 import { countWords, formatWords } from "@/lib/ui/cn";
 import { downloadNovelExport } from "@/components/library/utils";
 import type { NovelListResponse } from "@/components/library/types";
+import { navigateAfterSaving, useEditorSaveGuard } from "@/lib/editor/navigation";
 
 interface ImportTxtResponse {
   chapters: { title: string; content: string }[];
@@ -38,7 +39,10 @@ const IMPORT_PREVIEW_LIMIT = 8;
 export function DataSection() {
   const router = useRouter();
   const { toast } = useToast();
+  const saveGuard = useEditorSaveGuard();
   const novelsApi = useApi<NovelListResponse>("/api/novels");
+  const systemApi = useApi<SystemInfo>("/api/system");
+  const [openingDir, setOpeningDir] = React.useState(false);
 
   const fileInputRef = React.useRef<HTMLInputElement | null>(null);
   const [fileName, setFileName] = React.useState<string | null>(null);
@@ -99,6 +103,7 @@ export function DataSection() {
     setImporting(true);
     setImportError(null);
     try {
+      await saveGuard.flush();
       let novelId = targetNovelId;
       if (targetMode === "new") {
         const title = newTitle.trim();
@@ -130,6 +135,7 @@ export function DataSection() {
   const createDemo = async () => {
     setDemoLoading(true);
     try {
+      await saveGuard.flush();
       const novel = await apiPost<Novel>("/api/demo", {});
       notifyDataChanged("novels");
       void novelsApi.refresh();
@@ -147,12 +153,52 @@ export function DataSection() {
     }
   };
 
-  const copyBackupPath = async () => {
+  const openNovel = (novelId: string) => {
+    void navigateAfterSaving(saveGuard.flush, () => router.push(`/novel/${novelId}`)).catch((cause) => {
+      toast({
+        title: "无法打开作品",
+        description: cause instanceof Error ? cause.message : "请检查当前章节的保存状态。",
+        tone: "error",
+      });
+    });
+  };
+
+  const exportNovels = async (novelIds: string[], format: "md" | "txt") => {
     try {
-      await navigator.clipboard.writeText("data/yanfield.db");
-      toast({ title: "已复制", description: "复制 data/yanfield.db 即完成整库备份", tone: "success" });
+      await saveGuard.flush();
+      novelIds.forEach((novelId) => downloadNovelExport(novelId, { format, scope: "book" }));
+    } catch (cause) {
+      toast({
+        title: "无法导出作品",
+        description: cause instanceof Error ? cause.message : "请检查当前章节的保存状态。",
+        tone: "error",
+      });
+    }
+  };
+
+  const copyDbPath = async () => {
+    const dbPath = systemApi.data?.dbPath;
+    if (!dbPath) return;
+    try {
+      await navigator.clipboard.writeText(dbPath);
+      toast({ title: "已复制数据库路径", description: "复制路径本身不会备份数据。", tone: "success" });
     } catch {
-      toast({ title: "复制失败", description: "请手动复制 data/yanfield.db", tone: "error" });
+      toast({ title: "复制失败", description: dbPath, tone: "error" });
+    }
+  };
+
+  const openDataDir = async () => {
+    setOpeningDir(true);
+    try {
+      await apiPost("/api/system", { action: "open-data-dir" });
+    } catch (cause) {
+      toast({
+        title: "无法打开文件夹",
+        description: cause instanceof Error ? cause.message : systemApi.data?.dataDir,
+        tone: "error",
+      });
+    } finally {
+      setOpeningDir(false);
     }
   };
 
@@ -171,19 +217,41 @@ export function DataSection() {
           本地备份
         </h3>
         <p className="mt-1.5 text-[12px] leading-6 text-ink-2">
-          所有作品保存在项目下的 SQLite 文件里：<code className="rounded-sm bg-surface-2 px-1.5 py-0.5 font-mono text-[11px]">data/yanfield.db</code>。
-          复制这个文件就是完整备份；也可用环境变量 <code className="font-mono text-[11px]">YANFIELD_DB_PATH</code> 指定其他位置。
+          全部书稿、设置和 API Key 都保存在下面这个数据库文件里
+          {systemApi.data?.customDbPath ? "（位置由 YANFIELD_DB_PATH 指定）" : ""}：
+        </p>
+        <p className="mt-1.5 break-all rounded-sm bg-surface-2 px-2 py-1.5 font-mono text-[11px] text-ink" data-testid="db-path">
+          {systemApi.data?.dbPath ?? (systemApi.error ? "无法读取数据库位置" : "读取中…")}
+        </p>
+        <p className="mt-1.5 text-[12px] leading-6 text-ink-2">
+          备份时先停服，再复制整个文件夹（含可能存在的 -wal / -shm 文件）；运行中请使用 SQLite 在线备份，不要直接复制文件。
+          数据库包含明文 API Key，请妥善保管。
         </p>
         <div className="mt-2.5 flex flex-wrap gap-2">
-          <Button variant="secondary" size="sm" icon={<Download className="size-3.5" />} onClick={() => void copyBackupPath()}>
-            复制数据库路径
+          <Button
+            variant="secondary"
+            size="sm"
+            icon={<FolderOpen className="size-3.5" />}
+            disabled={!systemApi.data || openingDir}
+            onClick={() => void openDataDir()}
+          >
+            打开所在文件夹
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            icon={<Copy className="size-3.5" />}
+            disabled={!systemApi.data}
+            onClick={() => void copyDbPath()}
+          >
+            复制路径
           </Button>
           <Button
             variant="ghost"
             size="sm"
             icon={<RefreshCw className="size-3.5" />}
             disabled={novels.length === 0}
-            onClick={() => novels.forEach((novel) => downloadNovelExport(novel.id, { format: "md", scope: "book" }))}
+            onClick={() => void exportNovels(novels.map((novel) => novel.id), "md")}
           >
             导出全部作品（Markdown）
           </Button>
@@ -212,7 +280,14 @@ export function DataSection() {
             {novels.map((novel) => (
               <li key={novel.id} className="flex items-center gap-3 py-2.5">
                 <FileText className="size-3.5 shrink-0 text-ink-3" aria-hidden />
-                <Link href={`/novel/${novel.id}`} className="min-w-0 flex-1 truncate text-[12.5px] text-ink hover:text-accent">
+                <Link
+                  href={`/novel/${novel.id}`}
+                  onNavigate={(event) => {
+                    event.preventDefault();
+                    openNovel(novel.id);
+                  }}
+                  className="min-w-0 flex-1 truncate text-[12.5px] text-ink hover:text-accent"
+                >
                   {novel.title}
                 </Link>
                 <Badge tone="default">{novel.genre}</Badge>
@@ -220,10 +295,10 @@ export function DataSection() {
                   {formatWords(novel.wordCount ?? 0)} 字
                 </span>
                 <div className="flex shrink-0 gap-1">
-                  <Button variant="ghost" size="sm" onClick={() => downloadNovelExport(novel.id, { format: "md", scope: "book" })}>
+                  <Button variant="ghost" size="sm" onClick={() => void exportNovels([novel.id], "md")}>
                     MD
                   </Button>
-                  <Button variant="ghost" size="sm" onClick={() => downloadNovelExport(novel.id, { format: "txt", scope: "book" })}>
+                  <Button variant="ghost" size="sm" onClick={() => void exportNovels([novel.id], "txt")}>
                     TXT
                   </Button>
                 </div>
@@ -239,7 +314,7 @@ export function DataSection() {
           导入 TXT
         </h3>
         <p className="mt-1.5 text-[11.5px] leading-5 text-ink-3">
-          支持按「第 N 章 / 第N章」等常见标题自动拆章；先预览，确认后再写入。
+          支持按「第 N 章 / 第N章」等常见标题自动拆章；先预览，确认后再写入。单次最多 2000 章（含前言），超出请拆分文件。
         </p>
 
         <input

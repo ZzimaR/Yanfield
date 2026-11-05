@@ -1,9 +1,9 @@
 # 砚田 Yanfield — 生产镜像
 #
 # 多阶段构建：deps（装依赖）→ builder（next build）→ runner（standalone 产物）
-# 运行：docker run --rm -p 3000:3000 -v yanfield-data:/app/data yanfield
+# 运行：docker run --rm -p 127.0.0.1:3000:3000 -v yanfield-data:/app/data yanfield
 #
-# 依赖 next.config.ts 中的 output: "standalone"；没有它 .next/standalone 不会生成。
+# 依赖构建时设置 YANFIELD_STANDALONE=1（next.config.ts 据此输出 standalone）；没有它 .next/standalone 不会生成。
 
 # ---------- 1. 依赖 ----------
 FROM node:22.13-alpine AS deps
@@ -20,7 +20,8 @@ RUN npm install -g pnpm@11
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 ENV NODE_ENV=production \
-    NEXT_TELEMETRY_DISABLED=1
+    NEXT_TELEMETRY_DISABLED=1 \
+    YANFIELD_STANDALONE=1
 RUN pnpm exec next build
 
 # ---------- 3. 运行 ----------
@@ -30,7 +31,7 @@ ENV NODE_ENV=production \
     NEXT_TELEMETRY_DISABLED=1 \
     PORT=3000 \
     HOSTNAME=0.0.0.0
-# 数据库位置：默认 cwd/data/yanfield.db → /app/data/yanfield.db
+# 数据库位置：镜像内固定为 /app/data/yanfield.db（挂载 /app/data 持久化）
 # 想换位置可在运行时覆盖，例如 -e YANFIELD_DB_PATH=/app/data/novels.db
 ENV YANFIELD_DB_PATH=/app/data/yanfield.db
 
@@ -44,6 +45,7 @@ COPY --from=builder /app/.next/standalone ./
 COPY --from=builder /app/.next/static ./.next/static
 # 种子脚本：允许在容器内 `node scripts/seed.mjs` 只重置示例数据（不删你的作品）
 COPY --from=builder /app/scripts ./scripts
+COPY --from=builder /app/lib/db/data-path.mjs ./lib/db/data-path.mjs
 
 # 数据卷：SQLite 单文件，挂载后容器重建不丢稿
 VOLUME ["/app/data"]

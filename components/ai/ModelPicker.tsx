@@ -6,7 +6,7 @@
  * - 触发器展示当前生效模型（离线演示 / Provider / 未配置），点开弹出选择菜单；
  * - 弹层按 Provider 分组列出已启用模型，打开时重新拉取 /api/providers 避免列表过期；
  * - 当前模型已不在 Provider 列表时显示灰色「未找到（去设置检查）」，不静默吞掉；
- * - 底部固定「管理模型服务 / 拉取模型列表」，派发 yantian:open-settings 打开设置悬浮窗。
+ * - 底部固定「管理模型服务 / 拉取模型列表」，派发 yanfield:open-settings 打开设置悬浮窗。
  *
  * 用自建 portal 弹层（而非 kit Dropdown）：需要分组标题、当前选中态与底部固定入口。
  */
@@ -29,7 +29,7 @@ import type { ModelTargetInfo } from "./model-info";
 import { humanizeAiError } from "./errors";
 
 const MENU_WIDTH = 320;
-const OPEN_SETTINGS_EVENT = "yantian:open-settings";
+const OPEN_SETTINGS_EVENT = "yanfield:open-settings";
 
 const KIND_LABEL: Record<ProviderConfig["kind"], string> = {
   openai: "OpenAI 兼容",

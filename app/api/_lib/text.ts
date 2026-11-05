@@ -73,10 +73,11 @@ export function splitChapters(text: string, customRegex?: string, fallbackTitle 
 
   const headings: { index: number; end: number; title: string }[] = [];
   let guard = 0;
-  while (headings.length < MAX_IMPORT_CHAPTERS && guard < 20000) {
-    guard += 1;
+  while (true) {
     const match = regex.exec(source);
     if (!match) break;
+    guard += 1;
+    if (guard > 20000) throw new ApiError("章节分割次数过多，请检查分割正则", 400);
     if (match[0].length === 0) {
       regex.lastIndex += 1;
       continue;
@@ -84,6 +85,9 @@ export function splitChapters(text: string, customRegex?: string, fallbackTitle 
     let end = match.index + match[0].length;
     while (end < source.length && source[end] !== "\n") end += 1;
     headings.push({ index: match.index, end, title: cleanTitle(source.slice(match.index, end)) });
+    if (headings.length > MAX_IMPORT_CHAPTERS) {
+      throw new ApiError(`章节数超过上限（${MAX_IMPORT_CHAPTERS}），请拆分文件后导入`, 400);
+    }
   }
 
   if (headings.length === 0) return [{ title: fallbackTitle, content: source }];
@@ -100,5 +104,8 @@ export function splitChapters(text: string, customRegex?: string, fallbackTitle 
   });
 
   if (drafts.length === 0) return [{ title: fallbackTitle, content: source }];
-  return drafts.slice(0, MAX_IMPORT_CHAPTERS);
+  if (drafts.length > MAX_IMPORT_CHAPTERS) {
+    throw new ApiError(`章节数超过上限（${MAX_IMPORT_CHAPTERS}，含前言），请拆分文件后导入`, 400);
+  }
+  return drafts;
 }

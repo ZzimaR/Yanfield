@@ -1,6 +1,6 @@
 # 砚田 Yanfield — 共建契约（v0.1.0 · 开发中）
 
-> 所有并行开发者（含 AI 队友）开工前必读。**文件所有权**是硬边界：只写你名下的文件；需要别人文件里的能力时，按本文契约调用或发消息协商。
+> 贡献者改动共享模块、接口或数据结构前请先读本文。改动本文约定的接口时，请在同一个 PR 里同步更新本文。
 > 最后更新：2026-11-01。当前版本是开发中的 v0.1.0；§8 是这一版里已经落地的契约补充。路线图里的 v0.2 仍是未开始的计划。
 
 ## 0. 一句话
@@ -10,25 +10,24 @@
 ## 1. 技术栈与命令
 
 - Next.js 15 App Router + React 19 + TypeScript strict + Tailwind v4 + Tiptap 3 + `node:sqlite`（Node ≥ 22.13 内置，无需实验标志，零原生依赖）
-- 目录：`<repository-root>`（仓库根，即工作区根目录）。数据文件：`data/yanfield.db`（自动创建；可用 `YANFIELD_DB_PATH` 覆盖）
-- 包管理：**必须**用 `& 'C:\Program Files\nodejs\node.exe' 'pnpm' ...`
-- 开发服务器：**Lead 统一启动**（端口 3000），其他人不要 `pnpm dev`。验证页面用 `curl http://127.0.0.1:3000/...`。
-- 自检：`& node pnpm.mjs exec tsc --noEmit`（只查自己改动相关错误）；禁止跑 `next build` / 大规模格式化。**不要执行 git commit**（Lead 统一提交）。
-- 端口冲突、锁文件、`.next` 缓存问题找 Lead。
+- 数据文件：系统用户数据目录下的 `yanfield.db`（自动创建；可用 `YANFIELD_DB_PATH` 覆盖，见 [deploy.md](../deploy.md#数据位置)）
+- 包管理：pnpm（Node ≥ 22.13）
+- 开发服务器：`pnpm dev`（端口 3000）
+- 自检：`pnpm exec tsc --noEmit`、`pnpm test`；改动构建相关配置时再跑 `pnpm build`
 
-## 2. 目录与文件所有权（实际分工）
+## 2. 模块分区
 
-| 范围 | 所有者 | 说明 |
+| 范围 | 分区 | 说明 |
 |---|---|---|
-| `lib/types.ts` `lib/repo.ts` `lib/db/index.ts` `lib/seed.ts` `lib/defaults.ts` `lib/client/*` `lib/ui/*` `lib/ai/*` `lib/diff/*` `lib/editor/bridge.tsx` `components/ui/*` `components/layout/*` `app/layout.tsx` `app/globals.css` `app/api/ai/**` `types/**` `docs/architecture/*` `docs/recon/*` | **Lead** | 领域模型、数据访问、AI 引擎、设计系统、AI 路由 |
+| `lib/types.ts` `lib/repo.ts` `lib/db/index.ts` `lib/seed.ts` `lib/defaults.ts` `lib/client/*` `lib/ui/*` `lib/ai/*` `lib/diff/*` `lib/editor/bridge.tsx` `components/ui/*` `components/layout/*` `app/layout.tsx` `app/globals.css` `app/api/ai/**` `types/**` `docs/architecture/*` | **core** | 领域模型、数据访问、AI 引擎、设计系统、AI 路由 |
 | `app/api/**`（除 `app/api/ai/**`）`app/api/_lib/**` | **api-routes** | 全部 REST Route Handler：作品/卷/章/大纲/角色/世界观/伏笔/档案/对话/Provider/预设/设置/统计/搜索/导入导出/demo |
 | `app/editor/[novelId]/**` `components/editor/**` `lib/editor/**`（除 `bridge.tsx`） | **editor** | 三栏工作台 + 目录树 + Tiptap + 自动保存 + diff 审阅槽位 |
 | `components/ai/**` `components/diff/**` | **ai-assistant** | AI 面板、上下文抽屉、流式渲染、逐块 diff 审阅组件 |
 | `app/novel/[novelId]/{outline,bible,archives}/**`（307 重定向到写作台）`components/cards/**` `components/outline/**` `components/archives/**` | **knowledge** | 旧大纲/设定/档案页仅保留重定向；内容在写作台左栏「章纲 / 设定 / 档案」页签就地编辑 |
 | `app/page.tsx` `app/library/**` `app/settings/**` `app/novel/[novelId]/page.tsx` `app/not-found.tsx` `app/error.tsx` `app/loading.tsx` `components/landing/**` `components/library/**` `components/settings/**` | **shell** | 落地页、书架、设置、作品概览 |
-| `README.md` `LICENSE` `CONTRIBUTING.md` `docs/**`（除 architecture、recon） `tests/**` `vitest.config.ts` `Dockerfile` `.dockerignore` `.github/**` `scripts/**` `public/**` | **docs** | 文档、测试、截图脚本、部署、许可证 |
+| `README.md` `LICENSE` `CONTRIBUTING.md` `docs/**`（除 architecture） `tests/**` `vitest.config.ts` `Dockerfile` `.dockerignore` `.github/**` `scripts/**` `public/**` | **docs** | 文档、测试、截图脚本、部署、许可证 |
 
-冲突时以本表为准；需要越界写文件，先在团队任务板发消息说明。集成阶段由 Lead 统一收口（修跨模块 bug、跑构建与截图、更新本文档）。
+core 分区是其他模块依赖的共享层，改动其中的类型、接口或样式 token 时，请检查所有调用方并同步更新本文。
 
 ## 3. 共享模块 API（已实现，直接用）
 
@@ -118,7 +117,7 @@ applyBlockDiff(beforeHtml: string, diff: BlockDiff, acceptedIds: string[]): stri
 diffTextLines(before: string, after: string): { type: "same" | "add" | "del"; text: string }[]
 ```
 
-### `lib/editor/bridge.tsx`（Lead 所有，editor 队友实现配置）
+### `lib/editor/bridge.tsx`（core 定义接口，编辑器负责注入实现）
 ```tsx
 export interface EditorBridge {
   getHtml(): string;
@@ -131,9 +130,9 @@ export interface EditorBridge {
 export function EditorBridgeProvider(props: { children: React.ReactNode; value: EditorBridge | null }): JSX.Element
 export function useEditorBridge(): EditorBridge | null
 ```
-AI 面板（ai 队友）通过 `useEditorBridge()` 把 AI 文本插入正文；没有选中也没光标时，面板要禁用「插入」并提示。
+AI 面板通过 `useEditorBridge()` 把 AI 文本插入正文；没有选中也没光标时，面板要禁用「插入」并提示。
 
-### `components/ui/*`（UI kit，Lead 所有，禁止改样式文件内部，可提需求）
+### `components/ui/*`（UI kit，页面不要覆写其内部样式）
 ```tsx
 Button({ variant: "primary"|"secondary"|"ghost"|"danger"|"subtle", size: "sm"|"md"|"lg"|"icon", loading?, icon?: ReactNode })
 IconButton({ label: string, active?, size?: "sm"|"md", children })
@@ -152,7 +151,7 @@ Markdown({ text, className? })   // 安全轻量 markdown 渲染（AI 消息用�
 ```
 样式只允许用设计 token 类名（`bg-paper` `bg-surface` `bg-surface-2` `text-ink` `text-ink-2` `text-ink-3` `text-ink-4` `border-line` `border-line-strong` `text-accent` `bg-accent-soft` `text-jade` `text-gold` `shadow-xs` `shadow-card` `shadow-float` `rounded-md` `rounded-lg` 等），禁止硬编码 hex。
 
-### `components/layout/AppShell.tsx`（Lead 所有）
+### `components/layout/AppShell.tsx`
 ```tsx
 <AppShell novelId? active="library"|"overview"|"outline"|"bible"|"archives"|"editor"|"settings">
   {children}
@@ -227,13 +226,12 @@ Markdown({ text, className? })   // 安全轻量 markdown 渲染（AI 消息用�
 
 ## 7. 协作规则
 
-1. 开工先 `team_task_list` 认领任务；完成后 `team_task_update` 标记 complete，并给 Lead 发 ≤400 字消息（状态/文件/风险/下一步）。
-2. 只写自己目录；改共享文件需在任务板留言并等 Lead 回复。
-3. 每个页面/组件写完自测：`curl` 页面 200、`tsc --noEmit` 无新错误、点击主要交互（用静态分析或请求验证）。
-4. 卡住 ≥10 分钟立即发消息，不要硬扛。
-5. 不要安装新依赖（要装找 Lead）；不要改 `package.json`。
-6. 不要动 `data/yanfield.db` 的内容结构；不要删除他人文件。
-7. 不要执行 `git` 写操作（commit/checkout/reset）。
+完整流程见 [CONTRIBUTING.md](../../CONTRIBUTING.md)。与本文相关的几条：
+
+1. 改动共享模块（core 分区）的类型或接口时，检查所有调用方，并在同一个 PR 里更新本文。
+2. 提交前确认 `pnpm exec tsc --noEmit` 与 `pnpm test` 通过；页面改动请实际打开页面点一遍主要交互。
+3. 新增依赖请在 PR 里说明理由。
+4. 数据库结构只通过 `lib/db/index.ts` 的 `MIGRATIONS` 追加迁移来修改，不改已有迁移（见 [architecture.md](../architecture.md)）。
 
 ## 8. 当前版本（v0.1.0）已落地的契约补充
 

@@ -81,7 +81,7 @@ export function AppShell({
 
   const openSettings = () => {
     if (typeof window === "undefined") return;
-    window.dispatchEvent(new CustomEvent("yantian:open-settings"));
+    window.dispatchEvent(new CustomEvent("yanfield:open-settings"));
   };
 
   return (

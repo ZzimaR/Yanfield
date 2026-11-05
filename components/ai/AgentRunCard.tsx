@@ -71,7 +71,7 @@ export function AgentRunCard({runId,novelId,initial,disabled=false,onContinue}:{
     const result=await commitAgent(run,{selections:changes.map(c=>({id:c.id,fields:fields[c.id]}))},bridge);
     const chapter=result.changes.find(c=>changes.some(selected=>selected.id===c.id)&&c.kind==="chapter"&&c.state==="applied");
     const id=chapter?.appliedId||chapter?.targetId;
-    if(id)window.dispatchEvent(new CustomEvent("yantian:agent-navigate",{detail:{kind:"chapter",id}}));
+    if(id)window.dispatchEvent(new CustomEvent("yanfield:agent-navigate",{detail:{kind:"chapter",id}}));
     return result;
   });
   const selected=pending.filter(c=>picked[c.id]!==false);
@@ -82,8 +82,8 @@ export function AgentRunCard({runId,novelId,initial,disabled=false,onContinue}:{
       setMaterialsOpen(true);setFocusedMaterial(candidate.id);setExpanded(candidate.id);return;
     }
     const id=candidate?.appliedId||target.id;
-    if(["world","character","foreshadow"].includes(target.kind))window.dispatchEvent(new CustomEvent("yantian:open-card",{detail:{kind:target.kind,id,novelId:run.novelId}}));
-    else window.dispatchEvent(new CustomEvent("yantian:agent-navigate",{detail:{kind:target.kind,id}}));
+    if(["world","character","foreshadow"].includes(target.kind))window.dispatchEvent(new CustomEvent("yanfield:open-card",{detail:{kind:target.kind,id,novelId:run.novelId}}));
+    else window.dispatchEvent(new CustomEvent("yanfield:agent-navigate",{detail:{kind:target.kind,id}}));
   };
   const chip=(target:AgentReference & {changeId?:string})=><button key={target.kind+target.id} type="button" title={`${ENTITY_LABEL[target.kind]} · ${target.title}`} onClick={()=>openTarget(target)} className={`inline-flex max-w-full items-center gap-1.5 rounded-md border px-2 py-1 text-[11px] transition-colors hover:brightness-95 focus-visible:outline-accent ${entityTone(target.kind)}`}>
     {target.kind==="character"?<User className="size-3 shrink-0"/>:target.kind==="world"?<MapPin className="size-3 shrink-0"/>:target.kind==="foreshadow"?<Bookmark className="size-3 shrink-0"/>:<BookOpen className="size-3 shrink-0"/>}
@@ -134,12 +134,12 @@ export function AgentRunCard({runId,novelId,initial,disabled=false,onContinue}:{
           <div className="mt-3 rounded-xl border border-danger/20 bg-danger/[0.03] p-3 opacity-80"><MaterialPreview kind={c.kind as "character"|"world"|"foreshadow"} fields={c.before??{}} showTitle={false}/></div>
           <p className="mt-2 text-[11px] leading-relaxed text-ink-4">{c.reason}</p>
           <p className="mt-1.5 text-[11px] leading-relaxed text-danger/90">{isPending?"应用后会从资料库删除这整条资料；如有误可用「撤回本轮」恢复。":c.state==="applied"?"已从资料库删除，可用「撤回本轮」恢复。":""}</p>
-          {isPending&&c.targetId?<button type="button" className="mt-2 inline-flex items-center gap-1 text-[11px] text-accent" onClick={()=>window.dispatchEvent(new CustomEvent("yantian:open-card",{detail:{kind:c.kind,id:c.targetId,novelId:run.novelId}}))}><FolderOpen className="size-3"/>打开原资料</button>:null}
+          {isPending&&c.targetId?<button type="button" className="mt-2 inline-flex items-center gap-1 text-[11px] text-accent" onClick={()=>window.dispatchEvent(new CustomEvent("yanfield:open-card",{detail:{kind:c.kind,id:c.targetId,novelId:run.novelId}}))}><FolderOpen className="size-3"/>打开原资料</button>:null}
         </>:<>
           {["character","world","foreshadow"].includes(c.kind)?<div className="mt-3 rounded-xl border border-line/65 bg-paper/25 p-3"><MaterialPreview kind={c.kind as "character"|"world"|"foreshadow"} fields={{...c.before,...c.after}} showTitle={false}/></div>:null}
           <p className="mt-2 text-[11px] leading-relaxed text-ink-4">{c.reason}</p>
           {c.evidence?.length?<details className="mt-2 text-[11px] text-ink-3"><summary className="cursor-pointer">原文依据 · {c.evidence.length}</summary><div className="mt-2 space-y-2">{c.evidence.map((e,i)=><blockquote key={i} className="border-l-2 border-jade/25 pl-2.5 leading-relaxed"><span className="mb-1 block text-[10px] text-jade">{e.title}{` · ${evidenceLabel(run,e)}`}</span>{e.quote}</blockquote>)}</div></details>:null}
-          {(c.appliedId||c.targetId)&&["character","world","foreshadow"].includes(c.kind)?<button type="button" className="mr-4 mt-2 inline-flex items-center gap-1 text-[11px] text-accent" onClick={()=>window.dispatchEvent(new CustomEvent("yantian:open-card",{detail:{kind:c.kind,id:c.appliedId||c.targetId}}))}><FolderOpen className="size-3"/>{isPending?"打开原资料":"打开资料"}</button>:null}
+          {(c.appliedId||c.targetId)&&["character","world","foreshadow"].includes(c.kind)?<button type="button" className="mr-4 mt-2 inline-flex items-center gap-1 text-[11px] text-accent" onClick={()=>window.dispatchEvent(new CustomEvent("yanfield:open-card",{detail:{kind:c.kind,id:c.appliedId||c.targetId}}))}><FolderOpen className="size-3"/>{isPending?"打开原资料":"打开资料"}</button>:null}
           <button type="button" className="mt-2 text-[11px] text-accent" onClick={()=>setExpanded(expanded===c.id?null:c.id)}>{expanded===c.id?"收起改动":"查看改动"} · {keys.length}</button>
           {expanded===c.id?<div className="mt-3 space-y-3">{keys.map(key=><div key={key}>
             <label className="mb-1.5 flex items-center gap-1.5 text-[11px] text-ink-3">{isPending?<input type="checkbox" checked={chosen.includes(key)} disabled={busy||running||disabled} onChange={e=>setFields(p=>({...p,[c.id]:e.target.checked?[...chosen,key]:chosen.filter(k=>k!==key)}))}/>:null}{FIELD_LABEL[key]||key}</label>

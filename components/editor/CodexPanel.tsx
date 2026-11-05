@@ -33,7 +33,7 @@ export interface PendingCodexCard {
 
 /**
  * 页签切到「设定」后 CodexPanel 才挂载，数据也还要走 /api：
- * 这段时间里派发的 yantian:open-card 没人接，会直接丢失。派发前先暂存，挂载后取走重试。
+ * 这段时间里派发的 yanfield:open-card 没人接，会直接丢失。派发前先暂存，挂载后取走重试。
  */
 let pendingOpenCard: PendingCodexCard | null = null;
 
@@ -236,8 +236,8 @@ export function CodexPanel({ novelId }: CodexPanelProps) {
       // 数据还没加载完：先记下，等 useApi 返回后重试；数据已就绪仍找不到就放弃（卡片可能已删除）
       pendingCardRef.current = settledRef.current ? null : { novelId, kind: detail.kind, id: detail.id };
     };
-    window.addEventListener("yantian:open-card", openCard);
-    return () => window.removeEventListener("yantian:open-card", openCard);
+    window.addEventListener("yanfield:open-card", openCard);
+    return () => window.removeEventListener("yanfield:open-card", openCard);
   }, [novelId, tryOpenCard]);
 
   // 数据加载 / refresh 完成后，补开之前缓存的卡片

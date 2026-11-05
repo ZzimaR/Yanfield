@@ -1,7 +1,7 @@
 "use client";
 
 export type ThemeMode = "light" | "dark" | "system";
-export const THEME_KEY = "yantian:theme";
+export const THEME_KEY = "yanfield:theme";
 
 export function systemPrefersDark(): boolean {
   if (typeof window === "undefined") return false;

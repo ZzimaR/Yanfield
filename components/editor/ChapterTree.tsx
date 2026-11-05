@@ -96,7 +96,7 @@ export function ChapterTree({
   onSelectChapter,
 }: ChapterTreeProps) {
   const [collapsed, setCollapsed] = useLocalStorageState<Record<string, boolean>>(
-    `yantian:editor:collapsed:${novelId}`,
+    `yanfield:editor:collapsed:${novelId}`,
     {},
   );
   const [prompt, setPrompt] = React.useState<PromptState | null>(null);

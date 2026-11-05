@@ -157,7 +157,7 @@ export function CommandPalette({
         stashPendingCodexCard({ novelId, kind: result.type, id: result.id });
         window.setTimeout(() => {
           window.dispatchEvent(
-            new CustomEvent("yantian:open-card", {
+            new CustomEvent("yanfield:open-card", {
               detail: { kind: result.type, id: result.id },
             }),
           );

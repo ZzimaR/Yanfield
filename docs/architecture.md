@@ -35,7 +35,7 @@
 │                              → lib/ai/provider → 上游 API      │
 └───────────────┬──────────────────────────────┬─────────────────┘
                 │                              │
-        data/yanfield.db                 用户配置的模型服务
+        yanfield.db                      用户配置的模型服务
         （node:sqlite，WAL）           （OpenAI / Anthropic / Gemini / Ollama…）
 ```
 
@@ -89,7 +89,9 @@ docker-compose.yml .env.example
 
 ## 数据模型
 
-数据库文件默认 `data/yanfield.db`（`YANFIELD_DB_PATH` 可覆盖）。启用 `WAL` 与 `foreign_keys`，JSON 字段以 TEXT 存储、在 `lib/repo.ts` 边界解析。所有表主键为字符串 ID（`uid("nov")` 形式），时间为 ISO 8601 字符串。
+数据库文件默认在系统用户数据目录（路径解析见 `lib/db/data-path.mjs`；`YANFIELD_DB_PATH` 可覆盖）。启用 `WAL` 与 `foreign_keys`，JSON 字段以 TEXT 存储、在 `lib/repo.ts` 边界解析。所有表主键为字符串 ID（`uid("nov")` 形式），时间为 ISO 8601 字符串。
+
+结构版本记录在 SQLite `PRAGMA user_version`。`lib/db/index.ts` 的 `MIGRATIONS` 数组按顺序把库从版本 i 升到 i + 1；改表结构时只追加新迁移，不修改已发布的迁移。打开版本高于程序支持的数据库会直接报错，防止旧版本误写。
 
 | 表 | 作用 | 关键字段 / 关系 |
 | --- | --- | --- |

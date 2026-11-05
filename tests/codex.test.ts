@@ -55,13 +55,13 @@ describe("资料助手", () => {
         message: "补一张城",
         items: [
           { ref: "city", kind: "world", title: "青阳城", parentRef: "澜国", relation: "位于", category: "地理" },
-          { ref: "li", kind: "world", title: "朔国", parentRef: "cen", relation: "相邻" },
+          { ref: "shuo", kind: "world", title: "朔国", parentRef: "lan", relation: "相邻" },
         ],
       }),
     );
-    const items = prepareCodexItems(parsed?.items ?? [], [{ id: "world_cen", kind: "world", title: "澜国" }]);
+    const items = prepareCodexItems(parsed?.items ?? [], [{ id: "world_lan", kind: "world", title: "澜国" }]);
     expect(items.find((item) => item.title === "青阳城")).toMatchObject({
-      parentRef: "world_cen",
+      parentRef: "world_lan",
       category: "geography",
       op: "create",
     });
@@ -69,11 +69,11 @@ describe("资料助手", () => {
     const withCountry = prepareCodexItems(
       [
         ...(parsed?.items ?? []),
-        { ...(parsed?.items[0] as CodexItem), ref: "cen", title: "澜国", parentRef: null, relation: "" },
+        { ...(parsed?.items[0] as CodexItem), ref: "lan", title: "澜国", parentRef: null, relation: "" },
       ],
-      [{ id: "world_cen", kind: "world", title: "澜国" }],
+      [{ id: "world_lan", kind: "world", title: "澜国" }],
     );
-    expect(withCountry.find((item) => item.title === "澜国")).toMatchObject({ op: "update", id: "world_cen" });
+    expect(withCountry.find((item) => item.title === "澜国")).toMatchObject({ op: "update", id: "world_lan" });
   });
 
   it("取消父卡时子卡一起取消，父级 id 在写入时能解析", () => {
@@ -82,18 +82,18 @@ describe("资料助手", () => {
         JSON.stringify({
           message: "两张",
           items: [
-            { ref: "cen", kind: "world", title: "澜国", relation: "" },
-            { ref: "zhou", kind: "world", title: "临波州", parentRef: "cen", relation: "位于" },
+            { ref: "lan", kind: "world", title: "澜国", relation: "" },
+            { ref: "zhou", kind: "world", title: "临波州", parentRef: "lan", relation: "位于" },
           ],
         }),
       )?.items ?? [],
       [],
     );
-    const unchecked = setCodexPicked(items, "cen", false);
+    const unchecked = setCodexPicked(items, "lan", false);
     expect(unchecked.every((item) => item.picked === false)).toBe(true);
-    const ids = new Map<string, string>([["cen", "world_cen"]]);
+    const ids = new Map<string, string>([["lan", "world_lan"]]);
     const child = items.find((item) => item.ref === "zhou");
-    expect(child && codexParentId(child, ids)).toBe("world_cen");
+    expect(child && codexParentId(child, ids)).toBe("world_lan");
   });
 
   it("解析伏笔条目：标题、埋法、提醒都映射到卡片字段", () => {
@@ -145,7 +145,7 @@ describe("资料助手", () => {
       [],
     );
     const prompt = buildCodexUserPrompt({
-      catalog: "世界：\n- id=world_cen title=澜国 category=faction\n角色：\n（无）\n伏笔：\n（无）",
+      catalog: "世界：\n- id=world_lan title=澜国 category=faction\n角色：\n（无）\n伏笔：\n（无）",
       history: [{ role: "user", content: "澜国西面临海" }],
       draft,
       message: "白石镇先别建",
@@ -167,8 +167,8 @@ describe("资料助手", () => {
           message: "三张卡",
           items: [
             { ref: "jade", kind: "foreshadow", title: "旧玉佩" },
-            { ref: "zhong", kind: "character", title: "陆衡", role: "supporting" },
-            { ref: "cen", kind: "world", title: "澜国" },
+            { ref: "lu", kind: "character", title: "陆衡", role: "supporting" },
+            { ref: "lan", kind: "world", title: "澜国" },
           ],
         }),
       )?.items ?? [],

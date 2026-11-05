@@ -2,7 +2,6 @@
 
 import * as React from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import {
   ArrowLeft,
   BookOpen,
@@ -23,6 +22,7 @@ import { cn, formatWords } from "@/lib/ui/cn";
 import type { Novel } from "@/lib/types";
 import type { SaveState } from "@/lib/editor/types";
 import { SaveIndicator } from "./SaveIndicator";
+import { SaveButton } from "./SaveButton";
 
 export type EditorTheme = "light" | "dark";
 
@@ -40,6 +40,9 @@ interface EditorHeaderProps {
   rightCollapsed: boolean;
   theme: EditorTheme;
   onBack: () => void;
+  onOverview: () => void;
+  onSave: () => void;
+  canSave: boolean;
   /** 返回按钮的去向，例如「返回概览」 */
   backLabel?: string;
   onToggleLeft: () => void;
@@ -71,6 +74,9 @@ export function EditorHeader({
   rightCollapsed,
   theme,
   onBack,
+  onOverview,
+  onSave,
+  canSave,
   backLabel = "返回概览",
   onToggleLeft,
   onToggleRight,
@@ -83,10 +89,8 @@ export function EditorHeader({
   onPrevChapter,
   onNextChapter,
 }: EditorHeaderProps) {
-  const router = useRouter();
-
   const moreItems: DropdownItem[] = [
-    { label: "作品概览", icon: <BookOpen className="size-3.5" />, onSelect: () => router.push(`/novel/${novelId}`) },
+    { label: "作品概览", icon: <BookOpen className="size-3.5" />, onSelect: onOverview },
     { separator: true },
     { label: "设置", icon: <Settings2 className="size-3.5" />, onSelect: () => openSettingsDialog() },
   ];
@@ -110,6 +114,10 @@ export function EditorHeader({
       <div className="flex min-w-0 flex-1 items-center gap-1 text-[12px]">
         <Link
           href={`/novel/${novelId}`}
+          onNavigate={(event) => {
+            event.preventDefault();
+            onOverview();
+          }}
           className="min-w-0 max-w-[150px] truncate font-medium text-ink transition-colors duration-150 hover:text-accent motion-reduce:transition-none"
           title={novel?.title ?? "未命名作品"}
         >
@@ -163,6 +171,7 @@ export function EditorHeader({
 
       <div className="ml-auto flex shrink-0 items-center gap-1">
         <SaveIndicator state={saveState} lastSavedAt={lastSavedAt} className="mr-1 hidden sm:inline-flex" />
+        <SaveButton onSave={onSave} saving={saveState === "saving"} disabled={!canSave} />
         <span className="mr-1 hidden text-[11.5px] tabular-nums text-ink-3 md:inline">
           {formatWords(wordCount)} 字
         </span>

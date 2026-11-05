@@ -16,13 +16,13 @@
 
 全部存在本机：
 
-- 数据库：`data/yanfield.db`（一个 SQLite 文件，可用 `YANFIELD_DB_PATH` 改位置）。
+- 数据库：一个 SQLite 文件 `yanfield.db`，默认在系统用户数据目录（Windows `%APPDATA%\Yanfield`，macOS `~/Library/Application Support/Yanfield`，Linux `~/.local/share/yanfield`）。「设置 → 数据」显示实际路径；可用 `YANFIELD_DB_PATH` 改位置。
 - 密钥：同一数据库的 `providers` 表，**明文存储**（本地应用常见做法）。请不要把这个文件发给别人，也不要把整个项目目录传到公开仓库。
 - 砚田本身不提供用户遥测、统计或云同步。使用云模型时，请求中实际包含的书稿和上下文会发送给你配置的模型服务；服务商是否记录内容，取决于其隐私政策。Next.js 自带匿名遥测，可设置 `NEXT_TELEMETRY_DISABLED=1` 关闭；README 的启动命令和 Docker 默认已关闭。
 
 ## 4. 怎么备份和迁移？换电脑怎么办？
 
-停掉砚田，复制 `data/` 目录（`yanfield.db`，以及可能存在的 `yanfield.db-wal` / `yanfield.db-shm`）到新机器同一路径，再启动即可。也可以用「设置 → 数据 → 导出」把书稿导成 Markdown/TXT 长期归档。SQLite 文件可以随时用 `sqlite3` 等工具打开检查，不怕「被平台锁住」。
+停掉砚田，复制数据库所在的整个文件夹（「设置 → 数据 → 打开所在文件夹」，含可能存在的 `-wal` / `-shm` 文件），在新机器上放到同样的默认位置，再启动即可。若设置了 `YANFIELD_DB_PATH`，以自定义位置为准；需要在线备份时使用 SQLite 的 `.backup`，不要直接复制正在使用的文件。也可以用「设置 → 数据 → 导出」把书稿导成 Markdown/TXT 长期归档；导出不包含全部设置和 API Key。
 
 ## 5. 能接哪些大模型？没有 API Key 能玩吗？
 

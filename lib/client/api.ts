@@ -198,7 +198,7 @@ export function streamAiTask(req: AiTaskRequest, handlers: StreamHandlers): Prom
 
 /* ============================== 全局刷新事件 ============================== */
 
-export const DATA_CHANGED_EVENT = "yantian:data-changed";
+export const DATA_CHANGED_EVENT = "yanfield:data-changed";
 
 /** 数据变更后广播，页面可监听刷新 */
 export function notifyDataChanged(topic?: string): void {

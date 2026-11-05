@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next";
 import "./globals.css";
 import { ToastProvider } from "@/components/ui/kit";
 import SettingsDialogHost from "@/components/settings/SettingsDialogHost";
+import { EditorSaveGuardProvider } from "@/lib/editor/navigation";
 import { THEME_SCRIPT } from "@/lib/ui/theme";
 
 export const metadata: Metadata = {
@@ -46,8 +47,10 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       </head>
       <body className="bg-paper font-ui text-ink antialiased">
         <ToastProvider>
-          {children}
-          {process.env.NEXT_PUBLIC_PUBLIC_SITE === "1" ? null : <SettingsDialogHost />}
+          <EditorSaveGuardProvider>
+            {children}
+            {process.env.NEXT_PUBLIC_PUBLIC_SITE === "1" ? null : <SettingsDialogHost />}
+          </EditorSaveGuardProvider>
         </ToastProvider>
       </body>
     </html>

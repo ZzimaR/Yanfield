@@ -82,7 +82,7 @@ export function AboutSection() {
         </h3>
         <p className="mt-1.5 text-[12px] leading-6 text-ink-2">
           书稿、设定与 API Key 都只保存在本机 SQLite 文件中，没有账号、没有云端同步、没有遥测。
-          你可以整库备份、迁移到另一台电脑，或对整个数据目录做 git 版本管理。
+          停服后可以整库备份或迁移到另一台电脑；数据库含明文 API Key，请勿提交到公开仓库。
         </p>
       </Card>
 

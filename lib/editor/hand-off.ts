@@ -1,6 +1,6 @@
 /** 设定卡把材料和任务交给写作台右侧的同一个助手。先填进输入框，不自动发送。 */
 
-export const HAND_OFF_EVENT = "yantian:hand-off";
+export const HAND_OFF_EVENT = "yanfield:hand-off";
 
 export interface HandOffReference {
   type: "character" | "world" | "chapter" | "archive" | "foreshadow";

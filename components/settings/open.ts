@@ -9,7 +9,7 @@
 import type { SettingsSectionKey } from "./sections";
 
 /** 打开设置悬浮窗的全局事件名。 */
-export const OPEN_SETTINGS_EVENT = "yantian:open-settings";
+export const OPEN_SETTINGS_EVENT = "yanfield:open-settings";
 
 export interface OpenSettingsDetail {
   section?: SettingsSectionKey;

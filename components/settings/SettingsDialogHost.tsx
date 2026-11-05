@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * 设置悬浮窗挂载点：监听 `yantian:open-settings` 事件后打开 SettingsDialog。
+ * 设置悬浮窗挂载点：监听 `yanfield:open-settings` 事件后打开 SettingsDialog。
  *
  * 用法（由 app/layout.tsx 挂载，在 ToastProvider 内、{children} 之后）：
  *   import SettingsDialogHost from "@/components/settings/SettingsDialogHost";

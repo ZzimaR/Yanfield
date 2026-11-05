@@ -142,8 +142,8 @@ export function ChatComposer({
       const detail = (event as CustomEvent<{ text?: string; empty?: boolean }>).detail;
       setSelectionText(!detail?.empty && typeof detail?.text === "string" ? detail.text : "");
     };
-    window.addEventListener("yantian:editor-selection", handler as EventListener);
-    return () => window.removeEventListener("yantian:editor-selection", handler as EventListener);
+    window.addEventListener("yanfield:editor-selection", handler as EventListener);
+    return () => window.removeEventListener("yanfield:editor-selection", handler as EventListener);
   }, []);
 
   /** 检测光标前是否处于 @ 查询中 */

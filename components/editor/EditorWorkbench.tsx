@@ -5,13 +5,13 @@ import { usePathname, useRouter } from "next/navigation";
 import { novelBackTarget } from "@/lib/app-nav";
 import type { Editor } from "@tiptap/react";
 import { Feather, Plus } from "lucide-react";
-import { Button, EmptyState, Sheet, useToast } from "@/components/ui/kit";
+import { Button, ConfirmDialog, EmptyState, Sheet, useToast } from "@/components/ui/kit";
 import { AiTaskBar } from "@/components/ai/AiTaskBar";
 import { apiGet, apiPatch, useApi } from "@/lib/client/api";
 import { EditorBridgeProvider } from "@/lib/editor/bridge";
 import { HAND_OFF_EVENT } from "@/lib/editor/hand-off";
 import { emitFocusAi } from "@/lib/editor/events";
-import { migrateLegacyEditorStorage } from "@/lib/editor/legacyStorage";
+import { isSaveShortcut, navigateAfterSaving, useEditorSaveGuard } from "@/lib/editor/navigation";
 import { toOne } from "@/lib/editor/normalize";
 import { readEditorLayoutSettings } from "@/lib/editor/settings";
 import { findChapter, findVolumeOfChapter, flattenChapters } from "@/lib/editor/types";
@@ -50,24 +50,17 @@ interface EditorWorkbenchProps {
 export function EditorWorkbench({ novelId, initialChapterId = null }: EditorWorkbenchProps) {
   const router = useRouter();
   const { toast } = useToast();
-
-  // 旧品牌键（mozhou:*）迁移必须在子组件读取 localStorage 之前完成，
-  // 所以放在首次渲染的函数体内（幂等，只在客户端跑一次）。
-  const migratedStorageRef = React.useRef(false);
-  if (typeof window !== "undefined" && !migratedStorageRef.current) {
-    migratedStorageRef.current = true;
-    migrateLegacyEditorStorage();
-  }
+  const saveGuard = useEditorSaveGuard();
 
   /* ---------------- 视图偏好（localStorage） ---------------- */
 
-  const [tab, setTab] = useLocalStorageState<EditorLeftTab>(`yantian:editor:tab:${novelId}`, "toc");
-  const [leftOpen, setLeftOpen] = useLocalStorageState<boolean>("yantian:editor:left-open", true);
-  const [rightOpen, setRightOpen] = useLocalStorageState<boolean>("yantian:editor:right-open", true);
-  const [immersive, setImmersive] = useLocalStorageState<boolean>("yantian:editor:immersive", false);
+  const [tab, setTab] = useLocalStorageState<EditorLeftTab>(`yanfield:editor:tab:${novelId}`, "toc");
+  const [leftOpen, setLeftOpen] = useLocalStorageState<boolean>("yanfield:editor:left-open", true);
+  const [rightOpen, setRightOpen] = useLocalStorageState<boolean>("yanfield:editor:right-open", true);
+  const [immersive, setImmersive] = useLocalStorageState<boolean>("yanfield:editor:immersive", false);
   /** 记住上次打开的章节（换作品时用新 key，互不干扰） */
   const [chapterId, setChapterId] = useLocalStorageState<string | null>(
-    `yantian:editor:chapter:${novelId}`,
+    `yanfield:editor:chapter:${novelId}`,
     null,
   );
   const [initialChapterPending, setInitialChapterPending] = React.useState(Boolean(initialChapterId));
@@ -209,24 +202,30 @@ export function EditorWorkbench({ novelId, initialChapterId = null }: EditorWork
     },
     [toast],
   );
+  const onRecoveryError = React.useCallback(
+    (message: string) => {
+      toast({ title: "临时草稿提示", description: message, tone: "error", duration: 8000 });
+    },
+    [toast],
+  );
 
   /** 真正落库：PATCH 成功后把结果同步回目录树（不整树刷新，避免打断写作） */
   const persistChapter = React.useCallback(
     async (id: string, patch: ChapterPatch): Promise<void> => {
-      // 服务端会拒绝空白标题（400 章节标题不能为空），草稿里把标题清空时先剔除该字段
       const { title, ...rest } = patch;
-      const trimmedTitle = typeof title === "string" ? title.trim() : "";
-      const safePatch: ChapterPatch = trimmedTitle ? { ...rest, title: trimmedTitle } : rest;
-      // 只改了空白标题 → 没有可提交字段，直接跳过，避免无谓的 400
-      if (Object.keys(safePatch).length === 0) return;
-      const updated = await apiPatch<Partial<Chapter>>(`/api/chapters/${id}`, safePatch);
+      const trimmedTitle = title?.trim();
+      if (title !== undefined && !trimmedTitle) throw new Error("章节标题不能为空，请填写标题后保存。");
+      const safePatch: ChapterPatch = trimmedTitle === undefined ? rest : { ...rest, title: trimmedTitle };
+      const updated = await saveGuard.runExclusive(id, () =>
+        apiPatch<Partial<Chapter>>(`/api/chapters/${id}`, safePatch),
+      );
       actions.patchChapterLocal(id, {
         ...(updated ?? {}),
         ...safePatch,
         updatedAt: updated?.updatedAt ?? new Date().toISOString(),
       });
     },
-    [actions],
+    [actions, saveGuard],
   );
 
   const {
@@ -234,6 +233,10 @@ export function EditorWorkbench({ novelId, initialChapterId = null }: EditorWork
     saveState,
     lastSavedAt,
     hasUnsaved,
+    hasUnsavedNow,
+    recoveryDraft,
+    restoreRecovery,
+    discardRecovery,
     setTitle,
     setContent,
     setStatus,
@@ -245,10 +248,42 @@ export function EditorWorkbench({ novelId, initialChapterId = null }: EditorWork
     autoSave,
     onPersist: persistChapter,
     onError: onSaveError,
+    onRecoveryError,
   });
+
+  React.useEffect(() => saveGuard.register(flush), [saveGuard, flush]);
+
+  const saveChapter = React.useCallback(() => {
+    void flush().catch((error) => {
+      console.error("[yanfield] 手动保存失败:", error);
+    });
+  }, [flush]);
 
   // 切章瞬间 draft 还停留在上一章，用 chapterId 对齐后再驱动 UI，避免标题/字数闪一下
   const activeDraft = draft && chapter && draft.chapterId === chapter.id ? draft : null;
+  const activeRecovery = recoveryDraft && chapter && recoveryDraft.chapterId === chapter.id ? recoveryDraft : null;
+  const [discardRecoveryOpen, setDiscardRecoveryOpen] = React.useState(false);
+  const [discardRecoveryLoading, setDiscardRecoveryLoading] = React.useState(false);
+  React.useEffect(() => setDiscardRecoveryOpen(false), [chapterId]);
+  const useSavedVersion = React.useCallback(async () => {
+    if (!chapter || !activeRecovery) return;
+    setDiscardRecoveryLoading(true);
+    try {
+      const saved = await saveGuard.runExclusive(chapter.id, () => apiGet<Chapter>(`/api/chapters/${chapter.id}`));
+      adoptSaved(saved);
+      actions.patchChapterLocal(saved.id, saved);
+      discardRecovery();
+      setDiscardRecoveryOpen(false);
+    } catch (error) {
+      toast({
+        title: "读取已保存章节失败",
+        description: error instanceof Error ? error.message : "请稍后重试。",
+        tone: "error",
+      });
+    } finally {
+      setDiscardRecoveryLoading(false);
+    }
+  }, [chapter, activeRecovery, saveGuard, adoptSaved, actions, discardRecovery, toast]);
 
   /** 切换章节：先把当前章落库，再换；窄屏切换后自动收起目录抽屉 */
   const selectChapter = React.useCallback(
@@ -304,8 +339,8 @@ export function EditorWorkbench({ novelId, initialChapterId = null }: EditorWork
       }
       if(value.kind==="outline"||value.kind==="volume-outline"||value.kind==="blueprint") {setTab("outline");setLeftOpen(true);}
     };
-    window.addEventListener("yantian:agent-review",open);window.addEventListener("yantian:agent-navigate",navigate);
-    return()=>{window.removeEventListener("yantian:agent-review",open);window.removeEventListener("yantian:agent-navigate",navigate);};
+    window.addEventListener("yanfield:agent-review",open);window.addEventListener("yanfield:agent-navigate",navigate);
+    return()=>{window.removeEventListener("yanfield:agent-review",open);window.removeEventListener("yanfield:agent-navigate",navigate);};
   },[novelId,flush,setChapterId,actions,selectChapter,setTab,setLeftOpen]);
   // Applying from either the card or inline review must leave the author in the editable chapter.
   React.useEffect(()=>{
@@ -394,10 +429,17 @@ export function EditorWorkbench({ novelId, initialChapterId = null }: EditorWork
 
   const pathname = usePathname();
   const back = novelBackTarget(pathname, novelId);
-  /** 返回上一级：先保存，避免丢字 */
-  const goBack = React.useCallback(() => {
-    void flush().then(() => router.push(back.href)).catch(()=>{});
-  }, [flush, router, back.href]);
+  const navigate = React.useCallback((href: string) => {
+    void navigateAfterSaving(flush, () => router.push(href)).catch((error) => {
+      toast({
+        title: "未能离开写作台",
+        description: error instanceof Error ? error.message : "请检查保存状态后重试。",
+        tone: "error",
+      });
+    });
+  }, [flush, router, toast]);
+  const goBack = React.useCallback(() => navigate(back.href), [navigate, back.href]);
+  const goOverview = React.useCallback(() => navigate(`/novel/${novelId}`), [navigate, novelId]);
 
   /* ---------------- 快捷键 ---------------- */
 
@@ -411,13 +453,19 @@ export function EditorWorkbench({ novelId, initialChapterId = null }: EditorWork
     [isDesktop, setTab, setLeftOpen],
   );
 
+  React.useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (!isSaveShortcut(event)) return;
+      event.preventDefault();
+      event.stopPropagation();
+      saveChapter();
+    };
+    window.addEventListener("keydown", onKeyDown, true);
+    return () => window.removeEventListener("keydown", onKeyDown, true);
+  }, [saveChapter]);
+
   useHotkeys(
     {
-      // 立即保存
-      "mod+s": (event) => {
-        event.preventDefault();
-        void flush().catch(()=>{});
-      },
       // 聚焦 AI 输入框（Ctrl/Cmd+J 被浏览器占用为下载页，改用 Alt+J）
       "alt+j": (event) => {
         event.preventDefault();
@@ -478,12 +526,13 @@ export function EditorWorkbench({ novelId, initialChapterId = null }: EditorWork
   React.useEffect(() => {
     if (!hasUnsaved) return;
     const handleBeforeUnload = (event: BeforeUnloadEvent) => {
+      if (!hasUnsavedNow()) return;
       event.preventDefault();
       event.returnValue = "";
     };
     window.addEventListener("beforeunload", handleBeforeUnload);
     return () => window.removeEventListener("beforeunload", handleBeforeUnload);
-  }, [hasUnsaved]);
+  }, [hasUnsaved, hasUnsavedNow]);
 
   React.useEffect(() => {
     const openPanel = (event: Event) => {
@@ -495,11 +544,11 @@ export function EditorWorkbench({ novelId, initialChapterId = null }: EditorWork
       if (isWide) setRightOpen(true);
       else setDrawerRightOpen(true);
     };
-    window.addEventListener("yantian:editor-panel", openPanel);
-    window.addEventListener("yantian:hand-off", openAi);
+    window.addEventListener("yanfield:editor-panel", openPanel);
+    window.addEventListener("yanfield:hand-off", openAi);
     return () => {
-      window.removeEventListener("yantian:editor-panel", openPanel);
-      window.removeEventListener("yantian:hand-off", openAi);
+      window.removeEventListener("yanfield:editor-panel", openPanel);
+      window.removeEventListener("yanfield:hand-off", openAi);
     };
   }, [isWide, openLeftTab]);
 
@@ -533,13 +582,16 @@ export function EditorWorkbench({ novelId, initialChapterId = null }: EditorWork
             volumeTitle={volume?.title ?? null}
             title={title}
             wordCount={wordCount}
-            saveState={saveState}
+            saveState={activeRecovery ? "dirty" : saveState}
             lastSavedAt={lastSavedAt}
             immersive={immersive}
             leftCollapsed={isDesktop ? !leftOpen : !drawerLeftOpen}
             rightCollapsed={isWide ? !rightOpen : !drawerRightOpen}
             theme={theme}
             onBack={goBack}
+            onOverview={goOverview}
+            onSave={saveChapter}
+            canSave={Boolean(activeDraft) && !activeRecovery}
             backLabel={back.label}
             onToggleLeft={toggleLeft}
             onToggleRight={toggleRight}
@@ -598,10 +650,36 @@ export function EditorWorkbench({ novelId, initialChapterId = null }: EditorWork
               </div>
             ) : chapterMeta && !chapter ? (
               <p role="status" className="m-auto text-sm text-ink-4">正在加载正文…</p>
-            ) : chapter ? (
+            ) : chapter && !activeDraft ? (
+              <p role="status" className="m-auto text-sm text-ink-4">正在加载草稿…</p>
+            ) : chapter && activeRecovery ? (
+              <div className="flex h-full items-center justify-center">
+                <EmptyState
+                  icon={<Feather className="size-5" />}
+                  title="发现未保存的临时草稿"
+                  description="上次离开时未能确认保存。数据库内容可能已经变化；恢复后请核对，保存会覆盖当前章节。临时草稿只保存在此浏览器标签页中，不能代替备份。"
+                  action={
+                    <div className="flex flex-wrap justify-center gap-2">
+                      <Button variant="primary" onClick={restoreRecovery}>恢复临时草稿</Button>
+                      <Button variant="secondary" onClick={() => setDiscardRecoveryOpen(true)}>使用已保存版本</Button>
+                    </div>
+                  }
+                />
+                <ConfirmDialog
+                  open={discardRecoveryOpen}
+                  title="丢弃临时草稿？"
+                  description="临时草稿将被删除，无法撤销；数据库中已保存的章节不会改变。"
+                  confirmText="丢弃草稿"
+                  danger
+                  loading={discardRecoveryLoading}
+                  onClose={() => setDiscardRecoveryOpen(false)}
+                  onConfirm={() => void useSavedVersion()}
+                />
+              </div>
+            ) : chapter && activeDraft ? (
               <EditorCanvas
                 chapterId={chapter.id}
-                initialContent={chapter.content}
+                initialContent={activeDraft.content}
                 title={title}
                 status={status}
                 wordCount={wordCount}
@@ -627,6 +705,7 @@ export function EditorWorkbench({ novelId, initialChapterId = null }: EditorWork
                 onSelectionChange={setSelection}
                 onAskAi={requestAiFocus}
                 onExitImmersive={exitImmersive}
+                onSave={saveChapter}
                 review={review}
                 onCloseReview={()=>setReview(null)}
                 aiBar={

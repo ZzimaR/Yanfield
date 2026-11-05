@@ -365,8 +365,8 @@ export function AiPanel({
   }, [activeKey]);
   React.useEffect(() => {
     const focusComposer = () => setFocusSignal((value) => value + 1);
-    window.addEventListener("yantian:editor-focus-ai", focusComposer);
-    return () => window.removeEventListener("yantian:editor-focus-ai", focusComposer);
+    window.addEventListener("yanfield:editor-focus-ai", focusComposer);
+    return () => window.removeEventListener("yanfield:editor-focus-ai", focusComposer);
   }, []);
 
   const scrollRef = React.useRef<HTMLDivElement | null>(null);

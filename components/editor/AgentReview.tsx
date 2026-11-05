@@ -38,7 +38,7 @@ export function AgentReview({initial,changeId,onClose}:{initial:AgentRun;changeI
         const result=await commitAgent(run,{selections:[{id:change.id,blocks}]},bridge);
         const saved=result.changes.find(c=>c.id===change.id);
         const id=saved?.appliedId||saved?.targetId;
-        if(id)window.dispatchEvent(new CustomEvent("yantian:agent-navigate",{detail:{kind:"chapter",id}}));
+        if(id)window.dispatchEvent(new CustomEvent("yanfield:agent-navigate",{detail:{kind:"chapter",id}}));
       }else{
         const result=await apiPatch<AgentRun>(`/api/ai/agent/${run.id}`,{op:"reject",changeId:change.id,novelId:run.novelId});
         broadcastRun(result);notifyDataChanged("agent");

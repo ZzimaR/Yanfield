@@ -2,7 +2,7 @@
 
 /**
  * 编辑器桥：让 AI 面板 / 工具栏在不直接依赖 Tiptap 实例的情况下操作正文。
- * Editor 队友在编辑器组件里创建 bridge 并注入 Provider；其余面板用 useEditorBridge()。
+ * 编辑器组件里创建 bridge 并注入 Provider；其余面板用 useEditorBridge()。
  */
 import * as React from "react";
 

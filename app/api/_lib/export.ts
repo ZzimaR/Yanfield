@@ -3,6 +3,8 @@
  */
 import type { Chapter, Novel, Volume } from "@/lib/types";
 import { stripHtml } from "@/lib/ui/cn";
+import TurndownService from "turndown";
+import { looksLikeHtml, textToHtml } from "./text";
 
 export type ExportFormat = "md" | "txt";
 export type ExportScope = "book" | "volume" | "chapter";
@@ -27,6 +29,26 @@ export interface ExportResult {
 }
 
 const SCOPE_LABEL: Record<ExportScope, string> = { book: "全书", volume: "分卷", chapter: "单章" };
+
+const markdownConverter = new TurndownService({
+  headingStyle: "atx",
+  codeBlockStyle: "fenced",
+  bulletListMarker: "-",
+  emDelimiter: "*",
+  hr: "---",
+});
+markdownConverter.addRule("strike", {
+  filter: (node) => ["DEL", "S", "STRIKE"].includes(node.nodeName),
+  replacement: (content) => `~~${content}~~`,
+});
+markdownConverter.addRule("underline", {
+  filter: "u",
+  replacement: (content) => `<u>${content}</u>`,
+});
+markdownConverter.addRule("highlight", {
+  filter: "mark",
+  replacement: (content) => `<mark>${content}</mark>`,
+});
 
 export function asExportFormat(value: string | null | undefined): ExportFormat {
   return value === "txt" ? "txt" : "md";
@@ -58,6 +80,12 @@ function plain(html: string): string {
     .trim();
 }
 
+function markdown(content: string): string {
+  if (!content.trim()) return "";
+  const isHtml = looksLikeHtml(content) || /<(?:hr|pre|code|u|s|del|mark)\b[^>]*>/i.test(content);
+  return markdownConverter.turndown(isHtml ? content : textToHtml(content)).trim();
+}
+
 function heading(text: string, level: number, format: ExportFormat): string {
   return format === "md" ? `${"#".repeat(level)} ${text}` : text;
 }
@@ -68,7 +96,7 @@ export function buildExport(input: ExportInput): ExportResult {
 
   const chapterBlock = (chapter: Chapter, level: number): void => {
     lines.push(heading(chapter.title, level, format));
-    const text = plain(chapter.content);
+    const text = format === "md" ? markdown(chapter.content) : plain(chapter.content);
     if (text) lines.push("", text);
     lines.push("");
   };
@@ -118,13 +146,13 @@ export function buildExport(input: ExportInput): ExportResult {
     const chapter = volumes.flatMap((group) => group.chapters)[0] ?? looseChapters[0];
     if (chapter) {
       lines.push(heading(chapter.title, 2, format));
-      const text = plain(chapter.content);
+      const text = format === "md" ? markdown(chapter.content) : plain(chapter.content);
       if (text) lines.push("", text);
       lines.push("");
     }
   }
 
-  const body = `${lines.join("\n").replace(/\n{3,}/g, "\n\n").trim()}\n`;
+  const body = `${lines.join("\n").trim()}\n`;
   return {
     body,
     fileName: `${safeFileName(novel.title)}-${SCOPE_LABEL[scope]}-${dateStamp()}.${format}`,
