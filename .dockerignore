@@ -25,6 +25,7 @@ data
 # 文档与截图不参与运行
 docs
 recon
+video
 
 # 编辑器 / 系统杂项
 .vscode
