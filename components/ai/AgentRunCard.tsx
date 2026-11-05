@@ -77,7 +77,7 @@ export function AgentRunCard({runId,novelId,initial,disabled=false,onContinue}:{
   const selected=pending.filter(c=>picked[c.id]!==false);
   const openTarget=(target:AgentReference & {changeId?:string})=>{
     const candidate=run.changes.find(c=>c.id===(target.changeId||target.id));
-    if(candidate && !candidate.appliedId){
+    if(candidate && (!candidate.appliedId||candidate.op==="delete")){
       if(candidate.kind==="chapter"){openAgentReview(run,candidate.id);return;}
       setMaterialsOpen(true);setFocusedMaterial(candidate.id);setExpanded(candidate.id);return;
     }
@@ -112,8 +112,8 @@ export function AgentRunCard({runId,novelId,initial,disabled=false,onContinue}:{
     </div>
     {materials.length?<div className="border-t border-line/60 bg-paper/25 px-4 py-3.5">
       <button type="button" className="mb-2.5 flex w-full items-center gap-2 text-left text-[11px] text-ink-3" aria-expanded={materialsOpen} onClick={()=>setMaterialsOpen(!materialsOpen)}><Layers3 className="size-3.5 text-jade"/><span>{materials.some(c=>c.state==="pending")?"资料待确认":"资料改动"} · {materials.length} 项</span><ChevronDown className={`ml-auto size-3 transition-transform ${materialsOpen?"rotate-180":""}`}/></button>
-      <div className="flex flex-wrap gap-1.5">{materials.map(c=><button key={c.id} type="button" onClick={()=>openTarget({kind:c.kind,id:c.targetId||c.id,title:c.title,changeId:c.id})} className={`max-w-full truncate rounded-lg border px-2 py-1.5 text-[11px] transition-colors hover:border-jade/40 ${entityTone(c.kind)}`}><span className="mr-1.5 opacity-70">{ENTITY_LABEL[c.kind]}</span>{c.title}</button>)}</div>
-      <p className="mt-2 text-[10px] leading-relaxed text-ink-4">新建 {materials.filter(c=>!c.before).length} · 更新 {materials.filter(c=>c.before).length}　{materials.some(c=>c.state==="pending")?"点击资料查看内容与依据，确认后加入资料库。":"已应用的资料可打开继续编辑。"}</p>
+      <div className="flex flex-wrap gap-1.5">{materials.map(c=><button key={c.id} type="button" onClick={()=>openTarget({kind:c.kind,id:c.targetId||c.id,title:c.title,changeId:c.id})} className={`max-w-full truncate rounded-lg border px-2 py-1.5 text-[11px] transition-colors hover:border-jade/40 ${c.op==="delete"?"border-danger/25 bg-danger/5 text-danger":entityTone(c.kind)}`}><span className="mr-1.5 opacity-70">{c.op==="delete"?"删除":ENTITY_LABEL[c.kind]}</span>{c.title}</button>)}</div>
+      <p className="mt-2 text-[10px] leading-relaxed text-ink-4">{[`新建 ${materials.filter(c=>!c.before).length}`,`更新 ${materials.filter(c=>c.before&&!c.op).length}`,...(materials.some(c=>c.op==="delete")?[`删除 ${materials.filter(c=>c.op==="delete").length}`]:[])].join(" · ")}　{materials.some(c=>c.state==="pending")?"点击资料查看内容与依据，确认后加入资料库。":"已应用的资料可打开继续编辑。"}</p>
     </div>:null}
     {run.changes.filter(c=>c.kind==="chapter"||materialsOpen).map(c=>{
       const isPending=c.state==="pending",isChapter=c.kind==="chapter";
@@ -122,7 +122,7 @@ export function AgentRunCard({runId,novelId,initial,disabled=false,onContinue}:{
         <div className="flex items-center gap-2">
           {isPending?<input aria-label={`选择${c.title}`} type="checkbox" checked={picked[c.id]!==false} disabled={busy||running||disabled} onChange={e=>setPicked(p=>({...p,[c.id]:e.target.checked}))}/>:<Check className="size-3 text-jade"/>}
           <button type="button" className="min-w-0 flex-1 truncate text-left font-serif text-[16px] tracking-[0.035em] text-ink" onClick={()=>setExpanded(expanded===c.id?null:c.id)}>{c.title||ENTITY_LABEL[c.kind]}</button>
-          <span className="shrink-0 text-[10px] text-ink-3">{ENTITY_LABEL[c.kind]} · {c.state==="applied"?"已应用":c.state==="reverted"?"已撤回":c.state==="rejected"?"已丢弃":c.before?"修改":"新建"}</span>
+          <span className="shrink-0 text-[10px] text-ink-3">{ENTITY_LABEL[c.kind]} · {c.state==="applied"?(c.op==="delete"?"已删除":"已应用"):c.state==="reverted"?"已撤回":c.state==="rejected"?"已丢弃":c.op==="delete"?<span className="text-danger">删除整条</span>:c.before?"修改":"新建"}</span>
         </div>
         {isChapter?<>
           <div className="my-2 flex items-center justify-between text-[10px] text-ink-4"><span>{run.model}</span><span>{countWords(String(c.after.content||""))} 字</span></div>
@@ -130,6 +130,11 @@ export function AgentRunCard({runId,novelId,initial,disabled=false,onContinue}:{
           <button type="button" className="my-2 flex w-full items-center justify-center gap-1 text-[11px] text-ink-3" onClick={()=>setExpanded(expanded===c.id?null:c.id)}><ChevronDown className="size-3"/>{expanded===c.id?"收起":"展开全文"}</button>
           {c.state==="applied"?<Button className="w-full justify-center border-accent/20 bg-accent/5 py-2 text-accent hover:bg-accent/10" size="sm" variant="secondary" icon={<BookOpen className="size-3"/>} disabled={running||busy||disabled} onClick={()=>openTarget({kind:"chapter",id:c.appliedId||c.targetId||c.id,title:c.title,changeId:c.id})}>打开正文 · 继续编辑</Button>:null}
           <Button className="mt-1 w-full justify-center" size="sm" variant="ghost" disabled={running||busy||disabled} onClick={()=>openAgentReview(run,c.id)}>{isPending?"在正文中审阅改动":"查看历史改动"}</Button>
+        </>:c.op==="delete"?<>
+          <div className="mt-3 rounded-xl border border-danger/20 bg-danger/[0.03] p-3 opacity-80"><MaterialPreview kind={c.kind as "character"|"world"|"foreshadow"} fields={c.before??{}} showTitle={false}/></div>
+          <p className="mt-2 text-[11px] leading-relaxed text-ink-4">{c.reason}</p>
+          <p className="mt-1.5 text-[11px] leading-relaxed text-danger/90">{isPending?"应用后会从资料库删除这整条资料；如有误可用「撤回本轮」恢复。":c.state==="applied"?"已从资料库删除，可用「撤回本轮」恢复。":""}</p>
+          {isPending&&c.targetId?<button type="button" className="mt-2 inline-flex items-center gap-1 text-[11px] text-accent" onClick={()=>window.dispatchEvent(new CustomEvent("yantian:open-card",{detail:{kind:c.kind,id:c.targetId,novelId:run.novelId}}))}><FolderOpen className="size-3"/>打开原资料</button>:null}
         </>:<>
           {["character","world","foreshadow"].includes(c.kind)?<div className="mt-3 rounded-xl border border-line/65 bg-paper/25 p-3"><MaterialPreview kind={c.kind as "character"|"world"|"foreshadow"} fields={{...c.before,...c.after}} showTitle={false}/></div>:null}
           <p className="mt-2 text-[11px] leading-relaxed text-ink-4">{c.reason}</p>
@@ -140,7 +145,7 @@ export function AgentRunCard({runId,novelId,initial,disabled=false,onContinue}:{
             <label className="mb-1.5 flex items-center gap-1.5 text-[11px] text-ink-3">{isPending?<input type="checkbox" checked={chosen.includes(key)} disabled={busy||running||disabled} onChange={e=>setFields(p=>({...p,[c.id]:e.target.checked?[...chosen,key]:chosen.filter(k=>k!==key)}))}/>:null}{FIELD_LABEL[key]||key}</label>
             {c.before?<FieldChange before={c.before[key]} after={c.after[key]}/>:<p className="whitespace-pre-wrap rounded-lg border-l-2 border-jade/25 bg-jade/[0.035] px-3 py-2 text-[12px] leading-[1.85] text-ink-2">{display(c.after[key])}</p>}</div>)}</div>:null}
         </>}
-        {isPending?<div className="mt-2 flex items-center gap-2"><button type="button" className="text-[10px] text-ink-4 hover:text-danger" disabled={running||busy||disabled} onClick={()=>void mutate(()=>apiPatch<AgentRun>(`/api/ai/agent/${run.id}`,{op:"reject",changeId:c.id,novelId:run.novelId}))}>丢弃此项</button>{!isChapter?<Button className="ml-auto" size="sm" disabled={running||busy||disabled||!chosen.length} onClick={()=>void apply([c])}>应用此项</Button>:null}</div>:null}
+        {isPending?<div className="mt-2 flex items-center gap-2"><button type="button" className="text-[10px] text-ink-4 hover:text-danger" disabled={running||busy||disabled} onClick={()=>void mutate(()=>apiPatch<AgentRun>(`/api/ai/agent/${run.id}`,{op:"reject",changeId:c.id,novelId:run.novelId}))}>丢弃此项</button>{!isChapter?<Button className={`ml-auto ${c.op==="delete"?"text-danger":""}`} size="sm" disabled={running||busy||disabled||(!c.op&&!chosen.length)} onClick={()=>void apply([c])}>{c.op==="delete"?"确认删除":"应用此项"}</Button>:null}</div>:null}
       </div>;
     })}
     {error||run.error?<p role="alert" className="mx-3 mb-3 rounded bg-danger/5 p-2 text-[11px] leading-relaxed text-danger"><CircleAlert className="mr-1 inline size-3"/>{error||run.error}</p>:null}
@@ -159,7 +164,7 @@ export function AgentRunCard({runId,novelId,initial,disabled=false,onContinue}:{
     </details>:null}
     {!running && run.summary.trim() && run.summary.trim()!==run.progress?.at(-1)?.text?<Markdown text={run.summary} className="break-words border-t border-line/60 px-4 py-3 text-[13px] leading-[1.9] text-ink-2"/>:null}
     {!running?<div className="flex flex-wrap items-center gap-2 border-t border-line/70 bg-paper/35 px-4 py-3">
-      {pending.length?<Button variant="primary" size="sm" className="min-h-9 flex-1 justify-center shadow-none" loading={busy} disabled={disabled||!selected.length||selected.some(c=>fields[c.id]?.length===0)} onClick={()=>void apply(selected)}>应用选中的 {selected.length} 项</Button>:null}
+      {pending.length?<Button variant="primary" size="sm" className="min-h-9 flex-1 justify-center shadow-none" loading={busy} disabled={disabled||!selected.length||selected.some(c=>fields[c.id]?.length===0)} onClick={()=>void apply(selected)}>应用选中的 {selected.length} 项{selected.some(c=>c.op==="delete")?`（含删除 ${selected.filter(c=>c.op==="delete").length}）`:""}</Button>:null}
       {applied.length?<Button size="sm" variant="ghost" disabled={disabled||busy} icon={<RotateCcw className="size-3"/>} onClick={()=>void mutate(()=>commitAgent(run,{op:"undo"},bridge))}>撤回本轮</Button>:null}
       {onContinue?<button type="button" className="text-[11px] text-ink-3 hover:text-accent" disabled={busy||disabled} onClick={()=>onContinue("请基于上轮候选继续修改：")}>继续修改</button>:null}
     </div>:null}

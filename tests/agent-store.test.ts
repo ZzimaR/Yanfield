@@ -98,3 +98,55 @@ describe("Agent 暂存、应用和安全撤回",()=>{
     expect(()=>store.applyChanges(run2.id,[{id:c2.id}])).toThrow("循环");
   });
 });
+
+describe("Agent 删除整条资料",()=>{
+  it("删除暂存不落库，应用后删除，撤回以原 id 和时间恢复",()=>{
+    const item=repo.createWorld(novelId,{title:"铜钥匙",category:"item",importance:"high",summary:"开闸用"});
+    const run=task(),c=store.proposeDelete(run,"world",item.id,"已不再出现");
+    expect(c.op).toBe("delete");
+    expect(repo.getWorld(item.id)).toBeDefined();
+    const result=store.applyChanges(run.id,[{id:c.id}]);
+    expect(result.changes.find(x=>x.id===c.id)?.state).toBe("applied");
+    expect(repo.getWorld(item.id)).toBeUndefined();
+    store.undoChanges(run.id);
+    const back=repo.getWorld(item.id);
+    expect(back?.title).toBe("铜钥匙");
+    expect(back?.importance).toBe("high");
+    expect(back?.createdAt).toBe(item.createdAt);
+    expect(back?.updatedAt).toBe(item.updatedAt);
+  });
+  it("有子设定的父级不能单独删除；同批先删子级再删父级，撤回先恢复父级",()=>{
+    const parent=repo.createWorld(novelId,{title:"渡口区"});
+    const child=repo.createWorld(novelId,{title:"渡口小路",parentId:parent.id,category:"geography"});
+    expect(()=>store.proposeDelete(task(),"world",parent.id,"删父")).toThrow("子设定");
+    const run=task();
+    const a=store.proposeDelete(run,"world",child.id,"删子");
+    const b=store.proposeDelete(run,"world",parent.id,"删父");
+    store.applyChanges(run.id,[{id:b.id},{id:a.id}]);
+    expect(repo.getWorld(parent.id)).toBeUndefined();
+    expect(repo.getWorld(child.id)).toBeUndefined();
+    store.undoChanges(run.id);
+    expect(repo.getWorld(parent.id)?.title).toBe("渡口区");
+    expect(repo.getWorld(child.id)?.parentId).toBe(parent.id);
+  });
+  it("待删除时拒绝再修改，删除会作废同卡待定修改；人工改动后删除会被拦下",()=>{
+    const ch=repo.createCharacter(novelId,{name:"阿七",identity:"船工"});
+    const run=task();
+    const edit=store.propose(run,"character",ch.id,{identity:"船老大"},"升职");
+    const del=store.proposeDelete(run,"character",ch.id,"并入他人");
+    expect(store.getRun(run.id).changes.find(x=>x.id===edit.id)?.state).toBe("rejected");
+    expect(()=>store.propose(run,"character",ch.id,{identity:"水手"},"再改")).toThrow("删除");
+    repo.updateCharacter(ch.id,{identity:"作者刚改"});
+    expect(()=>store.applyChanges(run.id,[{id:del.id}])).toThrow("已有修改");
+    expect(repo.getCharacter(ch.id)?.identity).toBe("作者刚改");
+  });
+  it("不能删除章节和大纲",()=>{
+    const chapter=repo.createChapter(novelId,{title:"不可删"});
+    expect(()=>store.proposeDelete(task(),"chapter",chapter.id,"删章")).toThrow("只能删除");
+  });
+  it("重要程度默认中，可修改",()=>{
+    const w=repo.createWorld(novelId,{title:"旧船票",category:"item"});
+    expect(w.importance).toBe("medium");
+    expect(repo.updateWorld(w.id,{importance:"low"}).importance).toBe("low");
+  });
+});

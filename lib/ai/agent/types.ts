@@ -5,6 +5,8 @@ export type Fields = Record<string, unknown>;
 export interface AgentChange {
   id: string;
   kind: EntityKind;
+  /** Omitted for create/update. Delete only targets saved characters, settings and foreshadows. */
+  op?: "delete";
   targetId: string | null;
   title: string;
   reason: string;

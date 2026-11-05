@@ -72,7 +72,8 @@ export function propose(
   visibility?: { chapterIndex: number | null; explicitlyReferenced: boolean },
 ): AgentChange {
   const after = validatePatch(kind,patch);
-  const existing = run.changes.find(c=>c.kind===kind && c.targetId===targetId && c.state==="pending" && (targetId || c.title === title));
+  if (targetId && run.changes.some(c=>c.op==="delete" && c.kind===kind && c.targetId===targetId && c.state==="pending")) throw new ApiError("这张资料已有待确认的删除；如需改为修改，请先丢弃删除候选",409);
+  const existing = run.changes.find(c=>!c.op && c.kind===kind && c.targetId===targetId && c.state==="pending" && (targetId || c.title === title));
   let before: Fields | null = existing?.before ?? null;
   const dependency = targetId ? run.changes.find(c=>c.id===targetId && c.kind==="chapter" && !c.targetId) : undefined;
   if (targetId && !dependency && !existing) {
@@ -91,6 +92,68 @@ export function propose(
   if (!existing) run.changes.push(change);
   saveRun(run);
   return change;
+}
+
+export const DELETABLE_KINDS = ["character","world","foreshadow"] as const;
+type DeletableKind = typeof DELETABLE_KINDS[number];
+const isDeletable = (kind: EntityKind): kind is DeletableKind => (DELETABLE_KINDS as readonly string[]).includes(kind);
+
+/** A world card with children would cascade-delete them, so children must be removed first or in the same batch. */
+function assertDeletable(kind: EntityKind, id: string, novelId: string, alsoDeleting: Set<string> = new Set()): void {
+  if (kind !== "world") return;
+  const children = repo.listWorld(novelId).filter(w=>w.parentId===id && !alsoDeleting.has(w.id));
+  if (children.length) throw new ApiError(`「${repo.getWorld(id)?.title||"该设定"}」下还有子设定（${children.slice(0,3).map(w=>w.title).join("、")}${children.length>3?"等":""}），请先删除或移走子设定`,409);
+}
+
+/** Deletion is staged like any edit: the full saved row is kept as `before` for version checks and undo. */
+export function proposeDelete(
+  run: AgentRun,
+  kind: EntityKind,
+  targetId: string,
+  reason: string,
+  visibility?: { chapterIndex: number | null; explicitlyReferenced: boolean },
+): AgentChange {
+  if (!isDeletable(kind)) throw new ApiError("只能删除角色、设定或伏笔条目；正文与大纲请用修改",400);
+  const before = visibleEntity(kind,targetId,run.novelId,visibility?.chapterIndex,visibility?.explicitlyReferenced);
+  if (!before) throw new ApiError("要删除的资料不存在",404);
+  const pendingDeletes = new Set(run.changes.filter(c=>c.op==="delete"&&c.state==="pending"&&c.kind==="world").map(c=>c.targetId!));
+  assertDeletable(kind,targetId,run.novelId,pendingDeletes);
+  const existing = run.changes.find(c=>c.op==="delete" && c.kind===kind && c.targetId===targetId && c.state==="pending");
+  if (existing) { existing.reason = reason; saveRun(run); return existing; }
+  // A deletion supersedes any pending edit of the same card in this run.
+  for (const c of run.changes) if (!c.op && c.kind===kind && c.targetId===targetId && c.state==="pending") c.state="rejected";
+  const change: AgentChange = {id:uid("change"),op:"delete",kind,targetId,title:String(before.title||before.name||""),reason,before,after:{},state:"pending"};
+  run.changes.push(change);
+  saveRun(run);
+  return change;
+}
+
+function worldDepth(id: string | null, novelId: string): number {
+  let depth = 0;
+  const seen = new Set<string>();
+  let current = id ? repo.getWorld(id) : undefined;
+  while (current?.parentId && !seen.has(current.id) && current.novelId===novelId) {
+    seen.add(current.id); depth++; current = repo.getWorld(current.parentId);
+  }
+  return depth;
+}
+
+function restoreDeleted(change: AgentChange, novelId: string): void {
+  const row = change.before!;
+  if (readEntity(change.kind,change.appliedId!,novelId)) throw new ApiError(`「${change.title}」已重新存在，不能重复恢复`,409);
+  const keep = {id:change.appliedId!,createdAt:String(row.createdAt),updatedAt:String(row.updatedAt)};
+  const {id: _id, novelId: _novel, createdAt: _created, updatedAt: _updated, ...fields} = row;
+  if (change.kind==="world") {
+    if (fields.parentId && repo.getWorld(String(fields.parentId))?.novelId!==novelId) throw new ApiError(`「${change.title}」的父级设定已不存在，不能恢复`,409);
+    repo.createWorld(novelId,fields as Parameters<typeof repo.createWorld>[1],keep);
+  } else if (change.kind==="character") repo.createCharacter(novelId,fields as Parameters<typeof repo.createCharacter>[1],keep);
+  else repo.createForeshadow(novelId,fields as Parameters<typeof repo.createForeshadow>[1],keep);
+}
+
+function deleteEntity(kind: EntityKind, id: string): void {
+  if (kind==="world") repo.deleteWorld(id);
+  else if (kind==="character") repo.deleteCharacter(id);
+  else if (kind==="foreshadow") repo.deleteForeshadow(id);
 }
 
 function validateLinks(kind: EntityKind, patch: Fields, novelId: string, targetId: string | null): void {
@@ -134,7 +197,14 @@ export function applyChanges(id: string, selections: {id:string; fields?:string[
     const value = getRun(id);
     if (value.status==="running") throw new ApiError("任务还在运行",409);
     const seen = new Set<string>();
-    for (const choice of selections) {
+    const depth = (choice: {id:string}) => {
+      const change = value.changes.find(c=>c.id===choice.id);
+      return change?.op==="delete" ? 1 + (change.kind==="world" ? worldDepth(change.targetId,value.novelId) : 0) : 0;
+    };
+    // Edits first, then deletions with the deepest settings first so parents never cascade over pending children.
+    const ordered = selections.map((choice,index)=>({choice,index,depth:depth(choice)}))
+      .sort((a,b)=>(a.depth===0?0:1)-(b.depth===0?0:1) || b.depth-a.depth || a.index-b.index).map(x=>x.choice);
+    for (const choice of ordered) {
       if (seen.has(choice.id)) throw new ApiError("改动重复",400);
       seen.add(choice.id);
       const change = value.changes.find(c=>c.id===choice.id);
@@ -145,6 +215,14 @@ export function applyChanges(id: string, selections: {id:string; fields?:string[
       const target = dependency ? dependency.appliedId : change.targetId;
       if (dependency && !target) throw new ApiError("请先应用新章，再应用它的章纲",400);
       const current = target ? readEntity(change.kind,target,value.novelId) : null;
+      if (change.op==="delete") {
+        if (!current) throw new ApiError(`「${change.title}」已经不存在，无需再删除`,409);
+        if (!sameFields(current,change.before)) throw new ApiError(`「${change.title}」在生成后已有修改，请核对后重新生成`,409);
+        assertDeletable(change.kind,target!,value.novelId);
+        deleteEntity(change.kind,target!);
+        change.saved=change.before!; change.appliedId=target!; change.state="applied";
+        continue;
+      }
       if (!sameFields(current,change.before)) throw new ApiError(`「${change.title}」在生成后已有修改，请核对后重新生成`,409);
       const keys = choice.fields ?? Object.keys(change.after);
       if (!keys.length || keys.some(k=>!Object.hasOwn(change.after,k))) throw new ApiError("所选字段无效",400);
@@ -185,8 +263,10 @@ export function applyChanges(id: string, selections: {id:string; fields?:string[
 export function undoChanges(id: string): AgentRun {
   return tx(()=>{
     const value=getRun(id);
+    const deleted:AgentChange[]=[];
     for (const c of [...value.changes].reverse()) {
       if (c.state!=="applied" || !c.appliedId) continue;
+      if (c.op==="delete") { deleted.push(c); continue; }
       if (!sameFields(readEntity(c.kind,c.appliedId,value.novelId),c.saved)) throw new ApiError(`「${c.title}」已有后续修改，不能覆盖撤回`,409);
       if (c.before) {
         const patch=Object.fromEntries(Object.keys(c.after).map(k=>[k,c.before![k]]));
@@ -206,6 +286,13 @@ export function undoChanges(id: string): AgentRun {
         else if(c.kind==="outline") sql("DELETE FROM novel_outlines WHERE novel_id=?",[c.appliedId]);
         else sql("DELETE FROM volume_outlines WHERE volume_id=?",[c.appliedId]);
       }
+      c.state="reverted";
+    }
+    // Restore deleted settings parent-first; anything left over has a parent that no longer exists.
+    while (deleted.length) {
+      const index=deleted.findIndex(c=>c.kind!=="world" || !c.before?.parentId || !deleted.some(d=>d.appliedId===c.before!.parentId));
+      const [c]=deleted.splice(index<0?0:index,1);
+      restoreDeleted(c,value.novelId);
       c.state="reverted";
     }
     saveRun(value); return value;

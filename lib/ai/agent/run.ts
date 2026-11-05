@@ -12,7 +12,7 @@ import { trimChatHistory } from "@/lib/ai/history";
 import { agentPreamble, extractJson } from "@/lib/ai/prompts";
 import { countWords, estimateTokens, stripHtml, uid } from "@/lib/ui/cn";
 import { ApiError } from "@/lib/api-utils";
-import { getRun, propose, readEntity, saveRun, visibleEntity } from "./store";
+import { getRun, propose, proposeDelete, readEntity, saveRun, visibleEntity } from "./store";
 import { patchSchemas, proseHtml, sameFields } from "./schema";
 import { ENTITY_LABEL, type AgentRequest, type AgentRun, type AgentStep, type EntityKind, type Fields } from "./types";
 import type { AiStreamEvent } from "@/lib/types";
@@ -21,7 +21,7 @@ import { flattenChapters, isAiVisibleAtChapter } from "@/lib/ai/context";
 
 const kinds=z.enum(["chapter","blueprint","character","world","foreshadow","outline","volume-outline"]);
 const IMPORTANCE_RANK={high:0,medium:1,low:2} as const;
-const decisionSchema=z.object({message:z.string(),calls:z.array(z.object({name:z.enum(["workspace","list","read","propose","write_chapter","reject_change","read_archive"]),args:z.record(z.string(),z.unknown())})).max(12).default([]),done:z.boolean().default(false)});
+const decisionSchema=z.object({message:z.string(),calls:z.array(z.object({name:z.enum(["workspace","list","read","propose","delete","write_chapter","reject_change","read_archive"]),args:z.record(z.string(),z.unknown())})).max(12).default([]),done:z.boolean().default(false)});
 const SYSTEM=`你是砚田写作台的执行助手。理解作者的目标，按需读取材料、调用写手和提出可审阅修改。普通讨论直接回答，明确修改请求必须产出实际候选，不能只说“可以”。
 每轮最多12个工具调用，批量读取可分轮执行。只输出标准JSON，不输出DSML、XML、工具标签或Markdown围栏：{"message":"简短执行说明或最终答复","calls":[{"name":"工具名","args":{}}],"done":false}。完成时calls为空、done=true。
 工具：
@@ -29,6 +29,7 @@ workspace {}：作品基本资料、文风、卷章目录和资料目录。建�
 list {kind,query?,offset?,limit?}：offset默认0，limit默认30、最多60；返回数量达到limit时可增加offset继续读取。搜索角色/设定/伏笔/正文/章纲目录，kind为chapter|blueprint|character|world|foreshadow。
 read {kind,id,offset?,limit?}：读指定对象。kind还可为outline（id=novelId）、volume-outline（id=volumeId）。长正文按contentOffset/contentLimit分页（默认12000字符），不要把摘要当全文。读取优先返回本轮候选。AI 隐藏的资料不可读取；未揭示资料仅在作者本轮明确引用时可读，且不能提前写入正文。
 propose {kind,id?,fields,reason,title?}：暂存新建/修改，只填要改的字段，空串表示明确清空。修改前必须read，不能伪造id。新章的章纲id可填write_chapter返回的changeId。新建角色用name、role、identity、appearance、personality、goals、secrets、arc、speechStyle、currentState、gender、age、aliases、tags；设定用title、category(power/geography/faction/item/rule/history/custom)、importance(high/medium/low，剧情重要程度)、summary、content、parentId、tags；伏笔用title、description、notes、status(planted/advanced/paid/dropped)。
+delete {kind,id,reason}：暂存删除整条角色/设定/伏笔（kind为character|world|foreshadow），等待作者确认。只在作者明确要求删除、或已确认是重复/合并的卡片时使用；删除前必须read。作者说“删掉这个条目/这张卡”时用delete，不要用propose把字段清空代替；只要求删卡里某段内容时才用propose。有子设定的设定须先删除或移走子设定。
 章纲字段goal,pov,conflict,emotionalArc,scenes[{id,title,summary,purpose,characters:[],location,emotion}],plotPoints:[],hooks:[],targetWords,notes。总纲字段premise,theme,tone,mainPlot,subplots:[],characterArcs:[{character,arc}],worldRules:[],ending,hooks:[]。卷纲summary,arcGoal,keyEvents:[],foreshadowPlan:[]。
 write_chapter {id?,title?,volumeId?,instruction,words?,mode?}：调用写手流式生成正文，自动暂存，返回changeId、实际字数。新章不传id；改现有章必须先read。mode为rewrite（默认）、append、selection。selection仅改作者当前选中段落。沿用作者要求和指定文风，不要擅自默认追加600字。
 read_archive {chapterId}：读取指定章节的故事档案（含状态），不能把stale档案当最新事实。
@@ -67,7 +68,7 @@ export async function* runAgent(request: AgentRequest, signal?: AbortSignal): As
   if(request.previousRunId) {
     previous=getRun(request.previousRunId);
     if(previous.novelId!==novel.id) throw new ApiError("任务不属于该作品",400);
-    messages.push({role:"user",content:JSON.stringify({previousRun:{id:previous.id,summary:previous.summary,changes:previous.changes.map(c=>({id:c.id,kind:c.kind,targetId:c.appliedId||c.targetId,title:c.title,state:c.state,changedFields:Object.keys(c.after)}))}})});
+    messages.push({role:"user",content:JSON.stringify({previousRun:{id:previous.id,summary:previous.summary,changes:previous.changes.map(c=>({id:c.id,...(c.op?{op:c.op}:{}),kind:c.kind,targetId:c.appliedId||c.targetId,title:c.title,state:c.state,changedFields:Object.keys(c.after)}))}})});
   }
   run.materialPolicy=automaticMaterialPolicy(request.message,previous,selection);
   if(previous)messages.push({role:"user",content:JSON.stringify({automaticMaterialExtraction:run.materialPolicy,restriction:"skip表示本轮不自动回填资料；继续遵守作者明确限制，不擅自恢复整理"})});
@@ -126,7 +127,7 @@ export async function* runAgent(request: AgentRequest, signal?: AbortSignal): As
   const read=(kind:EntityKind,id:string):Fields|null=>{
     permitted(kind,id);
     const candidate=run.changes.find(c=>c.kind===kind && c.state==="pending" && (c.id===id || c.targetId===id)) || previous?.changes.find(c=>c.id===id&&c.kind===kind&&c.state==="pending");
-    if(candidate) return candidateContext(candidate);
+    if(candidate) return candidate.op==="delete"?{...candidateContext(candidate),pendingDelete:true}:candidateContext(candidate);
     const explicitlyReferenced=request.mentions?.some(mention=>mention.type===kind&&mention.id===id)??false;
     let row=visibleEntity(kind,id,novel.id,chapterIndex,explicitlyReferenced);observed.set(`${kind}:${id}`,row);
     if(row&&request.snapshot?.id===id&&request.snapshot.kind===kind) {
@@ -181,7 +182,7 @@ export async function* runAgent(request: AgentRequest, signal?: AbortSignal): As
       if(!decision.calls.length) throw new Error("模型没有给出下一步操作");
       for(const call of decision.calls) {
         if(++toolCount>36) throw new Error("已达到工具调用上限，完成的候选已保留");
-        const step:AgentStep={id:uid("step"),tool:call.name,label:({workspace:"查看作品进度",list:"查找相关资料",read:"读取材料",propose:"准备资料改动",write_chapter:"写作与修订",reject_change:"丢弃候选",read_archive:"读取故事档案"})[call.name],detail:"",status:"running" as "running"|"complete"|"error"};
+        const step:AgentStep={id:uid("step"),tool:call.name,label:({workspace:"查看作品进度",list:"查找相关资料",read:"读取材料",propose:"准备资料改动",delete:"准备删除资料",write_chapter:"写作与修订",reject_change:"丢弃候选",read_archive:"读取故事档案"})[call.name],detail:"",status:"running" as "running"|"complete"|"error"};
         run.steps.push(step);checkpoint();yield {type:"agent",run};
         let result:unknown;
         try {
@@ -253,6 +254,13 @@ export async function* runAgent(request: AgentRequest, signal?: AbortSignal): As
             }
             if(prior&&previous){prior.state="rejected";const parent=previous.changes.find(x=>x.id===prior.targetId&&x.state==="pending");if(parent)parent.state="rejected";saveRun(previous);}
             result=proposalReceipt(c);
+          } else if(call.name==="delete") {
+            const kind=kinds.parse(args.kind),id=z.string().min(1).parse(args.id);
+            permitted(kind,id);
+            if(!observed.has(`${kind}:${id}`)) throw new Error("删除前请先读取目标对象");
+            const explicitlyReferenced=request.mentions?.some(mention=>mention.type===kind&&mention.id===id)??false;
+            const c=proposeDelete(run,kind,id,String(args.reason||"按作者要求删除"),{chapterIndex,explicitlyReferenced});
+            result={changeId:c.id,op:"delete",kind,title:c.title,state:"pending",hint:"删除只是待确认候选，作者应用后才会真正删除"};
           } else if(call.name==="reject_change") {
             const c=run.changes.find(c=>c.id===args.changeId);
             if(!c||c.state!=="pending") throw new Error("待确认改动不存在");
@@ -333,9 +341,9 @@ export async function* runAgent(request: AgentRequest, signal?: AbortSignal): As
             step.targets=[{kind:"chapter",id:String(call.args.chapterId),title:repo.getChapter(String(call.args.chapterId))?.title||"章节档案"}];
             step.detail=resultRow.missing?"尚无故事档案":"已读取该章故事档案";
           }
-          if(call.name==="propose"||call.name==="write_chapter") {
+          if(call.name==="propose"||call.name==="write_chapter"||call.name==="delete") {
             const change=run.changes.find(c=>c.id===resultRow.changeId);
-            if(change){step.label=change.before?"准备修改":"准备新建";step.targets=[{kind:change.kind,id:change.targetId||change.id,title:change.title,changeId:change.id}];step.detail="候选已准备，等待确认";}
+            if(change){step.label=change.op==="delete"?"准备删除":change.before?"准备修改":"准备新建";step.targets=[{kind:change.kind,id:change.targetId||change.id,title:change.title,changeId:change.id}];step.detail="候选已准备，等待确认";}
           }
           if(call.name==="reject_change")step.detail="已丢弃指定候选";
         } catch(error) {

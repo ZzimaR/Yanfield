@@ -528,6 +528,9 @@ export function saveBlueprint(chapterId: ID, data: Partial<ChapterBlueprint>): C
 
 /* ============================== 角色 ============================== */
 
+/** Restoring an undone deletion keeps the original ID and timestamps so references and version checks still match. */
+export interface KeptIdentity { id: ID; createdAt: string; updatedAt: string }
+
 const CHAR_COLS: Record<string, string> = {
   name: "name", aliases: "aliases", role: "role", gender: "gender", age: "age", identity: "identity",
   appearance: "appearance", personality: "personality", goals: "goals", secrets: "secrets", arc: "arc",
@@ -571,9 +574,9 @@ export function getCharacter(id: ID): Character | undefined {
   return row ? characterFromRow(row) : undefined;
 }
 
-export function createCharacter(novelId: ID, input: Partial<Character> & { name: string }): Character {
+export function createCharacter(novelId: ID, input: Partial<Character> & { name: string }, keep?: KeptIdentity): Character {
   const now = nowIso();
-  const id = uid("char");
+  const id = keep?.id ?? uid("char");
   const base: Character = {
     id, novelId, name: input.name, aliases: [], role: "supporting", gender: "", age: "",
     identity: "", appearance: "", personality: "", goals: "", secrets: "", arc: "", speechStyle: "",
@@ -584,9 +587,9 @@ export function createCharacter(novelId: ID, input: Partial<Character> & { name:
   run(
     `INSERT INTO characters (id,novel_id,name,aliases,role,gender,age,identity,appearance,personality,goals,secrets,arc,speech_style,relations,current_state,ai_visible,reveal_at_chapter,tags,pinned,created_at,updated_at)
      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-    [c.id, c.novelId, c.name, toJson(c.aliases), c.role, c.gender, c.age, c.identity, c.appearance, c.personality, c.goals, c.secrets, c.arc, c.speechStyle, toJson(c.relations), c.currentState, c.aiVisible ? 1 : 0, c.revealAtChapter, toJson(c.tags), c.pinned ? 1 : 0, now, now],
+    [c.id, c.novelId, c.name, toJson(c.aliases), c.role, c.gender, c.age, c.identity, c.appearance, c.personality, c.goals, c.secrets, c.arc, c.speechStyle, toJson(c.relations), c.currentState, c.aiVisible ? 1 : 0, c.revealAtChapter, toJson(c.tags), c.pinned ? 1 : 0, keep?.createdAt ?? now, keep?.updatedAt ?? now],
   );
-  return c;
+  return keep ? { ...c, createdAt: keep.createdAt, updatedAt: keep.updatedAt } : c;
 }
 
 export function updateCharacter(id: ID, data: Partial<Character>): Character {
@@ -640,10 +643,10 @@ export function getWorld(id: ID): WorldSetting | undefined {
   return row ? worldFromRow(row) : undefined;
 }
 
-export function createWorld(novelId: ID, input: Partial<WorldSetting> & { title: string }): WorldSetting {
+export function createWorld(novelId: ID, input: Partial<WorldSetting> & { title: string }, keep?: KeptIdentity): WorldSetting {
   const now = nowIso();
   const count = n(get<{ c: number }>("SELECT COUNT(*) AS c FROM world_settings WHERE novel_id = ?", [novelId])?.c);
-  const id = uid("world");
+  const id = keep?.id ?? uid("world");
   const base: WorldSetting = {
     id, novelId, parentId: null, title: input.title, category: "custom", importance: "medium", summary: "",
     content: "", tags: [], aiVisible: true, revealAtChapter: null, orderIndex: count, pinned: false,
@@ -653,9 +656,9 @@ export function createWorld(novelId: ID, input: Partial<WorldSetting> & { title:
   run(
     `INSERT INTO world_settings (id,novel_id,parent_id,title,category,importance,summary,content,tags,ai_visible,reveal_at_chapter,order_index,pinned,created_at,updated_at)
      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-    [w.id, w.novelId, w.parentId, w.title, w.category, w.importance, w.summary, w.content, toJson(w.tags), w.aiVisible ? 1 : 0, w.revealAtChapter, w.orderIndex, w.pinned ? 1 : 0, now, now],
+    [w.id, w.novelId, w.parentId, w.title, w.category, w.importance, w.summary, w.content, toJson(w.tags), w.aiVisible ? 1 : 0, w.revealAtChapter, w.orderIndex, w.pinned ? 1 : 0, keep?.createdAt ?? now, keep?.updatedAt ?? now],
   );
-  return w;
+  return keep ? { ...w, createdAt: keep.createdAt, updatedAt: keep.updatedAt } : w;
 }
 
 export function updateWorld(id: ID, data: Partial<WorldSetting>): WorldSetting {
@@ -695,9 +698,9 @@ export function listForeshadows(novelId: ID): Foreshadow[] {
   return all<Row>("SELECT * FROM foreshadows WHERE novel_id = ? ORDER BY created_at", [novelId]).map(foreshadowFromRow);
 }
 
-export function createForeshadow(novelId: ID, input: Partial<Foreshadow> & { title: string }): Foreshadow {
+export function createForeshadow(novelId: ID, input: Partial<Foreshadow> & { title: string }, keep?: KeptIdentity): Foreshadow {
   const now = nowIso();
-  const id = uid("fore");
+  const id = keep?.id ?? uid("fore");
   const base: Foreshadow = {
     id, novelId, title: input.title, description: "", plantedChapterId: null,
     payoffChapterId: null, status: "planted", notes: "", createdAt: now, updatedAt: now,
@@ -706,9 +709,9 @@ export function createForeshadow(novelId: ID, input: Partial<Foreshadow> & { tit
   run(
     `INSERT INTO foreshadows (id,novel_id,title,description,planted_chapter_id,payoff_chapter_id,status,notes,created_at,updated_at)
      VALUES (?,?,?,?,?,?,?,?,?,?)`,
-    [f.id, f.novelId, f.title, f.description, f.plantedChapterId, f.payoffChapterId, f.status, f.notes, now, now],
+    [f.id, f.novelId, f.title, f.description, f.plantedChapterId, f.payoffChapterId, f.status, f.notes, keep?.createdAt ?? now, keep?.updatedAt ?? now],
   );
-  return f;
+  return keep ? { ...f, createdAt: keep.createdAt, updatedAt: keep.updatedAt } : f;
 }
 
 export function updateForeshadow(id: ID, data: Partial<Foreshadow>): Foreshadow {

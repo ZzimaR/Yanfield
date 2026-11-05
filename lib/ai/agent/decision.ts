@@ -37,6 +37,7 @@ export const DECISION_TOOLS=[
   tool("list","分页查找资料目录",{kind,query:str,offset:{type:"integer"},limit:{type:"integer"}},["kind"]),
   tool("read","读取指定对象，优先读取候选",{kind,id:str,offset:{type:"integer"},limit:{type:"integer"}},["kind","id"]),
   tool("propose","修改前先读原卡，保留未授权删除的已知事实；不增加不等于删除。暂存新建或修改，等待作者确认",{kind,id:str,fields:{type:"object",additionalProperties:true},reason:str,title:str},["kind","fields","reason"]),
+  tool("delete","删除整条角色、设定或伏笔。仅在作者明确要求删除或确认合并/重复时使用；先read目标，删除也需作者确认",{kind:{type:"string",enum:["character","world","foreshadow"]},id:str,reason:str},["kind","id","reason"]),
   tool("write_chapter","调用写手生成正文候选，不能直接落库",{id:str,title:str,volumeId:{type:["string","null"]},instruction:str,words:{type:"integer"},mode:{type:"string",enum:["rewrite","append","selection"]}},["instruction"]),
   tool("reject_change","丢弃本轮候选",{changeId:str},["changeId"]),
   tool("read_archive","读取章节档案",{chapterId:str},["chapterId"]),

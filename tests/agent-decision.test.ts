@@ -29,7 +29,7 @@ it("仅对已知兼容的端点或DeepSeek模型启用JSON模式",()=>{
 
 it("DeepSeek使用实际声明工具，原生提示不再要求文字模拟工具JSON",()=>{
  expect(usesDecisionTool({kind:"openai",baseUrl:"https://api.deepseek.com"},"deepseek-flash")).toBe(true);
- expect(DECISION_TOOLS.map(t=>t.name)).toEqual(["workspace","list","read","propose","write_chapter","reject_change","read_archive","respond"]);
+ expect(DECISION_TOOLS.map(t=>t.name)).toEqual(["workspace","list","read","propose","delete","write_chapter","reject_change","read_archive","respond"]);
  const system=nativeDecisionSystem('第一行\n每轮最多12个工具调用，批量读取可分轮执行。只输出标准JSON：{}\n重要规则');
  expect(system).not.toContain("只输出标准JSON");expect(system).toContain("调用respond");expect(system).toContain("重要规则");
 });
